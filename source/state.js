@@ -127,9 +127,11 @@ function loadState() {
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
     if (!parsed.settings.tagColors || typeof parsed.settings.tagColors !== 'object') parsed.settings.tagColors = {};
-    // Migrate: strip nulls from old fixed-slot array to compact bookmark list
-    parsed.essentials = (parsed.essentials || []).filter(Boolean);
+    // Migrate: strip trailing nulls from old fixed-slot saves; preserve interior gaps
+    parsed.essentials = parsed.essentials || [];
+    while (parsed.essentials.length > 0 && !parsed.essentials[parsed.essentials.length - 1]) parsed.essentials.pop();
     for (const e of parsed.essentials) {
+      if (!e) continue;
       if (!e.tags) e.tags = [];
       if (e.faviconCache === undefined) e.faviconCache = '';
     }
@@ -398,19 +400,21 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
   }
 }
 
+function trimEssentialsTail() {
+  while (state.essentials.length > 0 && !state.essentials[state.essentials.length - 1]) state.essentials.pop();
+}
+
 function setEssential(slot, title, url, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
   const item = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' };
-  if (slot < state.essentials.length) {
-    state.essentials[slot] = item;
-  } else {
-    state.essentials.push(item);
-  }
+  while (state.essentials.length < slot) state.essentials.push(null);
+  state.essentials[slot] = item;
   return true;
 }
 
 function removeEssential(slot) {
-  state.essentials.splice(slot, 1);
+  state.essentials[slot] = null;
+  trimEssentialsTail();
 }
 
 function trimFaviconCache(skipItem = null) {
