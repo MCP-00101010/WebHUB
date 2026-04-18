@@ -733,6 +733,7 @@ function showSettingsPanel() {
   const essSizeRadio = document.querySelector(`input[name="stgEssentialsSize"][value="${s.essentialsIconSize || 'medium'}"]`);
   if (essSizeRadio) essSizeRadio.checked = true;
   document.getElementById('stgShowEssentials').checked = s.showEssentials !== false;
+  document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
   populateTagColors();
   updateLastExportedLabel();
 }
@@ -913,6 +914,24 @@ function attachSettingsListeners() {
     state.settings.showEssentials = e.target.checked;
     renderEssentials();
     saveState();
+  });
+
+  const essCountEl = document.getElementById('stgEssCountVal');
+  document.getElementById('stgEssCountMinus').addEventListener('click', () => {
+    if (state.settings.essentialsDisplayCount > 1) {
+      state.settings.essentialsDisplayCount--;
+      essCountEl.textContent = state.settings.essentialsDisplayCount;
+      renderEssentials();
+      saveState();
+    }
+  });
+  document.getElementById('stgEssCountPlus').addEventListener('click', () => {
+    if (state.settings.essentialsDisplayCount < 24) {
+      state.settings.essentialsDisplayCount++;
+      essCountEl.textContent = state.settings.essentialsDisplayCount;
+      renderEssentials();
+      saveState();
+    }
   });
 
   document.querySelectorAll('input[name="stgSpeedDialSize"]').forEach(radio => {

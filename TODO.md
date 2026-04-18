@@ -18,7 +18,7 @@
 - board tab bar as alternative navigation style (tabs across the top instead of sidebar list) (possibly a great QoL thing. but i will eventually have a rather big collection of boards. thats why i want to be able to store boards inside folders. possible solution: select a board folder in the navpane and the boards in this folder will go into the board tab bar)
 - ~~Global Settings: Select Icon size for Speed Dial / Essentials via radio buttons. Give small/medium/large options. set them with sensible values.~~ ✓
 - ~~Essentials: enable/disable the display of the Essential rows in global settings behavioral settings. (not every user might want them). If disabled, don't delete any stored essentials. just don't show them.~~ ✓
-- Essentials: Adjust the amount of Essentials displayed. Spread them equally amongst rows based on icon size / sidebar width. If amount of displayed essentials is less than actually stored essentials, don't delete them. just don't display them. (probably means essentials have to be stored in a list of type bookmarks to work properly)
+- ~~Essentials: Adjust the amount of Essentials displayed. Add Setting to Essentials box in global behavioral settings. Spread them equally amongst rows based on icon size / sidebar width. If amount of displayed essentials is less than actually stored essentials, don't delete them. just don't display them.~~ ✓ Essentials refactored to compact bookmark list; display count stepper in Behavior settings (1–24)
 - ~~Speed Dial: enable/disable the display of the speed dial bar in the board settings. if disabled don't delete the speed dial bookmarks. just don't display the bar.~~ ✓
 - smart tags prediction: when the user adds tags, predict the tag while typing based on the list of already known tags. tab-key to complete tag. also possibly have a separate edit tags panel available via context menu with extended tab management. List all known tags, add tags to bookmark by clicking on them, remove tag by clicking on it etc. (Or better to add this to the general create/edit bookmark panel?)
 
@@ -122,7 +122,7 @@ Strategic implementation order based on dependency analysis. Each phase minimise
 ### Phase 2 — State architecture stabilisation
 *State schema changes. Must land before widgets or the extension touch state, to avoid migrating twice.*
 
-- **Essentials refactor** — convert fixed 10-slot array to a proper bookmark list with a configurable display count. This is a schema migration and affects search, favicon cache walk, and render. Do as one focused session.
+- ~~**Essentials refactor** — convert fixed 10-slot array to a proper bookmark list with a configurable display count.~~ ✓ Compact array, display count 1–24 in settings, full DnD migration
 - Undo / redo + recently-deleted buffer — also touches state internals; bundle with the essentials refactor session to keep migrations together.
 
 ---

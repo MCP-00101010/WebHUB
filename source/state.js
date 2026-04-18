@@ -40,7 +40,8 @@ const defaultSettings = {
   tagColors: {},
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
-  showEssentials: true
+  showEssentials: true,
+  essentialsDisplayCount: 10
 };
 
 const defaultState = {
@@ -48,7 +49,7 @@ const defaultState = {
   hubName: 'Morpheus WebHub',
   lastExported: null,
   settings: { ...defaultSettings },
-  essentials: Array(10).fill(null),
+  essentials: [],
   boards: [
     {
       id: 'board-1',
@@ -126,12 +127,11 @@ function loadState() {
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
     if (!parsed.settings.tagColors || typeof parsed.settings.tagColors !== 'object') parsed.settings.tagColors = {};
-    if (!parsed.essentials) parsed.essentials = Array(10).fill(null);
-    while (parsed.essentials.length < 10) parsed.essentials.push(null);
-    for (let i = 0; i < parsed.essentials.length; i++) {
-      const e = parsed.essentials[i];
-      if (e && !e.tags) e.tags = [];
-      if (e && e.faviconCache === undefined) e.faviconCache = '';
+    // Migrate: strip nulls from old fixed-slot array to compact bookmark list
+    parsed.essentials = (parsed.essentials || []).filter(Boolean);
+    for (const e of parsed.essentials) {
+      if (!e.tags) e.tags = [];
+      if (e.faviconCache === undefined) e.faviconCache = '';
     }
     // Remove boards with no nav item referencing them
     const referencedIds = collectReferencedBoardIds(parsed.navItems);
@@ -400,12 +400,17 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
 
 function setEssential(slot, title, url, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
-  state.essentials[slot] = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' };
+  const item = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' };
+  if (slot < state.essentials.length) {
+    state.essentials[slot] = item;
+  } else {
+    state.essentials.push(item);
+  }
   return true;
 }
 
 function removeEssential(slot) {
-  state.essentials[slot] = null;
+  state.essentials.splice(slot, 1);
 }
 
 function trimFaviconCache(skipItem = null) {

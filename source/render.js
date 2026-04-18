@@ -273,7 +273,9 @@ function renderEssentials() {
   if (section) section.classList.toggle('hidden', !visible);
   if (!visible) { elements.essentialsGrid.innerHTML = ''; return; }
   elements.essentialsGrid.innerHTML = '';
-  state.essentials.forEach((item, slot) => {
+  const displayCount = state.settings.essentialsDisplayCount || 10;
+  for (let slot = 0; slot < displayCount; slot++) {
+    const item = state.essentials[slot] || null;
     const cell = document.createElement('div');
     cell.className = `essential-slot ${item ? 'filled' : 'empty'}`;
     cell.dataset.slot = slot;
@@ -343,7 +345,7 @@ function renderEssentials() {
     });
 
     elements.essentialsGrid.appendChild(cell);
-  });
+  }
 }
 
 function renderNav() {

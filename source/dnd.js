@@ -53,26 +53,33 @@ function handleEssentialSlotDrop(targetSlot) {
   if (dragPayload.area === 'essential') {
     const srcSlot = dragPayload.slot;
     if (srcSlot === targetSlot) { dragPayload = null; return; }
-    const temp = state.essentials[targetSlot];
-    state.essentials[targetSlot] = state.essentials[srcSlot];
-    state.essentials[srcSlot] = temp;
+    const [item] = state.essentials.splice(srcSlot, 1);
+    state.essentials.splice(Math.min(targetSlot, state.essentials.length), 0, item);
   } else if (dragPayload.area === 'speed-dial') {
     const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
     if (sdIdx === -1) { dragPayload = null; return; }
     const [item] = board.speedDial.splice(sdIdx, 1);
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
-    if (state.essentials[targetSlot]) board.speedDial.push(state.essentials[targetSlot]);
-    state.essentials[targetSlot] = item;
+    const existing = state.essentials[targetSlot];
+    if (existing) {
+      board.speedDial.push(existing);
+      state.essentials[targetSlot] = item;
+    } else {
+      state.essentials.splice(Math.min(targetSlot, state.essentials.length), 0, item);
+    }
   } else if (dragPayload.area === 'board') {
     const item = removeBoardItemById(dragPayload.itemId);
     if (!item) { dragPayload = null; return; }
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
-    if (state.essentials[targetSlot]) {
-      addBoardItemToColumn(dragPayload.sourceColumnId || board.columns[0].id, state.essentials[targetSlot]);
+    const existing = state.essentials[targetSlot];
+    if (existing) {
+      addBoardItemToColumn(dragPayload.sourceColumnId || board.columns[0].id, existing);
+      state.essentials[targetSlot] = item;
+    } else {
+      state.essentials.splice(Math.min(targetSlot, state.essentials.length), 0, item);
     }
-    state.essentials[targetSlot] = item;
   } else {
     dragPayload = null;
     return;
@@ -123,7 +130,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
     } else {
       extracted = state.essentials[dragPayload.slot];
       if (!extracted) { dragPayload = null; return; }
-      state.essentials[dragPayload.slot] = null;
+      state.essentials.splice(dragPayload.slot, 1);
     }
     extracted.type = 'bookmark';
     if (!extracted.tags) extracted.tags = [];
@@ -264,7 +271,7 @@ function handleBoardColumnDrop(event, columnId) {
   } else {
     draggedItem = state.essentials[dragPayload.slot];
     if (!draggedItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null;
+    state.essentials.splice(dragPayload.slot, 1);
     draggedItem.type = 'bookmark';
     if (!draggedItem.tags) draggedItem.tags = [];
   }
@@ -314,7 +321,7 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   } else {
     dragged = state.essentials[dragPayload.slot];
     if (!dragged) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null;
+    state.essentials.splice(dragPayload.slot, 1);
     dragged.type = 'bookmark';
     if (!dragged.tags) dragged.tags = [];
   }
@@ -370,7 +377,7 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   } else {
     dragged = state.essentials[dragPayload.slot];
     if (!dragged) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null;
+    state.essentials.splice(dragPayload.slot, 1);
     dragged.type = 'bookmark';
     if (!dragged.tags) dragged.tags = [];
   }
@@ -439,7 +446,7 @@ function handleSpeedDialItemDrop(event, targetItem) {
   } else if (dragPayload.area === 'essential') {
     const essItem = state.essentials[dragPayload.slot];
     if (!essItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null;
+    state.essentials.splice(dragPayload.slot, 1);
     essItem.type = 'bookmark';
     if (!essItem.tags) essItem.tags = [];
     const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
@@ -525,7 +532,7 @@ function handleSpeedDialContainerDrop(event) {
   } else if (dragPayload.area === 'essential') {
     const essItem = state.essentials[dragPayload.slot];
     if (!essItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null;
+    state.essentials.splice(dragPayload.slot, 1);
     essItem.type = 'bookmark';
     if (!essItem.tags) essItem.tags = [];
     board.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, board.speedDial.length)), 0, essItem);
