@@ -11,8 +11,6 @@
 
 ## Bookmarks
 
-*(all core features done — see CHANGELOG)*
-
 ## Board Backgrounds
 
 - background image browser using `webkitdirectory` folder picker — user selects their `backgrounds` folder once, app shows a thumbnail grid, clicking a thumbnail sets it as the board background (stored as data URL, same path as drag-drop). Browser remembers the last-used folder so subsequent opens land there automatically. Starting directory cannot be set programmatically — user navigates there manually the first time. (probably no longer needed if we use a firefox extension to handle file access for us)
@@ -79,6 +77,54 @@ How do we handle the Hub run on different browsers then? As I understand Chrome 
 ## Current issues / bugs
 
 - when dragging an object into an empty column, the blue preview indicator shows at the bottom of the column but the object gets inserted at the top. move indicator to the top as well (minor bug)
+- objects in columns seem to be rendered outside column boundaries occasionally. particular objects in nested folders as they are indented a little.
+- in bulk operations: bulk adding tags panel has a name field which we dont need. this panel should only allow to select tags. does bulk adding check if an item already has one of the added tags so we are not duplicating them?
+- in bulk operations: move to board. again the panel has a name field. should only have a select target board panel.
+- in bulk operations: delete confirmation button always says "Delete 1 Item" regardless of how many items are selected.
+- smart tag prediction: the drop down menu can get pretty long. could the prediction be done in the text field in a similar way browsers would display url prediction in the address bar?
+  - if that works the hub should have a list of generally used tags as a base baked into its config. (QoL Update)
+  
+## Tag Manager
+
+after importing my 650 strong bookmark library from firefox into the hub I think we need a sophisticated and advanced tag management system that can handle bookmark collection of any size. I have a couple of ideas for that:
+- assign tags to a folder -> bookmarks and subfolders in this folder automatically inherit the tags from their parent folder. (should work with nested folder as well):
+  - Folder "Physics" has tags [Science Physics] from user
+    - Folder "Astronomy" has tag [Astronomy] from user and inherits [Science Physics] from parent
+      - Bookmark "JWST" inherits [Science Physics Astronomy] automatically from parent
+    - Folder Optics has tag [Optics] from user and inherits [Science Physics] from parent
+      - Bookmark "Photon Theory" inherits [Sciene Physics Optics] from parent
+      - 
+folders need a toggle-able flag wether or not to pass on tags to their children and another flag to remove the folders tags from a child when the child gets moved out of that folder (useful for incoming or unsorted folders/tags). This has obviously an impacty on DnD logic. Tags have to be auto-added to a bookmark when it gets created inside a folder or dragged into a folder and removed if a bookmark is moved out this folder (respecting if auto-inherit and auto-remove for this folder are enabled/disabled).
+same logic should be added to boards. Boards can pass tags to child folders and bookmarks. folders pass on tags to subfolders and child bookmarks.
+
+-> add tags to boards and folders
+-> give boards and folders a setting to enable/disable passing their tags on to their children
+-> give boards and folders a setting to enable/disable to auto-remove their tags from their children when the children leaves the parent
+-> when passing on tags, check if the child already has the tag to avoid double-tagging
+-> when auto removing check if the trait is already gone (the user might have removed the tag)
+
+-> we need to split tags on folders and bookmarks into inherited tags and user-added tags so the user always knows where the tags came from
+
+-> Maybe (??) add an option to folders and bookmark to ignore tag inheritance from their parents. if the object already has inherited tags when this option gets activated, clear the inherited tags. if it gets deactivated again, recurse through all parent levels and get the add inherited tags to the object. However this gets complicated if a folder that ignores inheritance has children... do they then also ignore inheritance? Complicated...
+
+on top of that i'd like to build a solid database of already known tags, structured by Subject/Theme/Relation ... something like this:
+
+science { biology chemistry physics mathematics }
+
+ratings { 1-star 2-star 3-star 4-star 5-star}
+
+fiction-genres { sci-fi fantasy horror mystery drama comedy thriller adventure }
+
+we assign a colour to each group name (lets say science is green). then any tag in the science group will also be green (maybe a lighter green?)
+a tag in one category could also have its own subcategory (physics is a tag in the science category but can be its own group with {astronomy astro-physics optics relativity mechanics}) etc. how do we auto-assigen colour here ???
+
+and so on and so.... very complex subject that needs some thought. 
+
+## Import Manager
+
+another idea i had after importing my 650 strong bookmark library is to create an Import Manager. Instead of importing the whole bookmarks file into the active board, importing html bookmarks files from a browser opens the Import Manager. The Import Manager visualises the whole bookmark file in tree-form. from there the user can edit folders and bookmarks the same way as in the hub (change names, add/remove tags etc), remove bookmarks and folders (and with them their children) from the Import Manager or send them to a Board in the Hub (which removes them from the Import Manager). Data in the Import Manager is persistent (so will be part of our database) so the user can close the Import Manager and come back to it another time to continue sorting his bookmarks.
+This could make use of the inbox feature i described in the firefox extension logic. instead of a global incoming box each board should have one. A board with an incoming box that contains any objects shows a visual indicator somewhere near the board name in board pane. the user can open the inbox and drag and drop objects into the board. 
+(To avoid creating a whole new UI for this, we can just create Board called "Import Manager" with no speed dial pane and only one column. Can get a very long column depending how many bookmarks we are importing but that would provide all the functionality we need). The Import Manager will be visible on first position in the navpane when it contains any objects, otherwise its hidden. 
 
 ## Action Plan
 
