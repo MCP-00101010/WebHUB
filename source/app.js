@@ -241,6 +241,8 @@ function showModal(type, options = {}) {
   elements.modalInput1.value = options.value1 || '';
   elements.modalInput2.value = options.value2 || '';
   elements.modalInput3.value = options.value3 || '';
+  const showName = options.showName !== false;
+  elements.modalNameRow.classList.toggle('hidden', !showName);
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
@@ -255,8 +257,13 @@ function showModal(type, options = {}) {
     elements.modalSelect.value = options.selectValue || '';
   }
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
-  document.getElementById('tagSuggestions')?.classList.add('hidden');
-  elements.modalInput1.focus();
+  if (showName) {
+    elements.modalInput1.focus();
+  } else if (options.showTags) {
+    elements.modalInput3.focus();
+  } else if (options.showSelect) {
+    elements.modalSelect.focus();
+  }
 }
 
 function hideModal() {
@@ -275,30 +282,23 @@ function getTagSuggestions(partial) {
   return known.filter(t => t.startsWith(partial) && t !== partial && !current.includes(t));
 }
 
-function applyTagSuggestion(suggestion) {
-  const parts = elements.modalInput3.value.split(/\s+/);
-  parts[parts.length - 1] = suggestion;
-  elements.modalInput3.value = parts.join(' ') + ' ';
-  renderTagSuggestions();
-  elements.modalInput3.focus();
-}
-
 function renderTagSuggestions() {
-  const sugBox = document.getElementById('tagSuggestions');
-  if (!sugBox) return;
-  const parts = elements.modalInput3.value.split(/\s+/);
-  const partial = parts[parts.length - 1];
+  const input = elements.modalInput3;
+  const pos = input.selectionStart;
+  if (pos !== input.value.length) return;
+
+  const val = input.value;
+  const partial = val.split(/\s+/).pop();
+  if (!partial) return;
+
   const suggestions = getTagSuggestions(partial);
-  if (!suggestions.length) { sugBox.classList.add('hidden'); return; }
-  sugBox.innerHTML = '';
-  suggestions.slice(0, 8).forEach(s => {
-    const item = document.createElement('div');
-    item.className = 'tag-suggestion-item';
-    item.textContent = s;
-    item.addEventListener('mousedown', e => { e.preventDefault(); applyTagSuggestion(s); });
-    sugBox.appendChild(item);
-  });
-  sugBox.classList.remove('hidden');
+  if (!suggestions.length) return;
+
+  const completion = suggestions[0].slice(partial.length);
+  if (!completion) return;
+
+  input.value = val + completion;
+  input.setSelectionRange(val.length, input.value.length);
 }
 
 function handleModalSubmit(event) {
@@ -777,6 +777,7 @@ function handleContextMenuAction(action) {
       const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
       showModal('moveToBoard', {
         title: 'Move to Board',
+        showName: false,
         showSelect: true,
         selectLabel: 'Target board',
         selectOptions: boards.map(b => ({ value: b.id, label: b.title })),
@@ -1403,16 +1404,17 @@ function attachEventListeners() {
       renderAll();
       saveState();
       updateTrashBadge();
-    }, `Delete ${n}`);
+    }, `Delete ${n} ${n === 1 ? 'Item' : 'Items'}`);
   });
   document.getElementById('bulkTagBtn').addEventListener('click', () => {
-    showModal('bulkAddTags', { title: 'Add Tags to Selected', showTags: true });
+    showModal('bulkAddTags', { title: 'Add Tags to Selected', showName: false, showTags: true });
   });
   document.getElementById('bulkMoveBtn').addEventListener('click', () => {
     const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
     if (!boards.length) { alert('No other boards to move to.'); return; }
     showModal('bulkMoveToBoard', {
       title: 'Move Selected to Board',
+      showName: false,
       showSelect: true,
       selectLabel: 'Target board',
       selectOptions: boards.map(b => ({ value: b.id, label: b.title }))
@@ -1462,19 +1464,18 @@ function attachEventListeners() {
     }
   });
   elements.modalInput3.addEventListener('input', () => {
-    if (activeModal === 'addBookmark' || activeModal === 'editBookmark') renderTagSuggestions();
+    if (activeModal === 'addBookmark' || activeModal === 'editBookmark' || activeModal === 'bulkAddTags') renderTagSuggestions();
   });
   elements.modalInput3.addEventListener('keydown', e => {
-    if (e.key !== 'Tab') return;
-    const sugBox = document.getElementById('tagSuggestions');
-    const first = sugBox?.querySelector('.tag-suggestion-item');
-    if (first && !sugBox.classList.contains('hidden')) {
+    const input = elements.modalInput3;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === input.value.length) {
       e.preventDefault();
-      applyTagSuggestion(first.textContent);
+      const accepted = input.value.slice(0, end);
+      input.value = accepted + ' ';
+      input.setSelectionRange(accepted.length + 1, accepted.length + 1);
     }
-  });
-  elements.modalInput3.addEventListener('blur', () => {
-    setTimeout(() => document.getElementById('tagSuggestions')?.classList.add('hidden'), 150);
   });
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);

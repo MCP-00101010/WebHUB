@@ -115,15 +115,15 @@ ratings { 1-star 2-star 3-star 4-star 5-star}
 
 fiction-genres { sci-fi fantasy horror mystery drama comedy thriller adventure }
 
-we assign a colour to each group name (lets say science is green). then any tag in the science group will also be green (maybe a lighter green?)
-a tag in one category could also have its own subcategory (physics is a tag in the science category but can be its own group with {astronomy astro-physics optics relativity mechanics}) etc. how do we auto-assigen colour here ???
+we assign a color to each group name (lets say science is green). then any tag in the science group will also be green (maybe a lighter green?)
+a tag in one category could also have its own subcategory (physics is a tag in the science category but can be its own group with {astronomy astro-physics optics relativity mechanics}) etc. how do we auto-assign color here ???
 
 and so on and so.... very complex subject that needs some thought. 
 
 ## Import Manager
 
-another idea i had after importing my 650 strong bookmark library is to create an Import Manager. Instead of importing the whole bookmarks file into the active board, importing html bookmarks files from a browser opens the Import Manager. The Import Manager visualises the whole bookmark file in tree-form. from there the user can edit folders and bookmarks the same way as in the hub (change names, add/remove tags etc), remove bookmarks and folders (and with them their children) from the Import Manager or send them to a Board in the Hub (which removes them from the Import Manager). Data in the Import Manager is persistent (so will be part of our database) so the user can close the Import Manager and come back to it another time to continue sorting his bookmarks.
-This could make use of the inbox feature i described in the firefox extension logic. instead of a global incoming box each board should have one. A board with an incoming box that contains any objects shows a visual indicator somewhere near the board name in board pane. the user can open the inbox and drag and drop objects into the board. 
+another idea i had after importing my 650 strong bookmark library is to create an Import Manager. Instead of importing the whole bookmarks file into the active board, importing html bookmarks files from a browser opens the Import Manager. The Import Manager visualizes the whole bookmark file in tree-form. from there the user can edit folders and bookmarks the same way as in the hub (change names, add/remove tags etc), remove bookmarks and folders (and with them their children) from the Import Manager or send them to a Board in the Hub (which removes them from the Import Manager). Data in the Import Manager is persistent (so will be part of our database) so the user can close the Import Manager and come back to it another time to continue sorting his bookmarks.
+This could make use of the inbox feature i described in the firefox extension logic. instead of a global incoming box each board should have one. A board with an incoming box that contains any objects shows a visual indicator somewhere near the board name in board pane. the user can open the inbox and drag and drop objects into the board. (Could this be rendered like a floating column so the user can drag it around?)
 (To avoid creating a whole new UI for this, we can just create Board called "Import Manager" with no speed dial pane and only one column. Can get a very long column depending how many bookmarks we are importing but that would provide all the functionality we need). The Import Manager will be visible on first position in the navpane when it contains any objects, otherwise its hidden. 
 
 ## Action Plan
@@ -150,8 +150,76 @@ See [0.6.0] in CHANGELOG.
 
 ---
 
-### Phase 4 — Firefox extension & native bridge
-*Unlocks background browser, theme file I/O, auto-save/load, and the bookmark inbox. Build the API contract first so the UI built in later phases doesn't need rewriting.*
+### Phase 3.5 — Bug fixes & small UX
+
+*Clear the known issue backlog before building new systems on top of broken foundations.*
+
+1. Empty column drop indicator: show preview at top, not bottom, when column is empty
+2. Objects rendering outside column boundaries (nested folder indent overflow)
+3. Bulk ops — "Add tags" panel: remove name field; check for duplicate tags before applying
+4. Bulk ops — "Move to board" panel: remove name field; show only board selector
+5. Bulk ops — delete confirmation: show correct item count (not always "1 Item")
+6. Smart tag prediction: replace dropdown with inline address-bar-style completion in the text field
+
+---
+
+### Phase 4 — Tag system overhaul
+
+*Foundational. Touches state schema, DnD logic, and every item-facing UI. Must land before widgets (which may also carry tags) and before the extension (tag propagation is independent of file I/O).*
+
+**State schema changes:**
+- Add `tags[]` and `inheritedTags[]` to folder and board objects (bookmark already has `tags[]`)
+- Add `inheritTags: boolean` flag to boards and folders (default `true`) — controls whether this node passes its tags down to children
+- Add `autoRemoveTags: boolean` flag to boards and folders (default `false`) — when `true`, removes this node's tags from a child when the child is moved out
+- `inheritedTags` is always computed/derived — never manually set by the user; shown read-only in the UI
+
+**Tag propagation logic:**
+- On item creation inside a folder/board: compute and apply `inheritedTags` by walking up the parent chain
+- On DnD move: remove `inheritedTags` from old parent chain (if `autoRemoveTags` is set), add `inheritedTags` from new parent chain (if `inheritTags` is set); always check for duplicates before adding
+- Helper: `computeInheritedTags(itemId)` — walks parent chain, collects tags from all ancestors where `inheritTags === true`
+
+**Tag categories & colours:**
+- Built-in tag database: predefined groups (science, ratings, fiction-genres, etc.) each with an assigned colour
+- Tags in a group inherit the group colour (lighter tint for child tags)
+- Tag category editor in the Tag Manager panel: add/rename/delete groups, assign colours, move tags between groups
+- Unknown tags (not in any group) render in a neutral colour
+
+**Tag Manager panel (new UI):**
+- Lists all known tags across the entire database
+- Click a tag to see which items carry it
+- Rename or delete a tag globally (renames/removes it from every item)
+- Assign tags to groups / drag tags between groups
+
+**Deferred (implement once inheritance is stable):**
+- Per-item "ignore inheritance" toggle — when activated, clears inherited tags and stops receiving them from any ancestor; when deactivated, re-derives inherited tags by walking the parent chain. Children of an ignoring-folder edge case requires separate design session before implementation.
+
+---
+
+### Phase 5 — Board inbox & Import Manager
+
+*Inbox comes before the extension because the extension will use the inbox as its delivery mechanism. Import Manager builds on top of the inbox pattern.*
+
+**Per-board inbox:**
+- Each board has one hidden `{ isInbox: true, items: [] }` column stored in `board.columns`
+- Rendered as a **floating draggable panel** (not an extra grid column) — position saved to `localStorage` globally
+- Toggle button in the board header opens/closes the floating inbox panel
+- Badge on the board's nav pane entry shows item count when inbox is non-empty
+- "Move to board" action targets the destination board's inbox column (replaces current hardcoded `columns[0]` target)
+- DnD out of the inbox into any board column is standard column-to-column drag behaviour
+- Extension will later use this same inbox path to deliver single tabs from the browser
+
+**Import Manager:**
+- Importing an HTML bookmarks file opens the Import Manager instead of dumping everything onto the active board
+- Import Manager is a special persistent board (hidden from nav when empty, pinned to top when non-empty) with a single scrollable column
+- Tree-view rendering of the imported bookmark file: folders are collapsible, bookmarks are standard items
+- User can rename, re-tag, or delete items/folders directly in the Import Manager
+- Sending a folder or bookmark to a board moves it to that board's inbox and removes it from the Import Manager
+- Import Manager state is persisted in the database so the user can close and return later
+
+---
+
+### Phase 6 — Firefox extension & native bridge
+*Inbox from Phase 5 is already in place — extension just needs to write to it. Build the API contract first.*
 
 1. **Design the postMessage API spec** — define all message types and response shapes before writing a single line of extension code. This is the most important design decision in this phase.
 2. Native messaging host (Python or Node, ~50 lines)
@@ -160,12 +228,13 @@ See [0.6.0] in CHANGELOG.
 5. Chromium / File Access API shim — implement the same bridge interface using `window.showOpenFilePicker` / `showDirectoryPicker` so the hub works on Chrome/Edge without the extension
 6. Auto-save / auto-load wiring — replace manual export/import with silent reads/writes when bridge is available
 7. Background folder browser UI (reuses existing data URL + background image pipeline)
-8. Bookmark inbox — "send current tab" button in extension → inbox folder in hub
+8. Theme file browser (scans `./themes` folder, used by Phase 7)
+9. "Send current tab" button in extension → active board's inbox column
 
 ---
 
-### Phase 5 — Theme system
-*Depends on Phase 4 for file save/load. Must audit CSS variables before building the picker or theme files will be incomplete.*
+### Phase 7 — Theme system
+*Depends on Phase 6 for file save/load. Must audit CSS variables before building the picker or theme files will be incomplete.*
 
 1. Audit and lock all CSS custom properties — produce a definitive list of what a theme file must contain
 2. Define theme JSON schema
@@ -175,8 +244,8 @@ See [0.6.0] in CHANGELOG.
 
 ---
 
-### Phase 6 — Widget framework
-*Comes after state is stable (Phase 2) and before DnD improvements, because widgets may have variable heights that affect drag behaviour. Build the framework before individual widgets so each widget slots in cleanly.*
+### Phase 8 — Widget framework
+*Comes after state is stable and after tag system (widgets may carry tags). Build the framework before individual widgets so each widget slots in cleanly.*
 
 1. Design widget item type in state schema (type, config object, live data store)
 2. Widget rendering framework — how widgets size, resize, and sit alongside bookmarks in columns
@@ -192,15 +261,16 @@ See [0.6.0] in CHANGELOG.
 
 ---
 
-### Phase 7 — Advanced navigation & DnD
-*Last because board tab bar depends on the folder-of-boards concept being fully exercised, and DnD preview improvements should cover widgets (Phase 6) in one pass rather than being done twice.*
+### Phase 9 — Advanced navigation & DnD
+*Last because board tab bar depends on the folder-of-boards concept being fully exercised, and DnD preview improvements should cover widgets (Phase 8) in one pass rather than being done twice.*
 
 - Board tab bar (folder-selected boards populate the tab strip)
 - DnD live previews — render actual item instead of blue placeholder frame
 
 ---
 
-### Phase 8 — Documentation, localization & code health
+### Phase 10 — Documentation, localization & code health
+
 *Post-feature-freeze. Adding i18n infrastructure mid-build means re-extracting strings from every new feature added after. Do this once, at the end, when the string surface is stable.*
 
 1. **Code restructuring** — reorganise source files for readability; add JSDoc-style comments to all major functions and data types. No behavioural changes.
@@ -211,9 +281,11 @@ See [0.6.0] in CHANGELOG.
 
 ### Cross-cutting notes
 
-- **Browser / OS agnosticism:** the page-side bridge (Phase 4, step 4–5) is the key. The hub itself stays vanilla JS with zero dependencies. The bridge abstracts file access behind a common interface — extension on Firefox/Zen, File Access API on Chromium, manual fallback everywhere else. No platform-specific code leaks into the app itself. The Chromium File Access API shim (Phase 4 step 5) also satisfies the *Compatibility* section item for native Chromium support.
+- **Browser / OS agnosticism:** the page-side bridge (Phase 6, step 4–5) is the key. The hub itself stays vanilla JS with zero dependencies. The bridge abstracts file access behind a common interface — extension on Firefox/Zen, File Access API on Chromium, manual fallback everywhere else. No platform-specific code leaks into the app itself. The Chromium File Access API shim (Phase 6 step 5) also satisfies the *Compatibility* section item for native Chromium support.
 - **Extension as optional enhancement:** the hub must remain fully functional without the extension. The bridge fallback path ensures this. Gate every extension-dependent UI element on `bridge.isAvailable()`.
-- **Settings panel real-estate:** the split in Phase 1 is a prerequisite for Phase 5 (theme picker) and Phase 6 (widget global defaults). Do it early or the panel becomes unmanageable.
-- **`webkitdirectory` background picker:** deprioritised — superseded by the extension background browser in Phase 4. Only implement if the extension stalls.
+- **Inbox as the universal delivery mechanism:** the per-board inbox (Phase 5) is the single intake point for all external delivery — "move to board", the Firefox extension tab sender, and the Import Manager all funnel through it. Keep the inbox path stable; do not bypass it.
+- **Tag inheritance before ignore-toggle:** the "ignore inheritance" per-item flag is intentionally deferred. Do not implement it until the core inherit/auto-remove system has been live for at least one phase and edge cases are understood.
+- **Settings panel real-estate:** the split in Phase 1 is a prerequisite for Phase 7 (theme picker) and Phase 8 (widget global defaults). Do it early or the panel becomes unmanageable.
+- **`webkitdirectory` background picker:** deprioritised — superseded by the extension background browser in Phase 6. Only implement if the extension stalls.
 - **Versioning & changelog:** both established in Phase 1. Every git commit from that point forward should include a `CHANGELOG.md` entry. The version constant lives in a single place in `app.js` (or a dedicated `version.js`) — never hardcoded in multiple files.
-- **Code comments & readability:** add comments incrementally as you touch each area rather than doing one big sweep mid-project. The Phase 8 pass is for the final structured cleanup, not an excuse to defer all commenting.
+- **Code comments & readability:** add comments incrementally as you touch each area rather than doing one big sweep mid-project. The Phase 10 pass is for the final structured cleanup, not an excuse to defer all commenting.

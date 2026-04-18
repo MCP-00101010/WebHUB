@@ -201,6 +201,7 @@ button {
   border-radius: 14px;
   padding: 8px 10px;
   cursor: grab;
+  min-width: 0;
 }
 
 .nav-item:active,
@@ -560,6 +561,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: hidden;
 }
 
 .board-column h4 {
@@ -770,6 +772,7 @@ button {
 .folder-children {
   margin-top: 6px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.08);

@@ -192,7 +192,7 @@ function handleBoardColumnDragOver(event) {
     if (columnEl.classList.contains('drop-target')) return;
     removeDragPlaceholders();
     columnEl.classList.add('drop-target');
-    columnEl.appendChild(createDragPlaceholder('board'));
+    columnEl.prepend(createDragPlaceholder('board'));
     return;
   }
 
@@ -211,7 +211,7 @@ function handleBoardColumnDragOver(event) {
     if (columnEl.classList.contains('drop-target')) return;
     removeDragPlaceholders();
     columnEl.classList.add('drop-target');
-    columnEl.appendChild(createDragPlaceholder('board'));
+    columnEl.append(createDragPlaceholder('board'));
     return;
   }
 
