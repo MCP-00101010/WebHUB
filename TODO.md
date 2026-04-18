@@ -150,16 +150,9 @@ See [0.6.0] in CHANGELOG.
 
 ---
 
-### Phase 3.5 — Bug fixes & small UX
+### Phase 3.5 — Bug fixes & small UX ✓ *Completed 2026-04-18*
 
-*Clear the known issue backlog before building new systems on top of broken foundations.*
-
-1. Empty column drop indicator: show preview at top, not bottom, when column is empty
-2. Objects rendering outside column boundaries (nested folder indent overflow)
-3. Bulk ops — "Add tags" panel: remove name field; check for duplicate tags before applying
-4. Bulk ops — "Move to board" panel: remove name field; show only board selector
-5. Bulk ops — delete confirmation: show correct item count (not always "1 Item")
-6. Smart tag prediction: replace dropdown with inline address-bar-style completion in the text field
+See [0.6.1] in CHANGELOG.
 
 ---
 

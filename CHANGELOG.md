@@ -5,6 +5,22 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.6.1] — 2026-04-18
+
+### Fixed
+
+- Empty column drag indicator now appears at the top of the column, not the bottom
+- Nested folder items no longer overflow column boundaries at narrow widths (`.folder-children` grid constrained to `minmax(0, 1fr)`; `min-width: 0` on column items)
+- "Add Tags", "Move to Board" (bulk and context menu) modals no longer show the redundant Name field; focus lands directly on the relevant input
+- Bulk delete confirmation button now shows the correct item count instead of always "1 Item"
+
+### Changed
+
+- Tag autocomplete replaced with inline address-bar-style completion: the best match is shown as selected text in the input field; Tab or ArrowRight accepts it
+- Tag autocomplete now also active in the bulk "Add Tags" modal
+
+---
+
 ## [0.6.0] — 2026-04-18
 
 ### Added

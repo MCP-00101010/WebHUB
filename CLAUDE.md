@@ -78,3 +78,17 @@ When spawning 3 or more parallel agents, every agent must write its output to di
 - Large tables or complete file contents in the return message
 
 For single agents (1-2), returning content directly is acceptable when the output is short.
+
+---
+
+## Pre-Commit Checklist
+
+Before every commit, always update these three things as part of the same commit:
+
+1. **Version number** — bump the patch version (`x.y.Z`) in:
+   - `source/app.js` — `APP_VERSION` constant
+   - `index.html` — sidebar version button and About dialog version line
+2. **CHANGELOG.md** — add a new `## [x.y.z] — YYYY-MM-DD` entry at the top with Added / Changed / Fixed sections describing what changed
+3. **TODO.md** — mark any completed phases as `✓ *Completed YYYY-MM-DD*` and replace their detail with `See [x.y.z] in CHANGELOG.`
+
+Do this automatically — do not ask the user whether to do it.
