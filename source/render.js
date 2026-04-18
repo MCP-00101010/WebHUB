@@ -20,8 +20,47 @@ const elements = {
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
-  contextMenu: document.getElementById('contextMenu')
+  contextMenu: document.getElementById('contextMenu'),
+  searchInput: document.getElementById('searchInput'),
+  searchResultsPane: document.getElementById('searchResultsPane')
 };
+
+function faviconUrl(url, sz) {
+  try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=${sz}`; }
+  catch { return ''; }
+}
+
+async function fetchFaviconDataUrl(url, sz) {
+  const src = faviconUrl(url, sz);
+  if (!src) return '';
+  try {
+    const resp = await fetch(src);
+    if (!resp.ok) return '';
+    const blob = await resp.blob();
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(blob);
+    });
+  } catch { return ''; }
+}
+
+function setFavicon(img, item, sz) {
+  if (item.faviconCache) {
+    img.src = item.faviconCache;
+  } else if (item.url) {
+    img.src = faviconUrl(item.url, sz);
+    fetchFaviconDataUrl(item.url, sz).then(dataUrl => {
+      if (dataUrl) {
+        item.faviconCache = dataUrl;
+        trimFaviconCache(item);
+        img.src = dataUrl;
+        saveState();
+      }
+    });
+  }
+}
 
 function buildTooltip(item) {
   const parts = [item.title || 'Untitled'];
@@ -40,6 +79,64 @@ function applySettings() {
   r.setProperty('--title-line-thickness', `${s.titleLineThickness}px`);
   r.setProperty('--board-title-font-size', `${s.boardTitleFontSize}px`);
   r.setProperty('--tags-display', s.showTags ? 'flex' : 'none');
+
+  const ff = (key) => s[key] || 'inherit';
+  const fw = (key, def = 'normal') => s[key] ? 'bold' : def;
+  const fi = (key) => s[key] ? 'italic' : 'normal';
+  const td = (key) => s[key] ? 'underline' : 'none';
+
+  r.setProperty('--bookmark-font-family',        ff('bookmarkFontFamily'));
+  r.setProperty('--bookmark-font-weight',         fw('bookmarkBold'));
+  r.setProperty('--bookmark-font-style',          fi('bookmarkItalic'));
+  r.setProperty('--bookmark-text-decoration',     td('bookmarkUnderline'));
+
+  r.setProperty('--folder-font-family',           ff('folderFontFamily'));
+  r.setProperty('--folder-font-weight',           fw('folderBold', '600'));
+  r.setProperty('--folder-font-style',            fi('folderItalic'));
+  r.setProperty('--folder-text-decoration',       td('folderUnderline'));
+
+  r.setProperty('--title-font-family',            ff('titleFontFamily'));
+  r.setProperty('--title-font-weight',            fw('titleBold', '600'));
+  r.setProperty('--title-font-style',             fi('titleItalic'));
+  r.setProperty('--title-text-decoration',        td('titleUnderline'));
+
+  r.setProperty('--hub-name-font-size',           `${s.hubNameFontSize || 18}px`);
+  r.setProperty('--hub-name-font-family',         ff('hubNameFontFamily'));
+  r.setProperty('--hub-name-font-weight',         fw('hubNameBold'));
+  r.setProperty('--hub-name-font-style',          fi('hubNameItalic'));
+  r.setProperty('--hub-name-text-decoration',     td('hubNameUnderline'));
+
+  r.setProperty('--board-title-font-family',      ff('boardTitleFontFamily'));
+  r.setProperty('--board-title-font-weight',      fw('boardTitleBold', '600'));
+  r.setProperty('--board-title-font-style',       fi('boardTitleItalic'));
+  r.setProperty('--board-title-text-decoration',  td('boardTitleUnderline'));
+
+  r.setProperty('--board-font-family',            ff('boardFontFamily'));
+  r.setProperty('--board-font-weight',            fw('boardBold'));
+  r.setProperty('--board-font-style',             fi('boardItalic'));
+  r.setProperty('--board-text-decoration',        td('boardUnderline'));
+
+  r.setProperty('--hub-name-text-align',          s.hubNameTextAlign    || 'left');
+  r.setProperty('--board-title-text-align',       s.boardTitleTextAlign || 'left');
+  r.setProperty('--board-text-align',             s.boardTextAlign      || 'left');
+  r.setProperty('--bookmark-text-align',          s.bookmarkTextAlign   || 'left');
+  r.setProperty('--folder-text-align',            s.folderTextAlign     || 'left');
+
+  r.setProperty('--hub-name-color',               s.hubNameColor    || 'var(--text)');
+  r.setProperty('--board-title-color',            s.boardTitleColor || 'var(--text)');
+  r.setProperty('--board-color',                  s.boardColor      || 'var(--text)');
+  r.setProperty('--bookmark-color',               s.bookmarkColor   || 'var(--text)');
+  r.setProperty('--folder-color',                 s.folderColor     || 'var(--text)');
+  r.setProperty('--title-color',                  s.titleColor      || 'var(--text-muted)');
+  r.setProperty('--title-line-color',             s.titleLineColor  || 'rgba(255,255,255,0.12)');
+  r.setProperty('--title-line-style',             s.titleLineStyle  || 'solid');
+}
+
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function renderAll() {
@@ -49,6 +146,118 @@ function renderAll() {
   renderNav();
   renderEssentials();
   renderBoard();
+  const q = elements.searchInput.value.trim();
+  if (q) renderSearchResults(q);
+}
+
+function renderSearchResults(query) {
+  const q = query.toLowerCase();
+  const pane = elements.searchResultsPane;
+  pane.innerHTML = '';
+
+  const matchesQuery = item => {
+    if (item.type !== 'bookmark') return false;
+    if ((item.title || '').toLowerCase().includes(q)) return true;
+    if ((item.url || '').toLowerCase().includes(q)) return true;
+    if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
+    return false;
+  };
+
+  const collectFromList = items => {
+    const hits = [];
+    for (const item of (items || [])) {
+      if (matchesQuery(item)) hits.push(item);
+      if (item.children) hits.push(...collectFromList(item.children));
+    }
+    return hits;
+  };
+
+  const groups = [];
+  const essHits = state.essentials.filter(e => e && matchesQuery(e));
+  if (essHits.length) groups.push({ label: 'Essentials', items: essHits });
+  for (const board of state.boards) {
+    const hits = [
+      ...board.speedDial.filter(matchesQuery),
+      ...board.columns.flatMap(col => collectFromList(col.items))
+    ];
+    if (hits.length) groups.push({ label: board.title, items: hits });
+  }
+
+  if (!groups.length) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = 'No bookmarks found.';
+    pane.appendChild(empty);
+    return;
+  }
+
+  for (const group of groups) {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'search-results-group';
+    const label = document.createElement('div');
+    label.className = 'search-results-group-label';
+    label.textContent = group.label;
+    groupEl.appendChild(label);
+    const list = document.createElement('div');
+    list.className = 'search-results-list';
+    group.items.forEach(item => list.appendChild(createSearchResultItem(item)));
+    groupEl.appendChild(list);
+    pane.appendChild(groupEl);
+  }
+}
+
+function createSearchResultItem(item) {
+  const el = document.createElement('a');
+  el.className = 'board-column-item bookmark-item';
+  el.href = item.url || '#';
+  el.target = '_blank';
+  el.rel = 'noreferrer noopener';
+
+  const favicon = document.createElement('span');
+  favicon.className = 'bookmark-favicon';
+  if (item.url) {
+    const img = document.createElement('img');
+    setFavicon(img, item, 64);
+    img.alt = '';
+    img.draggable = false;
+    favicon.appendChild(img);
+  }
+  el.appendChild(favicon);
+
+  const body = document.createElement('div');
+  body.className = 'bookmark-body';
+  const label = document.createElement('span');
+  label.className = 'bookmark-label';
+  label.textContent = item.title || item.url || 'Untitled';
+  body.appendChild(label);
+  if (item.url) {
+    const urlEl = document.createElement('span');
+    urlEl.className = 'search-result-url';
+    urlEl.textContent = item.url;
+    body.appendChild(urlEl);
+  }
+  if (item.tags && item.tags.length > 0) {
+    const tagsEl = document.createElement('div');
+    tagsEl.className = 'bookmark-tags';
+    item.tags.forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = tag;
+      applyTagColor(chip, tag);
+      tagsEl.appendChild(chip);
+    });
+    body.appendChild(tagsEl);
+  }
+  el.appendChild(body);
+  return el;
+}
+
+function applyTagColor(chip, tag) {
+  const color = state.settings.tagColors?.[tag];
+  if (color) {
+    chip.style.background = hexToRgba(color, 0.15);
+    chip.style.color = color;
+  }
 }
 
 function renderEssentials() {
@@ -68,10 +277,7 @@ function renderEssentials() {
 
       if (item.url) {
         const img = document.createElement('img');
-        try {
-          const { hostname } = new URL(item.url);
-          img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
-        } catch { img.src = ''; }
+        setFavicon(img, item, 64);
         img.alt = item.title || '';
         img.draggable = false;
         link.appendChild(img);
@@ -105,11 +311,11 @@ function renderEssentials() {
     });
 
     cell.addEventListener('dragover', event => {
-      if (!dragPayload) return;
-      if (dragPayload.area === 'essential' && dragPayload.slot === slot) return;
-      if (dragPayload.area === 'nav') return;
+      if (!dragPayload && !isExternalDrag(event)) return;
+      if (dragPayload?.area === 'essential' && dragPayload.slot === slot) return;
+      if (dragPayload?.area === 'nav') return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
+      event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
       cell.classList.add('drop-target');
     });
     cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));
@@ -117,6 +323,11 @@ function renderEssentials() {
       event.preventDefault();
       event.stopPropagation();
       cell.classList.remove('drop-target');
+      if (isExternalDrag(event)) {
+        const ext = getExternalDrop(event);
+        if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'essential', slot, item });
+        return;
+      }
       handleEssentialSlotDrop(slot);
     });
 
@@ -176,6 +387,9 @@ function createNavItem(item, depth = 0, parent = null) {
     el.addEventListener('click', () => {
       if (item.boardId) {
         state.activeBoardId = item.boardId;
+        elements.searchInput.value = '';
+        elements.mainPanel.classList.remove('search-active');
+        elements.searchResultsPane.classList.add('hidden');
         renderAll();
         saveState();
       }
@@ -230,15 +444,26 @@ function createNavItem(item, depth = 0, parent = null) {
   return el;
 }
 
+function applyBoardBackground(board) {
+  const mp = elements.mainPanel;
+  mp.style.backgroundImage = board.backgroundImage ? `url(${board.backgroundImage})` : '';
+  mp.style.setProperty('--container-alpha', (board.containerOpacity ?? 100) / 100);
+}
+
 function renderBoard() {
   const board = getActiveBoard();
   if (!board) {
     elements.mainPanel.classList.add('no-board');
+    elements.mainPanel.style.backgroundImage = '';
+    elements.boardTitle.textContent = '';
+    elements.speedDial.innerHTML = '';
+    elements.bookmarkColumns.innerHTML = '';
     return;
   }
   elements.mainPanel.classList.remove('no-board');
   elements.boardTitle.textContent = board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
+  applyBoardBackground(board);
   renderSpeedDial(board);
   renderColumns(board);
 }
@@ -257,12 +482,7 @@ function renderSpeedDial(board) {
 
     if (item.url) {
       const favicon = document.createElement('img');
-      try {
-        const { hostname } = new URL(item.url);
-        favicon.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=256`;
-      } catch {
-        favicon.src = '';
-      }
+      setFavicon(favicon, item, 256);
       favicon.alt = item.title || 'Bookmark';
       favicon.draggable = false;
       link.appendChild(favicon);
@@ -299,15 +519,6 @@ function renderSpeedDial(board) {
 
     elements.speedDial.appendChild(link);
   });
-
-  const addButton = document.createElement('button');
-  addButton.id = 'addSpeedDialBookmarkBtn';
-  addButton.className = 'icon-btn speed-dial-add-btn';
-  addButton.type = 'button';
-  addButton.title = 'Add Speed Dial Bookmark';
-  addButton.setAttribute('aria-label', 'Add Speed Dial Bookmark');
-  addButton.appendChild(icon('icon-bookmark-add'));
-  elements.speedDial.appendChild(addButton);
 }
 
 function renderColumns(board) {
@@ -325,6 +536,12 @@ function renderColumns(board) {
     columnEl.addEventListener('contextmenu', event => handleBoardColumnContextMenu(event, column.id));
 
     column.items.forEach(item => columnEl.appendChild(createBoardItemElement(item, column.id, 1, null)));
+    if (column.items.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'column-empty-state';
+      empty.textContent = 'Right-click to add';
+      columnEl.appendChild(empty);
+    }
     elements.bookmarkColumns.appendChild(columnEl);
   });
 }
@@ -401,12 +618,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     favicon.className = 'bookmark-favicon';
     if (item.url) {
       const faviconImg = document.createElement('img');
-      try {
-        const { hostname } = new URL(item.url);
-        faviconImg.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
-      } catch {
-        faviconImg.src = '';
-      }
+      setFavicon(faviconImg, item, 64);
       faviconImg.alt = '';
       faviconImg.draggable = false;
       favicon.appendChild(faviconImg);
@@ -428,6 +640,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
         const chip = document.createElement('span');
         chip.className = 'tag-chip';
         chip.textContent = tag;
+        applyTagColor(chip, tag);
         tagsEl.appendChild(chip);
       });
       body.appendChild(tagsEl);

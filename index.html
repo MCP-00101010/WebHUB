@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morpheus WebHub</title>
+  <link rel="stylesheet" href="source/styles.css" />
+</head>
+<body>
+
+  <!-- SVG icon sprite — must be first so <use href="#..."> works everywhere -->
+  <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+    <defs>
+
+      <symbol id="icon-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="6"  x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </symbol>
+
+      <!-- 3-tile grid + plus in the empty 4th slot -->
+      <symbol id="icon-board-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3"  y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="13" y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="3"  y="13" width="8" height="8" rx="1.5"/>
+        <line x1="17" y1="13" x2="17" y2="21"/>
+        <line x1="13" y1="17" x2="21" y2="17"/>
+      </symbol>
+
+      <!-- Folder shape + plus -->
+      <symbol id="icon-folder-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <line x1="12" y1="11" x2="12" y2="17"/>
+        <line x1="9"  y1="14" x2="15" y2="14"/>
+      </symbol>
+
+      <!-- Bookmark ribbon + plus -->
+      <symbol id="icon-bookmark-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-3.5L5 21V4a1 1 0 0 1 1-1z"/>
+        <line x1="12" y1="7"  x2="12" y2="13"/>
+        <line x1="9"  y1="10" x2="15" y2="10"/>
+      </symbol>
+
+      <!-- T-heading on left + plus on right -->
+      <symbol id="icon-title-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4"  y1="6"  x2="14" y2="6"/>
+        <line x1="9"  y1="6"  x2="9"  y2="17"/>
+        <line x1="17" y1="13" x2="17" y2="21"/>
+        <line x1="13" y1="17" x2="21" y2="17"/>
+      </symbol>
+
+      <!-- Three horizontal rules on left + plus on right -->
+      <symbol id="icon-divider-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3"  y1="7"  x2="15" y2="7"/>
+        <line x1="3"  y1="12" x2="15" y2="12"/>
+        <line x1="3"  y1="17" x2="15" y2="17"/>
+        <line x1="19" y1="9"  x2="19" y2="15"/>
+        <line x1="16" y1="12" x2="22" y2="12"/>
+      </symbol>
+
+      <!-- Gear / cog (Feather Icons style) -->
+      <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </symbol>
+
+      <!-- Chevron down (collapse folder) -->
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </symbol>
+
+      <!-- Chevron right (expand folder) -->
+      <symbol id="icon-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 6 15 12 9 18"/>
+      </symbol>
+
+      <!-- Generic plus (speed-dial add) -->
+      <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5"  x2="12" y2="19"/>
+        <line x1="5"  y1="12" x2="19" y2="12"/>
+      </symbol>
+
+    </defs>
+  </svg>
+
+  <div class="app-shell">
+    <aside id="navSidebar" class="sidebar expanded" aria-label="Navigation sidebar">
+      <div class="sidebar-header">
+        <h1 id="hubNameEl">Morpheus WebHub</h1>
+        <button id="globalSettingsBtn" class="icon-btn" title="Global Settings" aria-label="Global Settings">
+          <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-search">
+        <input id="searchInput" type="search" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="nav-section-label">Essentials</div>
+      <div id="essentialsGrid" class="essentials-grid"></div>
+      <div class="nav-section-label">Boards</div>
+
+      <div id="navList" class="nav-list" role="tree"></div>
+    </aside>
+
+    <main id="mainPanel" class="main-panel">
+      <section id="searchResultsPane" class="search-results-pane hidden"></section>
+      <section class="board-header">
+        <div class="board-title-group">
+          <h2 id="boardTitle">Board</h2>
+        </div>
+        <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
+          <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
+        </button>
+      </section>
+
+      <section class="speed-dial-panel">
+        <div id="speedDial" class="speed-dial"></div>
+      </section>
+
+<section class="bookmark-pane">
+        <div id="bookmarkColumns" class="columns"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay hidden">
+    <div id="modalCard" class="modal-card">
+      <h3 id="modalTitle">Modal</h3>
+      <form id="modalForm" class="modal-form">
+        <div class="form-row">
+          <label id="modalLabel1" for="modalInput1">Name</label>
+          <input id="modalInput1" type="text" placeholder="Enter value" />
+        </div>
+        <div class="form-row hidden" id="modalUrlRow">
+          <label for="modalInput2">URL</label>
+          <input id="modalInput2" type="text" placeholder="duckduckgo.com" />
+        </div>
+        <div class="form-row hidden" id="modalTagsRow">
+          <label for="modalInput3">Tags</label>
+          <input id="modalInput3" type="text" placeholder="work tools productivity" />
+        </div>
+        <div class="form-row hidden" id="modalSelectRow">
+          <label for="modalSelect">Columns</label>
+          <select id="modalSelect">
+            <option value="3">3 columns</option>
+            <option value="4">4 columns</option>
+            <option value="5">5 columns</option>
+          </select>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="modalCancelBtn" class="secondary-btn">Cancel</button>
+          <button type="submit" id="modalSubmitBtn" class="primary-btn">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="boardSettingsPanel" class="settings-panel hidden">
+      <div id="bstgHeader" class="bstg-header">
+        <input id="bstgTitle" type="text" class="bstg-title-input" placeholder="New Board" />
+        <div class="bstg-columns-radio">
+          <span class="bstg-columns-label">Columns</span>
+          <label class="col-radio-label" title="3 columns"><input type="radio" name="bstgCols" value="3" /><span>3</span></label>
+          <label class="col-radio-label" title="4 columns"><input type="radio" name="bstgCols" value="4" /><span>4</span></label>
+          <label class="col-radio-label" title="5 columns"><input type="radio" name="bstgCols" value="5" /><span>5</span></label>
+        </div>
+      </div>
+      <div class="settings-body">
+
+        <div class="settings-section">
+          <div class="settings-section-label">Background Image</div>
+          <div class="settings-row">
+            <span>URL</span>
+            <input id="bstgBgUrl" type="text" class="settings-text-input" placeholder="https://..." />
+          </div>
+          <div id="bstgDropZone" class="bg-drop-zone">
+            <span>Drop an image file here</span>
+          </div>
+          <div class="settings-row">
+            <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Container Transparency</div>
+          <div class="settings-row">
+            <span>Opacity</span>
+            <div class="settings-slider-group">
+              <input id="bstgOpacity" type="range" min="0" max="100" step="1" />
+              <span id="bstgOpacityVal">100</span><span class="stepper-unit">%</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="form-actions">
+        <button type="button" id="boardSettingsCancelBtn" class="secondary-btn hidden">Cancel</button>
+        <button type="button" id="boardSettingsDoneBtn" class="primary-btn">Done</button>
+      </div>
+    </div>
+
+    <div id="settingsPanel" class="settings-panel hidden">
+      <h3>Global Settings</h3>
+      <div class="settings-body">
+
+        <div class="settings-section">
+          <div class="settings-section-label">Hub</div>
+          <div class="settings-row">
+            <span>Hub Name</span>
+            <input id="stgHubName" type="text" class="settings-text-input" placeholder="My WebHub" />
+          </div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgHubNameFont" type="number" min="10" max="48" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgHubNameFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="hubNameBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="hubNameItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="hubNameUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="hubNameTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="hubNameTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="hubNameTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgHubNameColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="hubNameColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Board Title</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgBoardTitleFont" type="number" min="14" max="48" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgBoardTitleFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="boardTitleBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="boardTitleItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="boardTitleUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgBoardTitleColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="boardTitleColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Boards</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgBoardFont" type="number" min="10" max="24" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgBoardFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="boardBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="boardItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="boardUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgBoardColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="boardColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Bookmarks</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgBookmarkFont" type="number" min="10" max="24" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgBookmarkFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="bookmarkBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="bookmarkItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="bookmarkUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="bookmarkTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="bookmarkTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="bookmarkTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgBookmarkColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="bookmarkColor" title="Reset to default">×</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Show tags</span>
+            <label class="settings-toggle">
+              <input id="stgShowTags" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Folders</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgFolderFont" type="number" min="10" max="24" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgFolderFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="folderBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="folderItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="folderUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="folderTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="folderTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="folderTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgFolderColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="folderColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Titles &amp; Dividers</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgTitleFont" type="number" min="8" max="24" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgTitleFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="titleBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="titleItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="titleUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgTitleColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="titleColor" title="Reset to default">×</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Line color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgTitleLineColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="titleLineColor" title="Reset to default">×</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Line style</span>
+            <select id="stgTitleLineStyle">
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+              <option value="double">Double</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <span>Line thickness</span>
+            <div class="settings-stepper">
+              <button type="button" id="stgLineThicknessMinus" class="stepper-btn">−</button>
+              <span id="stgLineThicknessVal">1</span><span class="stepper-unit">px</span>
+              <button type="button" id="stgLineThicknessPlus" class="stepper-btn">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section span-full">
+          <div class="settings-section-label">Behaviour</div>
+          <div class="settings-row">
+            <span>Warn on close if unsaved</span>
+            <label class="settings-toggle">
+              <input id="stgWarnOnClose" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Delete confirmation</span>
+            <div class="confirm-delete-toggles">
+              <div class="confirm-delete-item">
+                <span>Boards</span>
+                <label class="settings-toggle"><input id="stgConfirmDeleteBoard" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
+              <div class="confirm-delete-item">
+                <span>Bookmarks</span>
+                <label class="settings-toggle"><input id="stgConfirmDeleteBookmark" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
+              <div class="confirm-delete-item">
+                <span>Folders</span>
+                <label class="settings-toggle"><input id="stgConfirmDeleteFolder" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
+              <div class="confirm-delete-item">
+                <span>Titles/Dividers</span>
+                <label class="settings-toggle"><input id="stgConfirmDeleteTitleDivider" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section span-full">
+          <div class="settings-section-label">Tag Colors</div>
+          <div id="stgTagColors" class="tag-colors-list"></div>
+        </div>
+
+        <div class="settings-section span-full">
+          <div class="settings-section-label">Data</div>
+          <div class="settings-row">
+            <span>Export data</span>
+            <button type="button" id="stgExportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Download JSON</button>
+          </div>
+          <div class="settings-row">
+            <span id="stgLastExported" class="settings-muted">Never exported</span>
+          </div>
+          <div class="settings-row">
+            <span>Import data</span>
+            <button type="button" id="stgImportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Load JSON</button>
+            <input type="file" id="stgImportFile" accept=".json" style="display:none" />
+          </div>
+        </div>
+
+      </div>
+      <div class="form-actions">
+        <button type="button" id="settingsDoneBtn" class="primary-btn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmOverlay" class="modal-overlay hidden">
+    <div class="modal-card confirm-card">
+      <p id="confirmMessage"></p>
+      <div class="form-actions">
+        <button type="button" id="confirmCancelBtn" class="secondary-btn">Cancel</button>
+        <button type="button" id="confirmOkBtn" class="primary-btn danger-btn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="contextMenu" class="context-menu hidden"></div>
+  <div id="tooltip" class="tooltip hidden"></div>
+  <script src="source/icons.js" defer></script>
+  <script src="source/state.js" defer></script>
+  <script src="source/render.js" defer></script>
+  <script src="source/dnd.js" defer></script>
+  <script src="source/app.js" defer></script>
+</body>
+</html>

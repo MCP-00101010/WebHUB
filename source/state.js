@@ -1,18 +1,49 @@
 const STORAGE_KEY = 'morpheus-webhub-state';
+const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
+
+let isDirty = false;
 
 const defaultSettings = {
+  warnOnClose: false,
+  confirmDeleteBoard: false,
+  confirmDeleteBookmark: false,
+  confirmDeleteFolder: false,
+  confirmDeleteTitleDivider: false,
   bookmarkFontSize: 14,
+  bookmarkFontFamily: '',
+  bookmarkBold: false, bookmarkItalic: false, bookmarkUnderline: false,
   showTags: true,
   folderFontSize: 15,
+  folderFontFamily: '',
+  folderBold: false, folderItalic: false, folderUnderline: false,
   titleFontSize: 12,
   titleLineThickness: 1,
+  titleLineColor: '',
+  titleLineStyle: 'solid',
+  titleFontFamily: '',
+  titleBold: false, titleItalic: false, titleUnderline: false,
+  hubNameFontSize: 18,
+  hubNameFontFamily: '',
+  hubNameBold: false, hubNameItalic: false, hubNameUnderline: false,
+  hubNameTextAlign: 'left', hubNameColor: '',
   boardTitleFontSize: 22,
-  boardFontSize: 14
+  boardTitleFontFamily: '',
+  boardTitleBold: false, boardTitleItalic: false, boardTitleUnderline: false,
+  boardTitleTextAlign: 'left', boardTitleColor: '',
+  boardFontSize: 14,
+  boardFontFamily: '',
+  boardBold: false, boardItalic: false, boardUnderline: false,
+  boardTextAlign: 'left', boardColor: '',
+  bookmarkTextAlign: 'left', bookmarkColor: '',
+  folderTextAlign: 'left', folderColor: '',
+  titleColor: '',
+  tagColors: {}
 };
 
 const defaultState = {
   activeBoardId: 'board-1',
   hubName: 'Morpheus WebHub',
+  lastExported: null,
   settings: { ...defaultSettings },
   essentials: Array(10).fill(null),
   boards: [
@@ -20,7 +51,8 @@ const defaultState = {
       id: 'board-1',
       title: 'Home Board',
       columnCount: 3,
-      background: '',
+      backgroundImage: '',
+      containerOpacity: 100,
       speedDial: [
         { id: 'sd-1', type: 'bookmark', title: 'Inbox', url: 'https://mail.example.com', tags: [] },
         { id: 'sd-2', type: 'bookmark', title: 'Docs', url: 'https://www.example.com', tags: [] }
@@ -51,9 +83,21 @@ let state = loadState();
 function migrateItems(items) {
   for (const item of (items || [])) {
     if (item.type === 'divider') { item.type = 'title'; item.title = ''; }
-    if (item.type === 'bookmark' && !item.tags) item.tags = [];
+    if (item.type === 'bookmark') {
+      if (!item.tags) item.tags = [];
+      if (item.faviconCache === undefined) item.faviconCache = '';
+    }
     if (item.children) migrateItems(item.children);
   }
+}
+
+function collectReferencedBoardIds(items) {
+  const ids = new Set();
+  for (const item of (items || [])) {
+    if (item.type === 'board' && item.boardId) ids.add(item.boardId);
+    if (item.children) for (const id of collectReferencedBoardIds(item.children)) ids.add(id);
+  }
+  return ids;
 }
 
 function loadState() {
@@ -62,9 +106,12 @@ function loadState() {
   try {
     const parsed = JSON.parse(saved);
     for (const board of (parsed.boards || [])) {
+      if (board.backgroundImage === undefined) board.backgroundImage = '';
+      if (board.containerOpacity === undefined) board.containerOpacity = 100;
       for (const item of (board.speedDial || [])) {
         if (!item.type) item.type = 'bookmark';
         if (!item.tags) item.tags = [];
+        if (item.faviconCache === undefined) item.faviconCache = '';
       }
       for (const col of (board.columns || [])) {
         migrateItems(col.items);
@@ -74,11 +121,20 @@ function loadState() {
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
+    if (!parsed.settings.tagColors || typeof parsed.settings.tagColors !== 'object') parsed.settings.tagColors = {};
     if (!parsed.essentials) parsed.essentials = Array(10).fill(null);
     while (parsed.essentials.length < 10) parsed.essentials.push(null);
     for (let i = 0; i < parsed.essentials.length; i++) {
       const e = parsed.essentials[i];
       if (e && !e.tags) e.tags = [];
+      if (e && e.faviconCache === undefined) e.faviconCache = '';
+    }
+    // Remove boards with no nav item referencing them
+    const referencedIds = collectReferencedBoardIds(parsed.navItems);
+    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id));
+    if (!parsed.boards.some(b => b.id === parsed.activeBoardId)) {
+      const first = parsed.boards[0] || null;
+      parsed.activeBoardId = first ? first.id : null;
     }
     return parsed;
   } catch (error) {
@@ -89,6 +145,7 @@ function loadState() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  isDirty = true;
 }
 
 function getActiveBoard() {
@@ -169,10 +226,17 @@ function removeNavItemById(itemId, list = state.navItems) {
   return null;
 }
 
+function referencedBoardIds() {
+  return collectReferencedBoardIds(state.navItems);
+}
+
 function deleteBoardAndNavItem(navItemId, boardId) {
   removeNavItemById(navItemId);
-  state.boards = state.boards.filter(b => b.id !== boardId);
-  if (state.activeBoardId === boardId) {
+  // Remove by explicit boardId and also sweep any boards no longer in nav
+  const referenced = referencedBoardIds();
+  state.boards = state.boards.filter(b => referenced.has(b.id));
+  const activeStillExists = state.boards.some(b => b.id === state.activeBoardId);
+  if (!activeStillExists) {
     const next = findNextNavBoard(state.navItems);
     state.activeBoardId = next ? next.boardId : null;
   }
@@ -252,13 +316,13 @@ function addBookmark(title, url, columnId, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
-  column.items.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags });
+  column.items.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
 }
 
 function addSpeedDialBookmark(title, url, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
   const board = getActiveBoard();
-  board.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags });
+  board.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
 }
 
 function addBookmarkItem(type, title, columnId) {
@@ -272,15 +336,22 @@ function addBookmarkItem(type, title, columnId) {
 function updateBoardSettings(title, columnCount) {
   const board = getActiveBoard();
   board.title = title;
-  board.columnCount = parseInt(columnCount, 10) || 3;
-  board.columns = board.columns.slice(0, board.columnCount);
-  while (board.columns.length < board.columnCount) {
-    board.columns.push({
-      id: `col-${Date.now()}-${board.columns.length + 1}`,
-      title: `Column ${board.columns.length + 1}`,
-      items: []
-    });
+  const newCount = parseInt(columnCount, 10) || 3;
+  if (newCount < board.columns.length) {
+    const removed = board.columns.slice(newCount);
+    const lastKept = board.columns[newCount - 1];
+    for (const col of removed) lastKept.items.push(...col.items);
+    board.columns = board.columns.slice(0, newCount);
+  } else {
+    while (board.columns.length < newCount) {
+      board.columns.push({
+        id: `col-${Date.now()}-${board.columns.length + 1}`,
+        title: `Column ${board.columns.length + 1}`,
+        items: []
+      });
+    }
   }
+  board.columnCount = newCount;
   syncBoardTitleInNav(board.id, board.title);
 }
 
@@ -314,6 +385,7 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
   const board = getActiveBoard();
   const found = findBoardItemInColumns(board, contextTarget.itemId);
   if (found?.item?.type === 'bookmark') {
+    if (normalizeUrl(url) !== found.item.url) found.item.faviconCache = '';
     found.item.title = title;
     found.item.url = normalizeUrl(url);
     found.item.tags = tags;
@@ -322,10 +394,32 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
 
 function setEssential(slot, title, url, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
-  state.essentials[slot] = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags };
+  state.essentials[slot] = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' };
   return true;
 }
 
 function removeEssential(slot) {
   state.essentials[slot] = null;
+}
+
+function trimFaviconCache(skipItem = null) {
+  const candidates = [];
+  const walk = (list) => {
+    for (const item of (list || [])) {
+      if (item && item.faviconCache && item !== skipItem) candidates.push(item);
+      if (item && item.children) walk(item.children);
+    }
+  };
+  walk(state.essentials);
+  for (const board of state.boards) {
+    walk(board.speedDial);
+    for (const col of board.columns) walk(col.items);
+  }
+  let total = candidates.reduce((s, i) => s + i.faviconCache.length, 0);
+  if (skipItem?.faviconCache) total += skipItem.faviconCache.length;
+  for (const item of candidates) {
+    if (total <= MAX_FAVICON_CACHE_BYTES) break;
+    total -= item.faviconCache.length;
+    item.faviconCache = '';
+  }
 }

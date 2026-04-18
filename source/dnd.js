@@ -1,5 +1,25 @@
 let dragPayload = null;
 
+function isExternalDrag(event) {
+  return !dragPayload;
+}
+
+function getExternalDrop(event) {
+  const mozUrl = event.dataTransfer.getData('text/x-moz-url');
+  if (mozUrl) {
+    const [url, title] = mozUrl.split('\n');
+    return { url: (url || '').trim(), title: (title || '').trim() };
+  }
+  const uriList = event.dataTransfer.getData('text/uri-list');
+  if (uriList) {
+    const url = uriList.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
+    if (url) return { url, title: '' };
+  }
+  const text = event.dataTransfer.getData('text/plain');
+  if (text?.trim().match(/^https?:\/\//)) return { url: text.trim(), title: '' };
+  return null;
+}
+
 function removeDragPlaceholders() {
   document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
@@ -153,7 +173,8 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 // --- Board column drag & drop ---
 
 function handleBoardColumnDragOver(event) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload && !isExternalDrag(event)) return;
+  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential') return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
@@ -199,6 +220,13 @@ function handleBoardColumnDrop(event, columnId) {
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.classList.remove('drop-target');
+  removeDragPlaceholders();
+
+  if (isExternalDrag(event)) {
+    const ext = getExternalDrop(event);
+    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'board-empty', columnId });
+    return;
+  }
 
   if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
 
@@ -436,8 +464,8 @@ function handleSpeedDialItemDrop(event, targetItem) {
 }
 
 function handleSpeedDialContainerDragOver(event) {
-  if (!dragPayload) return;
-  if (dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
+  if (!dragPayload && !isExternalDrag(event)) return;
+  if (dragPayload && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
@@ -465,6 +493,12 @@ function handleSpeedDialContainerDragOver(event) {
 
 function handleSpeedDialContainerDrop(event) {
   event.preventDefault();
+  if (isExternalDrag(event)) {
+    removeDragPlaceholders();
+    const ext = getExternalDrop(event);
+    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial' });
+    return;
+  }
   if (!dragPayload) return;
   const board = getActiveBoard();
   if (!board) { removeDragPlaceholders(); return; }
