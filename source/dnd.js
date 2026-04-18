@@ -48,6 +48,7 @@ function applyDragImage(event, element) {
 
 function handleEssentialSlotDrop(targetSlot) {
   if (!dragPayload) return;
+  pushUndoSnapshot();
   const board = getActiveBoard();
 
   if (dragPayload.area === 'essential') {
@@ -113,6 +114,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   event.preventDefault();
   event.stopPropagation();
   removeDragPlaceholders();
+  pushUndoSnapshot();
 
   const board = getActiveBoard();
   const position = event.currentTarget.dataset.dropPosition || 'before';
@@ -233,6 +235,7 @@ function handleBoardColumnDrop(event, columnId) {
   }
 
   if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  pushUndoSnapshot();
 
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId);
@@ -304,6 +307,7 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   event.stopPropagation();
   removeDragPlaceholders();
   event.currentTarget.classList.remove('drop-target');
+  pushUndoSnapshot();
 
   const board = getActiveBoard();
   let dragged;
@@ -360,6 +364,7 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   event.stopPropagation();
   removeDragPlaceholders();
   event.currentTarget.classList.remove('drop-target');
+  pushUndoSnapshot();
 
   const board = getActiveBoard();
   let dragged;
@@ -427,6 +432,7 @@ function handleSpeedDialItemDrop(event, targetItem) {
   event.preventDefault();
   event.stopPropagation();
   removeDragPlaceholders();
+  pushUndoSnapshot();
 
   const board = getActiveBoard();
   const position = event.currentTarget.dataset.dropPosition || 'before';
@@ -504,6 +510,7 @@ function handleSpeedDialContainerDrop(event) {
     return;
   }
   if (!dragPayload) return;
+  pushUndoSnapshot();
   const board = getActiveBoard();
   if (!board) { removeDragPlaceholders(); return; }
 
@@ -574,6 +581,7 @@ function handleNavDrop(event, targetItem, parent) {
   event.preventDefault();
   event.stopPropagation();
   removeDragPlaceholders();
+  pushUndoSnapshot();
 
   const targetPath = findNavItemPath(targetItem.id);
   const draggedPath = findNavItemPath(dragPayload.itemId);
@@ -633,6 +641,7 @@ function handleNavListDrop(event) {
   event.preventDefault();
   removeDragPlaceholders();
   if (!dragPayload || dragPayload.area !== 'nav') return;
+  pushUndoSnapshot();
   const dragged = removeNavItemById(dragPayload.itemId);
   if (!dragged) return;
   state.navItems.push(dragged);

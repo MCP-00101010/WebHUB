@@ -591,6 +591,12 @@ button {
   display: none !important;
 }
 
+.settings-warning {
+  color: var(--danger, #e05555);
+  font-size: 0.72rem;
+  padding: 2px 0 0;
+}
+
 .modal-card {
   width: min(520px, calc(100% - 40px));
   padding: 26px;
@@ -1298,6 +1304,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 4px;
 }
 
 .sidebar-version-btn {
@@ -1314,6 +1321,137 @@ button {
 .sidebar-version-btn:hover {
   background: var(--panel-strong);
   color: var(--text);
+}
+
+.sidebar-trash-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+  margin-right: auto;
+}
+
+.sidebar-trash-btn:hover {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.trash-count {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  background: var(--danger);
+  color: white;
+  font-size: 0.6rem;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  pointer-events: none;
+}
+
+/* --- Board header actions group --- */
+
+.board-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- Undo/redo disabled state --- */
+
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: transparent;
+}
+
+/* --- Trash panel --- */
+
+.trash-panel {
+  width: 420px;
+  max-width: 90vw;
+}
+
+.trash-body {
+  overflow-y: auto;
+  max-height: 380px;
+  padding: 0 4px;
+}
+
+.trash-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 28px 0;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.trash-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.trash-item-name {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trash-item-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.trash-restore-btn,
+.trash-delete-btn {
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  height: auto;
+  min-height: 0;
+}
+
+.trash-delete-btn {
+  background: var(--danger);
+  color: white;
+  padding: 3px 8px;
 }
 
 /* --- Settings header & tabs --- */
@@ -1461,3 +1599,145 @@ button {
   color: var(--text-muted);
   font-size: 0.78rem;
 }
+
+/* --- Phase 3: Bookmark management --- */
+
+/* Duplicate URL warning in modal */
+.modal-duplicate-warning {
+  font-size: 0.75rem;
+  color: #f59e0b;
+  padding: 2px 0;
+}
+
+/* Tag autocomplete */
+.tags-input-container {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.tags-input-container input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tag-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  z-index: 400;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tag-suggestion-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.tag-suggestion-item:hover,
+.tag-suggestion-item:focus {
+  background: var(--panel-muted);
+}
+
+/* Bulk selection toolbar */
+.bulk-toolbar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 300;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.bulk-toolbar-count {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  margin-right: 2px;
+}
+
+.bulk-toolbar .danger-btn,
+.bulk-toolbar .secondary-btn {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  height: auto;
+  min-height: 0;
+}
+
+/* Item selection checkbox */
+.item-checkbox {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+  flex-shrink: 0;
+  position: relative;
+  margin-right: 4px;
+}
+
+.board-column-item:hover .item-checkbox,
+.board-column-item.selected .item-checkbox {
+  opacity: 1;
+}
+
+.board-column-item.selected .item-checkbox {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.board-column-item.selected .item-checkbox::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0px;
+  width: 5px;
+  height: 8px;
+  border: 2px solid white;
+  border-left: none;
+  border-top: none;
+  transform: rotate(45deg);
+}
+
+.board-column-item.selected {
+  background: rgba(109, 124, 255, 0.1) !important;
+  border-color: rgba(109, 124, 255, 0.35) !important;
+}
+
+/* Import HTML file label button */
+.stg-file-label {
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  height: auto;
+  min-height: 0;
+}
+
+.stg-file-label input[type="file"] {
+  display: none;
+}
+

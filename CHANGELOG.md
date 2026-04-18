@@ -5,9 +5,32 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.6.0] — 2026-04-18
+
+### Added
+
+- Bulk select: item checkboxes appear on hover; floating bulk toolbar with Delete, Add Tags, Move to Board, and Deselect actions; Escape clears selection
+- "Move to board" in bookmark context menu (visible when more than one board exists)
+- Browser bookmark HTML import (Netscape format) — imports into the active board's first column, preserving folder structure
+- Duplicate URL detection — inline amber warning in the add-bookmark modal when the URL already exists anywhere in the hub
+- Smart tag autocomplete — dropdown of known tags while typing in the tags field; Tab accepts the top suggestion
+
+---
+
+## [0.5.0] — 2026-04-18
+
+### Added
+
+- Undo / redo: Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z); 50-step in-memory snapshot stack; undo and redo buttons in the board header (disabled when stack is empty)
+- Recently Deleted buffer: persistent trash (max 20 items, separate localStorage key); draggable trash panel with per-item restore and permanent delete; trash button with item-count badge in the sidebar footer; Clear All action
+- Essentials: configurable display count (1–24) via stepper in Behavior settings; warning shown when stored essentials exceed the current display count; bookmarks assigned to the dropped slot rather than the first free slot
+
+---
+
 ## [0.4.0] — 2026-04-18
 
 ### Added
+
 - Bookmark management: create, edit, delete bookmarks with favicons, tags, and drag-and-drop
 - Board system: multiple boards with configurable column counts (3–5)
 - Speed Dial bar per board; show/hide toggle per board in board settings

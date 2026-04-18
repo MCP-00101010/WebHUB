@@ -1,36 +1,17 @@
 # TODO for Morpheus WebHUB
 
-## File structure
-
 ## Optimization
 
-- add undo/redo for deletions — easy to accidentally remove something with no recovery
-- add a "recently deleted" buffer as an alternative recovery mechanism for accidental deletes
 - auto-export on a schedule (e.g. daily JSON backup written to Downloads)
 
 ## UI
 
-- ~~sidebar collapse toggle — chevron button to hide the sidebar and give the board full width~~ ✓
-- ~~smooth transition / animation when switching boards~~ ✓
-- ~~keyboard shortcut to focus search bar (`/` or `Ctrl+F`)~~ ✓
-- ~~keyboard shortcut `N` for new bookmark in the focused column~~ ✓
-- ~~Global Settings panel getting a little bit cluttered. Split between behavioral and style settings.~~ ✓
 - board tab bar as alternative navigation style (tabs across the top instead of sidebar list) (possibly a great QoL thing. but i will eventually have a rather big collection of boards. thats why i want to be able to store boards inside folders. possible solution: select a board folder in the navpane and the boards in this folder will go into the board tab bar)
-- ~~Global Settings: Select Icon size for Speed Dial / Essentials via radio buttons. Give small/medium/large options. set them with sensible values.~~ ✓
-- ~~Essentials: enable/disable the display of the Essential rows in global settings behavioral settings. (not every user might want them). If disabled, don't delete any stored essentials. just don't show them.~~ ✓
-- ~~Essentials: Adjust the amount of Essentials displayed. Add Setting to Essentials box in global behavioral settings. Spread them equally amongst rows based on icon size / sidebar width. If amount of displayed essentials is less than actually stored essentials, don't delete them. just don't display them.~~ ✓ Essentials refactored to compact bookmark list; display count stepper in Behavior settings (1–24)
-- ~~Speed Dial: enable/disable the display of the speed dial bar in the board settings. if disabled don't delete the speed dial bookmarks. just don't display the bar.~~ ✓
-- smart tags prediction: when the user adds tags, predict the tag while typing based on the list of already known tags. tab-key to complete tag. also possibly have a separate edit tags panel available via context menu with extended tab management. List all known tags, add tags to bookmark by clicking on them, remove tag by clicking on it etc. (Or better to add this to the general create/edit bookmark panel?)
+- tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
 
 ## Bookmarks
 
-- ~~"Open all" context menu option on folders — opens every bookmark in the folder as new tabs~~ ✓
-- ~~favicon refresh option on right-click context menu (force re-fetch, clear stale cache)~~ ✓
-- ~~duplicate / copy bookmark via context menu~~ ✓
-- "Move to board" option in bookmark context menu (alternative to cross-board drag)
-- bulk operations: multi-select bookmarks for bulk delete, tag, or move
-- browser bookmark import — parse the standard HTML export format all browsers produce
-- duplicate bookmark detection / warning when adding a URL already in the hub
+*(all core features done — see CHANGELOG)*
 
 ## Board Backgrounds
 
@@ -90,13 +71,14 @@ How do we handle the Hub run on different browsers then? As I understand Chrome 
 
 ## Compatibility / Portability / Readability
 
-- add native File Access API to the Hub for users on Chromium based Browsers so the extension is ony needed on Firefox Browsers.
+- add native File Access API to the Hub for users on Chromium based Browsers so the extension is only needed on Firefox Browsers.
 - Write Documentation for the Hub
 - Add localisation for other languages to the Hub
 - (Re-) Structure the code with readability in mind. Add human-readable comments to the code to explain what each data type is, what each function does etc.
-- ~~add a version numbering system to the code~~ ✓ `APP_VERSION = '0.4.0'` in app.js; version badge in sidebar footer
-- ~~add an About dialog~~ ✓ About panel accessible from the version badge
-- ~~add a changelog~~ ✓ `CHANGELOG.md` created at project root
+
+## Current issues / bugs
+
+- when dragging an object into an empty column, the blue preview indicator shows at the bottom of the column but the object gets inserted at the top. move indicator to the top as well (minor bug)
 
 ## Action Plan
 
@@ -104,37 +86,21 @@ Strategic implementation order based on dependency analysis. Each phase minimise
 
 ---
 
-### ~~Phase 1~~ — Polish & quick wins ✓ *Completed 2026-04-18*
+### Phase 1 — Polish & quick wins ✓ *Completed 2026-04-18*
 
-- ~~Version number + About dialog~~ ✓ `APP_VERSION = '0.4.0'`, sidebar badge, About panel
-- ~~Changelog~~ ✓ `CHANGELOG.md` created, updated on every commit from here
-- ~~Settings panel split (behavioral / style tabs)~~ ✓ Style / Behavior tabs in Global Settings
-- ~~Icon size radio buttons for Speed Dial / Essentials~~ ✓ S/M/L radios in Behavior tab
-- ~~Essentials show/hide toggle + Speed Dial show/hide per-board toggle~~ ✓
-- ~~Keyboard shortcuts (`/` for search focus, `N` for new bookmark)~~ ✓ also `Ctrl+F`
-- ~~Sidebar collapse toggle~~ ✓ chevron button, animated transition
-- ~~Smooth board switch transition~~ ✓ fade-in animation on board change
-- ~~"Open all" context menu on folders~~ ✓
-- ~~Favicon refresh on right-click, duplicate/copy bookmark~~ ✓
+See [0.4.0] in CHANGELOG.
 
 ---
 
-### Phase 2 — State architecture stabilisation
-*State schema changes. Must land before widgets or the extension touch state, to avoid migrating twice.*
+### Phase 2 — State architecture stabilisation ✓ *Completed 2026-04-18*
 
-- ~~**Essentials refactor** — convert fixed 10-slot array to a proper bookmark list with a configurable display count.~~ ✓ Compact array, display count 1–24 in settings, full DnD migration
-- Undo / redo + recently-deleted buffer — also touches state internals; bundle with the essentials refactor session to keep migrations together.
+See [0.5.0] in CHANGELOG.
 
 ---
 
-### Phase 3 — Bookmark management features
-*Self-contained feature set with no impact on other phases.*
+### Phase 3 — Bookmark management features ✓ *Completed 2026-04-18*
 
-- "Move to board" context menu option
-- Bulk select / bulk operations (delete, tag, move)
-- Browser bookmark HTML import
-- Duplicate URL detection on add
-- Smart tag prediction — autocomplete while typing tags using the known-tag list; Tab to complete. Optionally, a tag manager panel (list all tags, click to add/remove from a bookmark). Build after bulk-tag operations so the tag data model is settled.
+See [0.6.0] in CHANGELOG.
 
 ---
 

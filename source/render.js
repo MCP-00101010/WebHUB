@@ -477,6 +477,7 @@ function renderBoard() {
 
   const isNewBoard = board.id !== lastRenderedBoardId;
   if (isNewBoard) {
+    if (typeof clearSelection === 'function') clearSelection();
     lastRenderedBoardId = board.id;
     elements.mainPanel.classList.remove('board-fade-in');
     void elements.mainPanel.offsetWidth;
@@ -583,9 +584,15 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
 
   if (item.type === 'folder') {
     itemEl.classList.add('folder-card');
+    if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
 
     const header = document.createElement('div');
     header.className = 'folder-header';
+
+    const folderCheckbox = document.createElement('div');
+    folderCheckbox.className = 'item-checkbox';
+    folderCheckbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+    header.appendChild(folderCheckbox);
 
     const collapseBtn = document.createElement('button');
     collapseBtn.type = 'button';
@@ -640,6 +647,12 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     }
   } else if (item.type === 'bookmark') {
     itemEl.classList.add('bookmark-item');
+    if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
+
+    const bmCheckbox = document.createElement('div');
+    bmCheckbox.className = 'item-checkbox';
+    bmCheckbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+    itemEl.appendChild(bmCheckbox);
 
     const favicon = document.createElement('span');
     favicon.className = 'bookmark-favicon';

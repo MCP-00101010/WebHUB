@@ -417,6 +417,131 @@ function removeEssential(slot) {
   trimEssentialsTail();
 }
 
+// --- Bookmark management utilities ---
+
+function findDuplicateUrl(url) {
+  if (!url || !url.trim()) return null;
+  const normalized = normalizeUrl(url);
+  const walk = (items, location) => {
+    for (const item of (items || [])) {
+      if (item?.type === 'bookmark' && item.url === normalized) return { item, location };
+      if (item?.children) { const r = walk(item.children, location); if (r) return r; }
+    }
+    return null;
+  };
+  for (const e of state.essentials) {
+    if (e?.type === 'bookmark' && e.url === normalized) return { item: e, location: 'Essentials' };
+  }
+  for (const board of state.boards) {
+    for (const sd of board.speedDial) {
+      if (sd.url === normalized) return { item: sd, location: `${board.title} (Speed Dial)` };
+    }
+    for (const col of board.columns) {
+      const r = walk(col.items, board.title);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+function getKnownTags() {
+  const tags = new Set();
+  const walk = (items) => {
+    for (const item of (items || [])) {
+      if (item?.tags) item.tags.forEach(t => tags.add(t));
+      if (item?.children) walk(item.children);
+    }
+  };
+  walk(state.essentials);
+  for (const board of state.boards) {
+    walk(board.speedDial);
+    for (const col of board.columns) walk(col.items);
+  }
+  return Array.from(tags).sort();
+}
+
+// --- Undo snapshot ---
+
+function restoreStateSnapshot(jsonStr) {
+  state = JSON.parse(jsonStr);
+}
+
+// --- Recently deleted (trash) ---
+
+const TRASH_KEY = 'morpheus-webhub-trash';
+const MAX_TRASH_ITEMS = 20;
+
+let recentlyDeleted = loadTrash();
+
+function loadTrash() {
+  try { return JSON.parse(localStorage.getItem(TRASH_KEY) || '[]'); } catch { return []; }
+}
+
+function saveTrash() {
+  localStorage.setItem(TRASH_KEY, JSON.stringify(recentlyDeleted));
+}
+
+function pushToTrash(item, source) {
+  recentlyDeleted.unshift({ trashId: `trash-${Date.now()}`, item: JSON.parse(JSON.stringify(item)), source, deletedAt: Date.now() });
+  if (recentlyDeleted.length > MAX_TRASH_ITEMS) recentlyDeleted.length = MAX_TRASH_ITEMS;
+  saveTrash();
+}
+
+function restoreFromTrash(trashId) {
+  const idx = recentlyDeleted.findIndex(e => e.trashId === trashId);
+  if (idx === -1) return false;
+  const { item, source } = recentlyDeleted[idx];
+  recentlyDeleted.splice(idx, 1);
+  saveTrash();
+  if (source.area === 'essential') {
+    const restored = JSON.parse(JSON.stringify(item));
+    while (state.essentials.length <= source.slot) state.essentials.push(null);
+    if (!state.essentials[source.slot]) {
+      state.essentials[source.slot] = restored;
+    } else {
+      let slot = 0;
+      while (slot < state.essentials.length && state.essentials[slot]) slot++;
+      while (state.essentials.length < slot) state.essentials.push(null);
+      state.essentials[slot] = restored;
+    }
+  } else if (source.area === 'speed-dial') {
+    const board = state.boards.find(b => b.id === source.boardId) || state.boards.find(b => b.id === state.activeBoardId);
+    if (board) board.speedDial.push(JSON.parse(JSON.stringify(item)));
+  } else if (source.area === 'nav-board') {
+    if (item.board) state.boards.push(JSON.parse(JSON.stringify(item.board)));
+    const navItem = JSON.parse(JSON.stringify(item.navItem));
+    if (source.parentId) {
+      const pp = findNavItemPath(source.parentId);
+      if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(navItem); return true; }
+    }
+    state.navItems.push(navItem);
+  } else if (source.area === 'nav-item') {
+    const restored = JSON.parse(JSON.stringify(item));
+    if (source.parentId) {
+      const pp = findNavItemPath(source.parentId);
+      if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(restored); return true; }
+    }
+    state.navItems.push(restored);
+  } else if (source.area === 'board-item') {
+    const board = state.boards.find(b => b.id === source.boardId) || getActiveBoard();
+    if (board) {
+      const col = board.columns.find(c => c.id === source.columnId) || board.columns[0];
+      if (col) col.items.push(JSON.parse(JSON.stringify(item)));
+    }
+  }
+  return true;
+}
+
+function removeTrashItem(trashId) {
+  const idx = recentlyDeleted.findIndex(e => e.trashId === trashId);
+  if (idx !== -1) { recentlyDeleted.splice(idx, 1); saveTrash(); }
+}
+
+function clearTrash() {
+  recentlyDeleted = [];
+  saveTrash();
+}
+
 function trimFaviconCache(skipItem = null) {
   const candidates = [];
   const walk = (list) => {

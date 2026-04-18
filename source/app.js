@@ -1,10 +1,87 @@
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.6.0';
 
 let activeModal = null;
 let contextTarget = null;
 let lastActiveColumnId = null;
 
 let confirmCallback = null;
+
+// --- Undo / redo ---
+
+const MAX_UNDO = 50;
+let undoStack = [];
+let redoStack = [];
+
+// --- Bulk selection ---
+
+let selectedItemIds = new Set();
+
+function toggleItemSelection(itemId, itemEl) {
+  if (selectedItemIds.has(itemId)) {
+    selectedItemIds.delete(itemId);
+    itemEl?.classList.remove('selected');
+  } else {
+    selectedItemIds.add(itemId);
+    itemEl?.classList.add('selected');
+  }
+  updateBulkToolbar();
+}
+
+function clearSelection() {
+  selectedItemIds.clear();
+  document.querySelectorAll('.board-column-item.selected').forEach(el => el.classList.remove('selected'));
+  updateBulkToolbar();
+}
+
+function updateBulkToolbar() {
+  const toolbar = document.getElementById('bulkToolbar');
+  const countEl = document.getElementById('bulkCount');
+  if (!toolbar) return;
+  const n = selectedItemIds.size;
+  toolbar.classList.toggle('hidden', n === 0);
+  if (countEl) countEl.textContent = `${n} selected`;
+}
+
+function pushUndoSnapshot() {
+  undoStack.push(JSON.stringify(state));
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoUI();
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(JSON.stringify(state));
+  restoreStateSnapshot(undoStack.pop());
+  saveState();
+  renderAll();
+  updateUndoRedoUI();
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(JSON.stringify(state));
+  restoreStateSnapshot(redoStack.pop());
+  saveState();
+  renderAll();
+  updateUndoRedoUI();
+}
+
+function updateUndoRedoUI() {
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  updateTrashBadge();
+}
+
+function updateTrashBadge() {
+  const count = recentlyDeleted.length;
+  const el = document.getElementById('trashCount');
+  if (!el) return;
+  el.textContent = count;
+  el.classList.toggle('hidden', count === 0);
+}
 
 // --- Tooltip ---
 
@@ -44,15 +121,17 @@ document.addEventListener('mouseout', e => {
   }
 });
 
-function showConfirmDialog(message, onConfirm) {
+function showConfirmDialog(message, onConfirm, okLabel = 'Delete') {
   confirmCallback = onConfirm;
   document.getElementById('confirmMessage').textContent = message;
+  document.getElementById('confirmOkBtn').textContent = okLabel;
   document.getElementById('confirmOverlay').classList.remove('hidden');
 }
 
 function hideConfirmDialog() {
   confirmCallback = null;
   document.getElementById('confirmOverlay').classList.add('hidden');
+  document.getElementById('confirmOkBtn').textContent = 'Delete';
 }
 
 function showAboutPanel() {
@@ -66,6 +145,82 @@ function showAboutPanel() {
 
 function hideAboutPanel() {
   document.getElementById('aboutPanel').classList.add('hidden');
+  document.getElementById('modalCard').classList.remove('hidden');
+  elements.modalOverlay.classList.add('hidden');
+}
+
+// --- Trash panel ---
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatTimeSince(ts) {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function getTrashItemLabel(entry) {
+  const a = entry.source?.area;
+  if (a === 'nav-board') return 'Board';
+  if (a === 'nav-item') {
+    const t = entry.item?.type;
+    return t === 'folder' ? 'Nav folder' : t === 'title' ? 'Nav title' : 'Nav item';
+  }
+  if (a === 'speed-dial') return 'Speed dial';
+  if (a === 'essential') return 'Essential';
+  const t = entry.item?.type;
+  return t === 'folder' ? 'Folder' : t === 'bookmark' ? 'Bookmark' : t === 'title' ? 'Title' : 'Item';
+}
+
+function renderTrashPanel() {
+  const list = document.getElementById('trashList');
+  const emptyEl = document.getElementById('trashEmpty');
+  const clearBtn = document.getElementById('trashClearAllBtn');
+  const count = recentlyDeleted.length;
+  updateTrashBadge();
+  if (count === 0) {
+    list.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    clearBtn.disabled = true;
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  clearBtn.disabled = false;
+  list.innerHTML = '';
+  for (const entry of recentlyDeleted) {
+    const name = entry.item?.title || entry.item?.navItem?.title || '(untitled)';
+    const div = document.createElement('div');
+    div.className = 'trash-item';
+    div.innerHTML = `
+      <div class="trash-item-info">
+        <span class="trash-item-name">${escapeHtml(name)}</span>
+        <span class="trash-item-meta">${getTrashItemLabel(entry)} · ${formatTimeSince(entry.deletedAt)}</span>
+      </div>
+      <div class="trash-item-actions">
+        <button class="secondary-btn trash-restore-btn" data-trash-id="${entry.trashId}">Restore</button>
+        <button class="danger-btn trash-delete-btn" data-trash-id="${entry.trashId}">×</button>
+      </div>`;
+    list.appendChild(div);
+  }
+}
+
+function showTrashPanel() {
+  document.getElementById('modalCard').classList.add('hidden');
+  const panel = document.getElementById('trashPanel');
+  panel.classList.remove('hidden');
+  elements.modalOverlay.classList.remove('hidden');
+  centerPanel(panel);
+  makeDraggable(panel, document.getElementById('trashDragHandle'));
+  renderTrashPanel();
+}
+
+function hideTrashPanel() {
+  document.getElementById('trashPanel').classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.add('hidden');
 }
@@ -85,19 +240,65 @@ function showModal(type, options = {}) {
   elements.modalLabel1.textContent = options.label1 || 'Name';
   elements.modalInput1.value = options.value1 || '';
   elements.modalInput2.value = options.value2 || '';
-  elements.modalSelect.value = options.selectValue || '3';
   elements.modalInput3.value = options.value3 || '';
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
+  const selectLabel = document.getElementById('modalSelectLabel');
+  if (selectLabel) selectLabel.textContent = options.selectLabel || 'Select';
+  if (options.selectOptions) {
+    elements.modalSelect.innerHTML = '';
+    options.selectOptions.forEach(({ value, label }) => elements.modalSelect.appendChild(new Option(label, value)));
+  } else {
+    elements.modalSelect.value = options.selectValue || '';
+  }
+  document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
+  document.getElementById('tagSuggestions')?.classList.add('hidden');
   elements.modalInput1.focus();
 }
 
 function hideModal() {
   activeModal = null;
   elements.modalOverlay.classList.add('hidden');
+  document.getElementById('tagSuggestions')?.classList.add('hidden');
+  document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
+}
+
+// --- Tag autocomplete ---
+
+function getTagSuggestions(partial) {
+  if (!partial) return [];
+  const known = getKnownTags();
+  const current = elements.modalInput3.value.split(/\s+/).filter(Boolean);
+  return known.filter(t => t.startsWith(partial) && t !== partial && !current.includes(t));
+}
+
+function applyTagSuggestion(suggestion) {
+  const parts = elements.modalInput3.value.split(/\s+/);
+  parts[parts.length - 1] = suggestion;
+  elements.modalInput3.value = parts.join(' ') + ' ';
+  renderTagSuggestions();
+  elements.modalInput3.focus();
+}
+
+function renderTagSuggestions() {
+  const sugBox = document.getElementById('tagSuggestions');
+  if (!sugBox) return;
+  const parts = elements.modalInput3.value.split(/\s+/);
+  const partial = parts[parts.length - 1];
+  const suggestions = getTagSuggestions(partial);
+  if (!suggestions.length) { sugBox.classList.add('hidden'); return; }
+  sugBox.innerHTML = '';
+  suggestions.slice(0, 8).forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'tag-suggestion-item';
+    item.textContent = s;
+    item.addEventListener('mousedown', e => { e.preventDefault(); applyTagSuggestion(s); });
+    sugBox.appendChild(item);
+  });
+  sugBox.classList.remove('hidden');
 }
 
 function handleModalSubmit(event) {
@@ -107,7 +308,10 @@ function handleModalSubmit(event) {
   const value3 = elements.modalInput3.value.trim();
   const tags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
 
-  if (!value1) return;
+  const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags'];
+  if (!value1 && !noNameRequired.includes(activeModal)) return;
+
+  pushUndoSnapshot();
 
   const area = contextTarget?.area;
 
@@ -156,6 +360,43 @@ function handleModalSubmit(event) {
     case 'renameItem':
       renameContextItem(value1, contextTarget);
       break;
+    case 'moveToBoard': {
+      const targetBoardId = elements.modalSelect.value;
+      const targetBoard = state.boards.find(b => b.id === targetBoardId);
+      if (!targetBoard || !contextTarget?.item) break;
+      const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+      deleteBoardTarget(contextTarget);
+      targetBoard.columns[0].items.push(capturedItem);
+      break;
+    }
+    case 'bulkAddTags': {
+      const newTags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
+      if (!newTags.length) { hideModal(); return; }
+      const board = getActiveBoard();
+      for (const itemId of selectedItemIds) {
+        const found = findBoardItemInColumns(board, itemId);
+        if (found?.item) found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];
+      }
+      clearSelection();
+      break;
+    }
+    case 'bulkMoveToBoard': {
+      const targetBoardId = elements.modalSelect.value;
+      const targetBoard = state.boards.find(b => b.id === targetBoardId);
+      if (!targetBoard) break;
+      const board = getActiveBoard();
+      const toMove = [];
+      for (const itemId of selectedItemIds) {
+        const found = findBoardItemInColumns(board, itemId);
+        if (found?.item) toMove.push(found);
+      }
+      toMove.forEach(({ item, list }) => {
+        list.splice(list.indexOf(item), 1);
+        targetBoard.columns[0].items.push(item);
+      });
+      clearSelection();
+      break;
+    }
     default:
       break;
   }
@@ -170,6 +411,7 @@ let boardSettingsCreatingId = null;
 function showBoardSettingsPanel(isNew = false) {
   const board = getActiveBoard();
   if (!board) return;
+  if (!isNew) pushUndoSnapshot();
   boardSettingsCreatingId = isNew ? board.id : null;
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('boardSettingsPanel');
@@ -371,10 +613,15 @@ function handleContextMenuAction(action) {
         ? `Delete folder "${name}" and all its contents?`
         : name ? `Delete "${name}"?` : 'Delete this item?';
       const captured = { ...contextTarget };
+      const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedBoardId = getActiveBoard()?.id;
       confirmDelete(key, label, () => {
+        pushUndoSnapshot();
+        pushToTrash(capturedItem, { area: 'board-item', boardId: capturedBoardId, columnId: captured.columnId, parentId: captured.parentId });
         deleteBoardTarget(captured);
         renderAll();
         saveState();
+        updateTrashBadge();
       });
       break;
     }
@@ -388,18 +635,27 @@ function handleContextMenuAction(action) {
       const navLabel = isNavBoard
         ? `Delete board "${navName}" and all its content?`
         : navName ? `Delete "${navName}"?` : 'Delete this item?';
+      const capturedNavItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedNavParentId = contextTarget.parentId || null;
+      const capturedNavBoardId = navBoardId;
       confirmDelete(navKey, navLabel, () => {
+        pushUndoSnapshot();
         if (isNavBoard) {
-          deleteBoardAndNavItem(navItemId, navBoardId);
+          const fullBoard = state.boards.find(b => b.id === capturedNavBoardId);
+          pushToTrash({ navItem: capturedNavItem, board: fullBoard ? JSON.parse(JSON.stringify(fullBoard)) : null }, { area: 'nav-board', parentId: capturedNavParentId });
+          deleteBoardAndNavItem(navItemId, capturedNavBoardId);
         } else {
+          pushToTrash(capturedNavItem, { area: 'nav-item', parentId: capturedNavParentId });
           removeNavItemById(navItemId);
         }
         renderAll();
         saveState();
+        updateTrashBadge();
       });
       break;
     }
     case 'addBoard':
+      pushUndoSnapshot();
       createBoard('New Board');
       renderAll();
       saveState();
@@ -412,6 +668,7 @@ function handleContextMenuAction(action) {
       showModal('addTitle', { title: 'Add Navigation Title', placeholder1: 'Title text' });
       break;
     case 'addNavDivider':
+      pushUndoSnapshot();
       state.navItems.push({ id: `id-${Date.now()}`, type: 'title', title: '' });
       renderNav();
       saveState();
@@ -430,6 +687,7 @@ function handleContextMenuAction(action) {
       showModal('addTitle', { title: 'Add Title', placeholder1: 'Title text', contextTarget });
       break;
     case 'addDivider':
+      pushUndoSnapshot();
       addBookmarkItem('title', '', contextTarget.columnId);
       renderAll();
       saveState();
@@ -449,11 +707,16 @@ function handleContextMenuAction(action) {
     case 'deleteSpeedDial': {
       const sdItem = contextTarget.item;
       const sdId = contextTarget.itemId;
+      const capturedSdItem = JSON.parse(JSON.stringify(sdItem));
+      const capturedSdBoardId = getActiveBoard()?.id;
       confirmDelete('confirmDeleteBookmark', `Delete "${sdItem?.title}"?`, () => {
+        pushUndoSnapshot();
+        pushToTrash(capturedSdItem, { area: 'speed-dial', boardId: capturedSdBoardId });
         const board = getActiveBoard();
         board.speedDial = board.speedDial.filter(i => i.id !== sdId);
         renderAll();
         saveState();
+        updateTrashBadge();
       });
       break;
     }
@@ -502,6 +765,7 @@ function handleContextMenuAction(action) {
       const board = getActiveBoard();
       const found = findBoardItemInColumns(board, contextTarget.itemId);
       if (found?.item) {
+        pushUndoSnapshot();
         const copy = { ...found.item, id: `bm-${Date.now()}`, title: found.item.title + ' (copy)', faviconCache: '' };
         found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
         renderAll();
@@ -509,15 +773,31 @@ function handleContextMenuAction(action) {
       }
       break;
     }
-    case 'deleteEssential':
+    case 'moveToBoard': {
+      const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
+      showModal('moveToBoard', {
+        title: 'Move to Board',
+        showSelect: true,
+        selectLabel: 'Target board',
+        selectOptions: boards.map(b => ({ value: b.id, label: b.title })),
+        contextTarget
+      });
+      break;
+    }
+    case 'deleteEssential': {
       const essSlot = contextTarget.slot;
       const essName = contextTarget.item?.title;
+      const capturedEssItem = JSON.parse(JSON.stringify(contextTarget.item));
       confirmDelete('confirmDeleteBookmark', `Remove "${essName}"?`, () => {
+        pushUndoSnapshot();
+        pushToTrash(capturedEssItem, { area: 'essential', slot: essSlot });
         removeEssential(essSlot);
         renderEssentials();
         saveState();
+        updateTrashBadge();
       });
       break;
+    }
     case 'addSpeedDialBookmark':
       showModal('addBookmark', {
         title: 'Add Speed Dial Bookmark', placeholder1: 'Bookmark title',
@@ -550,6 +830,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
     options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
+    if (state.boards.length > 1) options.push({ label: 'Move to board', action: 'moveToBoard' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
@@ -681,6 +962,12 @@ function centerPanel(panel) {
   panel.style.top  = Math.round((window.innerHeight - panel.offsetHeight) / 2) + 'px';
 }
 
+function updateEssentialsWarning() {
+  const count = state.settings.essentialsDisplayCount || 10;
+  const hasHidden = state.essentials.slice(count).some(Boolean);
+  document.getElementById('stgEssHiddenWarning').classList.toggle('hidden', !hasHidden);
+}
+
 function updateLastExportedLabel() {
   const el = document.getElementById('stgLastExported');
   if (!state.lastExported) { el.textContent = 'Never exported'; return; }
@@ -736,6 +1023,7 @@ function showSettingsPanel() {
   document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
   populateTagColors();
   updateLastExportedLabel();
+  updateEssentialsWarning();
 }
 
 function hideSettingsPanel() {
@@ -793,6 +1081,51 @@ function populateTagColors() {
     row.appendChild(group);
     container.appendChild(row);
   });
+}
+
+// --- Browser bookmark import ---
+
+function parseBookmarkHtml(htmlText) {
+  const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+  function parseDL(dl) {
+    const items = [];
+    if (!dl) return items;
+    for (const dt of dl.children) {
+      if (dt.tagName !== 'DT') continue;
+      const a = dt.querySelector(':scope > A');
+      const h3 = dt.querySelector(':scope > H3');
+      const subDL = dt.querySelector(':scope > DL');
+      if (a) {
+        items.push({
+          id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          type: 'bookmark',
+          title: a.textContent.trim() || a.href,
+          url: a.href,
+          tags: [],
+          faviconCache: ''
+        });
+      } else if (h3) {
+        items.push({
+          id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          type: 'folder',
+          title: h3.textContent.trim(),
+          collapsed: false,
+          children: parseDL(subDL)
+        });
+      }
+    }
+    return items;
+  }
+  return parseDL(doc.querySelector('DL'));
+}
+
+function countBookmarks(items) {
+  let n = 0;
+  for (const item of (items || [])) {
+    if (item.type === 'bookmark') n++;
+    if (item.children) n += countBookmarks(item.children);
+  }
+  return n;
 }
 
 function attachSettingsListeners() {
@@ -921,6 +1254,7 @@ function attachSettingsListeners() {
     if (state.settings.essentialsDisplayCount > 1) {
       state.settings.essentialsDisplayCount--;
       essCountEl.textContent = state.settings.essentialsDisplayCount;
+      updateEssentialsWarning();
       renderEssentials();
       saveState();
     }
@@ -929,6 +1263,7 @@ function attachSettingsListeners() {
     if (state.settings.essentialsDisplayCount < 24) {
       state.settings.essentialsDisplayCount++;
       essCountEl.textContent = state.settings.essentialsDisplayCount;
+      updateEssentialsWarning();
       renderEssentials();
       saveState();
     }
@@ -998,6 +1333,29 @@ function attachSettingsListeners() {
     reader.readAsText(file);
     importFile.value = '';
   });
+
+  const bmImportFile = document.getElementById('importBookmarksFile');
+  if (bmImportFile) {
+    bmImportFile.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const items = parseBookmarkHtml(ev.target.result);
+        if (!items.length) { alert('No bookmarks found in file.'); return; }
+        const board = getActiveBoard();
+        if (!board) return;
+        pushUndoSnapshot();
+        board.columns[0].items.push(...items);
+        renderAll();
+        saveState();
+        hideSettingsPanel();
+        alert(`Imported ${countBookmarks(items)} bookmarks into "${board.title}".`);
+      };
+      reader.readAsText(file);
+      bmImportFile.value = '';
+    });
+  }
 }
 
 // --- Init ---
@@ -1006,6 +1364,61 @@ function attachEventListeners() {
   elements.globalSettingsBtn.addEventListener('click', showSettingsPanel);
   document.getElementById('aboutBtn').addEventListener('click', showAboutPanel);
   document.getElementById('aboutCloseBtn').addEventListener('click', hideAboutPanel);
+  document.getElementById('trashBtn').addEventListener('click', showTrashPanel);
+  document.getElementById('trashCloseBtn').addEventListener('click', hideTrashPanel);
+  document.getElementById('trashClearAllBtn').addEventListener('click', () => {
+    clearTrash();
+    renderTrashPanel();
+  });
+  document.getElementById('trashList').addEventListener('click', e => {
+    const restoreBtn = e.target.closest('.trash-restore-btn');
+    const deleteBtn = e.target.closest('.trash-delete-btn');
+    if (restoreBtn) {
+      restoreFromTrash(restoreBtn.dataset.trashId);
+      renderAll();
+      saveState();
+      renderTrashPanel();
+    } else if (deleteBtn) {
+      removeTrashItem(deleteBtn.dataset.trashId);
+      renderTrashPanel();
+    }
+  });
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+
+  document.getElementById('bulkDeleteBtn').addEventListener('click', () => {
+    const n = selectedItemIds.size;
+    if (!n) return;
+    showConfirmDialog(`Delete ${n} selected ${n > 1 ? 'items' : 'item'}?`, () => {
+      pushUndoSnapshot();
+      const board = getActiveBoard();
+      for (const itemId of [...selectedItemIds]) {
+        const found = findBoardItemInColumns(board, itemId);
+        if (found?.item) {
+          pushToTrash(JSON.parse(JSON.stringify(found.item)), { area: 'board-item', boardId: board.id });
+          found.list.splice(found.list.indexOf(found.item), 1);
+        }
+      }
+      clearSelection();
+      renderAll();
+      saveState();
+      updateTrashBadge();
+    }, `Delete ${n}`);
+  });
+  document.getElementById('bulkTagBtn').addEventListener('click', () => {
+    showModal('bulkAddTags', { title: 'Add Tags to Selected', showTags: true });
+  });
+  document.getElementById('bulkMoveBtn').addEventListener('click', () => {
+    const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
+    if (!boards.length) { alert('No other boards to move to.'); return; }
+    showModal('bulkMoveToBoard', {
+      title: 'Move Selected to Board',
+      showSelect: true,
+      selectLabel: 'Target board',
+      selectOptions: boards.map(b => ({ value: b.id, label: b.title }))
+    });
+  });
+  document.getElementById('bulkDeselectBtn').addEventListener('click', clearSelection);
 
   document.getElementById('sidebarCollapseBtn').addEventListener('click', () => {
     const sidebar = document.getElementById('navSidebar');
@@ -1027,11 +1440,42 @@ function attachEventListeners() {
       cancelBoardSettingsPanel();
     } else if (!document.getElementById('aboutPanel').classList.contains('hidden')) {
       hideAboutPanel();
+    } else if (!document.getElementById('trashPanel').classList.contains('hidden')) {
+      hideTrashPanel();
     } else {
       hideModal();
     }
   });
   elements.modalForm.addEventListener('submit', handleModalSubmit);
+  elements.modalInput2.addEventListener('input', () => {
+    if (activeModal !== 'addBookmark') return;
+    const url = elements.modalInput2.value.trim();
+    const warning = document.getElementById('modalDuplicateWarning');
+    if (!warning) return;
+    if (!url) { warning.classList.add('hidden'); return; }
+    const dup = findDuplicateUrl(url);
+    if (dup) {
+      warning.textContent = `Already saved: "${dup.item.title}"`;
+      warning.classList.remove('hidden');
+    } else {
+      warning.classList.add('hidden');
+    }
+  });
+  elements.modalInput3.addEventListener('input', () => {
+    if (activeModal === 'addBookmark' || activeModal === 'editBookmark') renderTagSuggestions();
+  });
+  elements.modalInput3.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const sugBox = document.getElementById('tagSuggestions');
+    const first = sugBox?.querySelector('.tag-suggestion-item');
+    if (first && !sugBox.classList.contains('hidden')) {
+      e.preventDefault();
+      applyTagSuggestion(first.textContent);
+    }
+  });
+  elements.modalInput3.addEventListener('blur', () => {
+    setTimeout(() => document.getElementById('tagSuggestions')?.classList.add('hidden'), 150);
+  });
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);
   elements.navList.addEventListener('drop', handleNavListDrop);
@@ -1081,6 +1525,18 @@ function attachEventListeners() {
   document.addEventListener('keydown', event => {
     const inInput = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
 
+    if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      undo();
+      return;
+    }
+
+    if (event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+      event.preventDefault();
+      redo();
+      return;
+    }
+
     if (event.ctrlKey && event.key === 'f') {
       event.preventDefault();
       elements.searchInput.focus();
@@ -1118,8 +1574,10 @@ function attachEventListeners() {
     }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
     if (!document.getElementById('aboutPanel').classList.contains('hidden')) { hideAboutPanel(); return; }
+    if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }
     if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) { cancelBoardSettingsPanel(); return; }
+    if (selectedItemIds.size > 0) { clearSelection(); return; }
     if (!elements.modalOverlay.classList.contains('hidden')) { hideModal(); return; }
   });
 
@@ -1136,3 +1594,4 @@ attachSettingsListeners();
 attachBoardSettingsListeners();
 renderAll();
 saveState();
+updateUndoRedoUI();

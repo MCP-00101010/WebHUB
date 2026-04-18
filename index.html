@@ -85,6 +85,26 @@
         <line x1="5"  y1="12" x2="19" y2="12"/>
       </symbol>
 
+      <!-- Undo (rotate-ccw) -->
+      <symbol id="icon-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="1 4 1 10 7 10"/>
+        <path d="M3.51 15a9 9 0 1 0 .49-4.95"/>
+      </symbol>
+
+      <!-- Redo (rotate-cw) -->
+      <symbol id="icon-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-.49-4.95"/>
+      </symbol>
+
+      <!-- Trash -->
+      <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14H6L5 6"/>
+        <path d="M10 11v6M14 11v6"/>
+        <path d="M9 6V4h6v2"/>
+      </symbol>
+
     </defs>
   </svg>
 
@@ -113,7 +133,11 @@
       <div id="navList" class="nav-list" role="tree"></div>
 
       <div class="sidebar-footer">
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.4.0</button>
+        <button type="button" id="trashBtn" class="sidebar-trash-btn" title="Recently Deleted" aria-label="Recently Deleted">
+          <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
+          <span id="trashCount" class="trash-count hidden">0</span>
+        </button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.6.0</button>
       </div>
     </aside>
 
@@ -123,9 +147,17 @@
         <div class="board-title-group">
           <h2 id="boardTitle">Board</h2>
         </div>
-        <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
-          <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
-        </button>
+        <div class="board-header-actions">
+          <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-undo"/></svg>
+          </button>
+          <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-redo"/></svg>
+          </button>
+          <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
+          </button>
+        </div>
       </section>
 
       <section class="speed-dial-panel">
@@ -150,17 +182,17 @@
           <label for="modalInput2">URL</label>
           <input id="modalInput2" type="text" placeholder="duckduckgo.com" />
         </div>
+        <div id="modalDuplicateWarning" class="modal-duplicate-warning hidden"></div>
         <div class="form-row hidden" id="modalTagsRow">
           <label for="modalInput3">Tags</label>
-          <input id="modalInput3" type="text" placeholder="work tools productivity" />
+          <div class="tags-input-container">
+            <input id="modalInput3" type="text" placeholder="work tools productivity" />
+            <div id="tagSuggestions" class="tag-suggestions hidden"></div>
+          </div>
         </div>
         <div class="form-row hidden" id="modalSelectRow">
-          <label for="modalSelect">Columns</label>
-          <select id="modalSelect">
-            <option value="3">3 columns</option>
-            <option value="4">4 columns</option>
-            <option value="5">5 columns</option>
-          </select>
+          <label id="modalSelectLabel" for="modalSelect">Select</label>
+          <select id="modalSelect"></select>
         </div>
         <div class="form-actions">
           <button type="button" id="modalCancelBtn" class="secondary-btn">Cancel</button>
@@ -510,7 +542,7 @@
         </div>
 
         <div class="settings-section" data-tab="behavior">
-          <div class="settings-section-label">Visibility</div>
+          <div class="settings-section-label">Essentials</div>
           <div class="settings-row">
             <span>Show Essentials</span>
             <label class="settings-toggle">
@@ -526,6 +558,7 @@
               <button type="button" id="stgEssCountPlus" class="stepper-btn">+</button>
             </div>
           </div>
+          <div id="stgEssHiddenWarning" class="settings-warning hidden">Some stored essentials are hidden — their slot index exceeds the current display count.</div>
         </div>
 
         <div class="settings-section span-full" data-tab="behavior">
@@ -579,6 +612,10 @@
             <button type="button" id="stgImportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Load JSON</button>
             <input type="file" id="stgImportFile" accept=".json" style="display:none" />
           </div>
+          <div class="settings-row">
+            <span>Import bookmarks</span>
+            <label class="stg-file-label secondary-btn">Import HTML<input id="importBookmarksFile" type="file" accept=".html,.htm" /></label>
+          </div>
         </div>
 
       </div>
@@ -591,12 +628,26 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.4.0</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.6.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
       <div class="form-actions">
         <button type="button" id="aboutCloseBtn" class="primary-btn">Close</button>
+      </div>
+    </div>
+
+    <div id="trashPanel" class="settings-panel trash-panel hidden">
+      <div class="settings-header" id="trashDragHandle">
+        <h3>Recently Deleted</h3>
+      </div>
+      <div class="trash-body">
+        <div id="trashList" class="trash-list"></div>
+        <div id="trashEmpty" class="trash-empty">No recently deleted items.</div>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="trashClearAllBtn" class="secondary-btn">Clear All</button>
+        <button type="button" id="trashCloseBtn" class="primary-btn">Close</button>
       </div>
     </div>
   </div>
@@ -609,6 +660,14 @@
         <button type="button" id="confirmOkBtn" class="primary-btn danger-btn">Delete</button>
       </div>
     </div>
+  </div>
+
+  <div id="bulkToolbar" class="bulk-toolbar hidden">
+    <span id="bulkCount" class="bulk-toolbar-count">0 selected</span>
+    <button id="bulkDeleteBtn" class="danger-btn">Delete</button>
+    <button id="bulkTagBtn" class="secondary-btn">Add Tags…</button>
+    <button id="bulkMoveBtn" class="secondary-btn">Move to Board…</button>
+    <button id="bulkDeselectBtn" class="secondary-btn">✕ Deselect</button>
   </div>
 
   <div id="contextMenu" class="context-menu hidden"></div>
