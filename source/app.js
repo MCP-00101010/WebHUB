@@ -1,5 +1,8 @@
+const APP_VERSION = '0.4.0';
+
 let activeModal = null;
 let contextTarget = null;
+let lastActiveColumnId = null;
 
 let confirmCallback = null;
 
@@ -50,6 +53,21 @@ function showConfirmDialog(message, onConfirm) {
 function hideConfirmDialog() {
   confirmCallback = null;
   document.getElementById('confirmOverlay').classList.add('hidden');
+}
+
+function showAboutPanel() {
+  document.getElementById('modalCard').classList.add('hidden');
+  const panel = document.getElementById('aboutPanel');
+  panel.classList.remove('hidden');
+  elements.modalOverlay.classList.remove('hidden');
+  centerPanel(panel);
+  makeDraggable(panel, document.getElementById('aboutDragHandle'));
+}
+
+function hideAboutPanel() {
+  document.getElementById('aboutPanel').classList.add('hidden');
+  document.getElementById('modalCard').classList.remove('hidden');
+  elements.modalOverlay.classList.add('hidden');
 }
 
 function confirmDelete(settingKey, message, onConfirm) {
@@ -167,6 +185,7 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgBgUrl').value = board.backgroundImage || '';
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
+  document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
 }
 
 function hideBoardSettingsPanel() {
@@ -271,6 +290,13 @@ function attachBoardSettingsListeners() {
     board.containerOpacity = parseInt(e.target.value);
     document.getElementById('bstgOpacityVal').textContent = board.containerOpacity;
     applyBg();
+  });
+
+  document.getElementById('bstgShowSpeedDial').addEventListener('change', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    board.showSpeedDial = e.target.checked;
+    renderBoard();
   });
 
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
@@ -454,6 +480,35 @@ function handleContextMenuAction(action) {
         showTags: true, value3: (contextTarget.item.tags || []).join(' ')
       });
       break;
+    case 'openAll': {
+      const collectUrls = (items) => {
+        const urls = [];
+        for (const item of (items || [])) {
+          if (item.type === 'bookmark' && item.url) urls.push(item.url);
+          if (item.children) urls.push(...collectUrls(item.children));
+        }
+        return urls;
+      };
+      collectUrls(contextTarget.item?.children).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
+      break;
+    }
+    case 'refreshFavicon': {
+      const board = getActiveBoard();
+      const found = findBoardItemInColumns(board, contextTarget.itemId);
+      if (found?.item) { found.item.faviconCache = ''; renderAll(); saveState(); }
+      break;
+    }
+    case 'duplicateBookmark': {
+      const board = getActiveBoard();
+      const found = findBoardItemInColumns(board, contextTarget.itemId);
+      if (found?.item) {
+        const copy = { ...found.item, id: `bm-${Date.now()}`, title: found.item.title + ' (copy)', faviconCache: '' };
+        found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
+        renderAll();
+        saveState();
+      }
+      break;
+    }
     case 'deleteEssential':
       const essSlot = contextTarget.slot;
       const essName = contextTarget.item?.title;
@@ -488,10 +543,13 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
   const options = [];
   if (item.type === 'folder') {
     options.push({ label: 'Rename folder', action: 'renameItem' });
+    options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
     options.push({ label: 'Delete folder', action: 'deleteItem' });
   } else if (item.type === 'bookmark') {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
+    options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
+    options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
@@ -547,6 +605,7 @@ function handleSpeedDialContextMenu(event, item) {
 
 function handleBoardColumnContextMenu(event, columnId) {
   event.preventDefault();
+  lastActiveColumnId = columnId;
   contextTarget = { area: 'board-empty', columnId };
   showContextMenu(event.clientX, event.clientY, [
     { label: 'Add folder', action: 'addFolder' },
@@ -635,7 +694,7 @@ function showSettingsPanel() {
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
-  makeDraggable(panel, panel.querySelector('h3'));
+  makeDraggable(panel, document.getElementById('stgDragHandle'));
   const s = state.settings;
   document.getElementById('stgHubName').value = state.hubName || '';
   document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;
@@ -669,6 +728,11 @@ function showSettingsPanel() {
     document.getElementById('stg' + key[0].toUpperCase() + key.slice(1)).value = s[key] || def;
   });
   document.getElementById('stgTitleLineStyle').value = s.titleLineStyle || 'solid';
+  const sdSizeRadio = document.querySelector(`input[name="stgSpeedDialSize"][value="${s.speedDialIconSize || 'medium'}"]`);
+  if (sdSizeRadio) sdSizeRadio.checked = true;
+  const essSizeRadio = document.querySelector(`input[name="stgEssentialsSize"][value="${s.essentialsIconSize || 'medium'}"]`);
+  if (essSizeRadio) essSizeRadio.checked = true;
+  document.getElementById('stgShowEssentials').checked = s.showEssentials !== false;
   populateTagColors();
   updateLastExportedLabel();
 }
@@ -845,6 +909,36 @@ function attachSettingsListeners() {
     applySettings();
   });
 
+  document.getElementById('stgShowEssentials').addEventListener('change', e => {
+    state.settings.showEssentials = e.target.checked;
+    renderEssentials();
+    saveState();
+  });
+
+  document.querySelectorAll('input[name="stgSpeedDialSize"]').forEach(radio => {
+    radio.addEventListener('change', e => {
+      state.settings.speedDialIconSize = e.target.value;
+      applySettings();
+      saveState();
+    });
+  });
+
+  document.querySelectorAll('input[name="stgEssentialsSize"]').forEach(radio => {
+    radio.addEventListener('change', e => {
+      state.settings.essentialsIconSize = e.target.value;
+      applySettings();
+      saveState();
+    });
+  });
+
+  document.querySelectorAll('.settings-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t === tab));
+      const body = document.querySelector('.settings-body[data-active-tab]');
+      if (body) body.dataset.activeTab = tab.dataset.tab;
+    });
+  });
+
   document.getElementById('settingsDoneBtn').addEventListener('click', hideSettingsPanel);
 
   document.getElementById('stgExportBtn').addEventListener('click', () => {
@@ -891,6 +985,18 @@ function attachSettingsListeners() {
 
 function attachEventListeners() {
   elements.globalSettingsBtn.addEventListener('click', showSettingsPanel);
+  document.getElementById('aboutBtn').addEventListener('click', showAboutPanel);
+  document.getElementById('aboutCloseBtn').addEventListener('click', hideAboutPanel);
+
+  document.getElementById('sidebarCollapseBtn').addEventListener('click', () => {
+    const sidebar = document.getElementById('navSidebar');
+    const appShell = document.querySelector('.app-shell');
+    const collapsed = sidebar.classList.toggle('collapsed');
+    appShell.classList.toggle('sidebar-collapsed', collapsed);
+    const btn = document.getElementById('sidebarCollapseBtn');
+    btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    btn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  });
 
   elements.boardSettingsBtn.addEventListener('click', () => showBoardSettingsPanel());
   elements.modalCancelBtn.addEventListener('click', hideModal);
@@ -900,6 +1006,8 @@ function attachEventListeners() {
       hideSettingsPanel();
     } else if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) {
       cancelBoardSettingsPanel();
+    } else if (!document.getElementById('aboutPanel').classList.contains('hidden')) {
+      hideAboutPanel();
     } else {
       hideModal();
     }
@@ -952,6 +1060,35 @@ function attachEventListeners() {
   });
 
   document.addEventListener('keydown', event => {
+    const inInput = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+
+    if (event.ctrlKey && event.key === 'f') {
+      event.preventDefault();
+      elements.searchInput.focus();
+      return;
+    }
+
+    if (!inInput && event.key === '/') {
+      event.preventDefault();
+      elements.searchInput.focus();
+      return;
+    }
+
+    if (!inInput && (event.key === 'n' || event.key === 'N') && elements.modalOverlay.classList.contains('hidden')) {
+      const board = getActiveBoard();
+      if (board) {
+        const columnId = lastActiveColumnId || board.columns[0]?.id;
+        contextTarget = { area: 'board-empty', columnId };
+        showModal('addBookmark', {
+          title: 'Add Bookmark', placeholder1: 'Bookmark title',
+          showUrl: true, placeholder2: 'Bookmark URL',
+          showTags: true
+        });
+        event.preventDefault();
+        return;
+      }
+    }
+
     if (event.key !== 'Escape') return;
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog(); return; }
     if (elements.searchInput.value) {
@@ -961,6 +1098,7 @@ function attachEventListeners() {
       return;
     }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
+    if (!document.getElementById('aboutPanel').classList.contains('hidden')) { hideAboutPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }
     if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) { cancelBoardSettingsPanel(); return; }
     if (!elements.modalOverlay.classList.contains('hidden')) { hideModal(); return; }

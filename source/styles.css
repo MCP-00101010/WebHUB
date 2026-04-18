@@ -78,12 +78,6 @@ button {
   transition: width 0.25s ease, transform 0.25s ease;
 }
 
-.sidebar.collapsed {
-  width: 80px;
-  min-width: 80px;
-  overflow: hidden;
-}
-
 .sidebar-header {
   display: flex;
   justify-content: space-between;
@@ -520,8 +514,8 @@ button {
 }
 
 .speed-link {
-  width: 44px;
-  height: 44px;
+  width: var(--speed-link-size, 44px);
+  height: var(--speed-link-size, 44px);
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.06);
@@ -814,17 +808,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.settings-panel h3 {
-  margin: 0;
-  color: var(--text);
-  cursor: grab;
-  user-select: none;
-}
-
-.settings-panel h3:active {
-  cursor: grabbing;
 }
 
 .settings-panel.draggable {
@@ -1269,4 +1252,212 @@ button {
   font-size: 0.9rem;
   padding: 20px;
   text-align: center;
+}
+
+/* --- Sidebar collapse --- */
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 42px 1fr;
+}
+
+.sidebar.collapsed {
+  width: 42px;
+  min-width: 42px;
+  padding: 10px 6px;
+  overflow: hidden;
+  gap: 0;
+}
+
+.sidebar.collapsed > *:not(.sidebar-header) {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-header {
+  flex-direction: column;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.sidebar.collapsed .sidebar-header h1 { display: none; }
+.sidebar.collapsed .sidebar-header #globalSettingsBtn { display: none; }
+
+.sidebar-collapse-btn svg {
+  transition: transform 0.25s ease;
+}
+
+.sidebar.collapsed .sidebar-collapse-btn svg {
+  transform: rotate(180deg);
+}
+
+/* --- Sidebar footer --- */
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.sidebar-version-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-version-btn:hover {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+/* --- Settings header & tabs --- */
+
+.settings-panel h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+.settings-header:active {
+  cursor: grabbing;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.settings-tab {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-tab:hover {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.settings-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.settings-body[data-active-tab="style"] .settings-section[data-tab="behavior"] { display: none; }
+.settings-body[data-active-tab="behavior"] .settings-section[data-tab="style"] { display: none; }
+.settings-body[data-active-tab="behavior"] { grid-template-columns: repeat(2, 1fr); }
+
+/* --- Icon size radio buttons --- */
+
+.icon-size-radios {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-size-label {
+  cursor: pointer;
+}
+
+.icon-size-label input[type="radio"] {
+  display: none;
+}
+
+.icon-size-label span {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.icon-size-label:hover span {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.icon-size-label input:checked + span {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* --- Essentials columns variable --- */
+
+.essentials-grid {
+  grid-template-columns: repeat(var(--essentials-cols, 6), 1fr);
+}
+
+/* --- Board fade-in transition --- */
+
+@keyframes board-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.board-fade-in {
+  animation: board-fade-in 0.2s ease;
+}
+
+/* --- About panel --- */
+
+.about-panel {
+  width: min(480px, calc(100vw - 40px));
+}
+
+.about-body {
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-version {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.about-body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.about-note {
+  font-size: 0.78rem !important;
+  color: rgba(156, 163, 175, 0.7) !important;
+}
+
+/* --- Stepper unit label --- */
+
+.stepper-unit {
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }

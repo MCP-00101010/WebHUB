@@ -74,6 +74,11 @@
         <polyline points="9 6 15 12 9 18"/>
       </symbol>
 
+      <!-- Chevron left (collapse sidebar) -->
+      <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </symbol>
+
       <!-- Generic plus (speed-dial add) -->
       <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <line x1="12" y1="5"  x2="12" y2="19"/>
@@ -84,9 +89,12 @@
   </svg>
 
   <div class="app-shell">
-    <aside id="navSidebar" class="sidebar expanded" aria-label="Navigation sidebar">
+    <aside id="navSidebar" class="sidebar" aria-label="Navigation sidebar">
       <div class="sidebar-header">
         <h1 id="hubNameEl">Morpheus WebHub</h1>
+        <button id="sidebarCollapseBtn" class="icon-btn sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
+          <svg width="16" height="16" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
+        </button>
         <button id="globalSettingsBtn" class="icon-btn" title="Global Settings" aria-label="Global Settings">
           <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
         </button>
@@ -96,11 +104,17 @@
         <input id="searchInput" type="search" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false" />
       </div>
 
-      <div class="nav-section-label">Essentials</div>
-      <div id="essentialsGrid" class="essentials-grid"></div>
+      <div id="essentialsSection">
+        <div class="nav-section-label">Essentials</div>
+        <div id="essentialsGrid" class="essentials-grid"></div>
+      </div>
       <div class="nav-section-label">Boards</div>
 
       <div id="navList" class="nav-list" role="tree"></div>
+
+      <div class="sidebar-footer">
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.4.0</button>
+      </div>
     </aside>
 
     <main id="mainPanel" class="main-panel">
@@ -182,6 +196,17 @@
         </div>
 
         <div class="settings-section">
+          <div class="settings-section-label">Speed Dial</div>
+          <div class="settings-row">
+            <span>Show Speed Dial</span>
+            <label class="settings-toggle">
+              <input id="bstgShowSpeedDial" type="checkbox" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-section-label">Container Transparency</div>
           <div class="settings-row">
             <span>Opacity</span>
@@ -200,10 +225,16 @@
     </div>
 
     <div id="settingsPanel" class="settings-panel hidden">
-      <h3>Global Settings</h3>
-      <div class="settings-body">
+      <div class="settings-header" id="stgDragHandle">
+        <h3>Global Settings</h3>
+        <div class="settings-tabs">
+          <button type="button" class="settings-tab active" data-tab="style">Style</button>
+          <button type="button" class="settings-tab" data-tab="behavior">Behavior</button>
+        </div>
+      </div>
+      <div class="settings-body" data-active-tab="style">
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Hub</div>
           <div class="settings-row">
             <span>Hub Name</span>
@@ -245,7 +276,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Board Title</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -283,7 +314,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Boards</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -321,7 +352,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Bookmarks</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -366,7 +397,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Folders</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -404,7 +435,7 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Titles &amp; Dividers</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -458,7 +489,38 @@
           </div>
         </div>
 
-        <div class="settings-section span-full">
+        <div class="settings-section" data-tab="behavior">
+          <div class="settings-section-label">Icon Sizes</div>
+          <div class="settings-row">
+            <span>Speed Dial</span>
+            <div class="icon-size-radios">
+              <label class="icon-size-label" title="Small"><input type="radio" name="stgSpeedDialSize" value="small" /><span>S</span></label>
+              <label class="icon-size-label" title="Medium"><input type="radio" name="stgSpeedDialSize" value="medium" /><span>M</span></label>
+              <label class="icon-size-label" title="Large"><input type="radio" name="stgSpeedDialSize" value="large" /><span>L</span></label>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Essentials</span>
+            <div class="icon-size-radios">
+              <label class="icon-size-label" title="Small"><input type="radio" name="stgEssentialsSize" value="small" /><span>S</span></label>
+              <label class="icon-size-label" title="Medium"><input type="radio" name="stgEssentialsSize" value="medium" /><span>M</span></label>
+              <label class="icon-size-label" title="Large"><input type="radio" name="stgEssentialsSize" value="large" /><span>L</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-tab="behavior">
+          <div class="settings-section-label">Visibility</div>
+          <div class="settings-row">
+            <span>Show Essentials</span>
+            <label class="settings-toggle">
+              <input id="stgShowEssentials" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section span-full" data-tab="behavior">
           <div class="settings-section-label">Behaviour</div>
           <div class="settings-row">
             <span>Warn on close if unsaved</span>
@@ -490,12 +552,12 @@
           </div>
         </div>
 
-        <div class="settings-section span-full">
+        <div class="settings-section span-full" data-tab="style">
           <div class="settings-section-label">Tag Colors</div>
           <div id="stgTagColors" class="tag-colors-list"></div>
         </div>
 
-        <div class="settings-section span-full">
+        <div class="settings-section span-full" data-tab="behavior">
           <div class="settings-section-label">Data</div>
           <div class="settings-row">
             <span>Export data</span>
@@ -514,6 +576,19 @@
       </div>
       <div class="form-actions">
         <button type="button" id="settingsDoneBtn" class="primary-btn">Done</button>
+      </div>
+    </div>
+    <div id="aboutPanel" class="settings-panel about-panel hidden">
+      <div class="settings-header" id="aboutDragHandle">
+        <h3>About Morpheus WebHub</h3>
+      </div>
+      <div class="about-body">
+        <div class="about-version" id="aboutVersionLine">Version 0.4.0</div>
+        <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
+        <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
+      </div>
+      <div class="form-actions">
+        <button type="button" id="aboutCloseBtn" class="primary-btn">Close</button>
       </div>
     </div>
   </div>

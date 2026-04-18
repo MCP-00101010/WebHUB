@@ -130,6 +130,11 @@ function applySettings() {
   r.setProperty('--title-color',                  s.titleColor      || 'var(--text-muted)');
   r.setProperty('--title-line-color',             s.titleLineColor  || 'rgba(255,255,255,0.12)');
   r.setProperty('--title-line-style',             s.titleLineStyle  || 'solid');
+
+  const sdSizes = { small: '34px', medium: '44px', large: '56px' };
+  r.setProperty('--speed-link-size', sdSizes[s.speedDialIconSize] || '44px');
+  const essCols = { small: 8, medium: 6, large: 4 };
+  r.setProperty('--essentials-cols', essCols[s.essentialsIconSize] || 6);
 }
 
 function hexToRgba(hex, alpha) {
@@ -260,7 +265,13 @@ function applyTagColor(chip, tag) {
   }
 }
 
+let lastRenderedBoardId = null;
+
 function renderEssentials() {
+  const section = document.getElementById('essentialsSection');
+  const visible = state.settings.showEssentials !== false;
+  if (section) section.classList.toggle('hidden', !visible);
+  if (!visible) { elements.essentialsGrid.innerHTML = ''; return; }
   elements.essentialsGrid.innerHTML = '';
   state.essentials.forEach((item, slot) => {
     const cell = document.createElement('div');
@@ -458,12 +469,26 @@ function renderBoard() {
     elements.boardTitle.textContent = '';
     elements.speedDial.innerHTML = '';
     elements.bookmarkColumns.innerHTML = '';
+    lastRenderedBoardId = null;
     return;
   }
+
+  const isNewBoard = board.id !== lastRenderedBoardId;
+  if (isNewBoard) {
+    lastRenderedBoardId = board.id;
+    elements.mainPanel.classList.remove('board-fade-in');
+    void elements.mainPanel.offsetWidth;
+    elements.mainPanel.classList.add('board-fade-in');
+  }
+
   elements.mainPanel.classList.remove('no-board');
   elements.boardTitle.textContent = board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
   applyBoardBackground(board);
+
+  const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
+  if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
+
   renderSpeedDial(board);
   renderColumns(board);
 }

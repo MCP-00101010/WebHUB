@@ -37,7 +37,10 @@ const defaultSettings = {
   bookmarkTextAlign: 'left', bookmarkColor: '',
   folderTextAlign: 'left', folderColor: '',
   titleColor: '',
-  tagColors: {}
+  tagColors: {},
+  speedDialIconSize: 'medium',
+  essentialsIconSize: 'medium',
+  showEssentials: true
 };
 
 const defaultState = {
@@ -108,6 +111,7 @@ function loadState() {
     for (const board of (parsed.boards || [])) {
       if (board.backgroundImage === undefined) board.backgroundImage = '';
       if (board.containerOpacity === undefined) board.containerOpacity = 100;
+      if (board.showSpeedDial === undefined) board.showSpeedDial = true;
       for (const item of (board.speedDial || [])) {
         if (!item.type) item.type = 'bookmark';
         if (!item.tags) item.tags = [];
@@ -294,7 +298,9 @@ function createBoard(title) {
     id,
     title,
     columnCount: 3,
-    background: '',
+    backgroundImage: '',
+    containerOpacity: 100,
+    showSpeedDial: true,
     speedDial: [],
     columns: [
       { id: `${id}-col-1`, title: 'Column 1', items: [] },
