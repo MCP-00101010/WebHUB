@@ -10,23 +10,23 @@
 
 ## UI
 
-- sidebar collapse toggle — chevron button to hide the sidebar and give the board full width
-- smooth transition / animation when switching boards
-- keyboard shortcut to focus search bar (`/` or `Ctrl+F`)
-- keyboard shortcut `N` for new bookmark in the focused column
-- Global Settings panel getting a little bit cluttered. Split between behavioral and style settings.
+- ~~sidebar collapse toggle — chevron button to hide the sidebar and give the board full width~~ ✓
+- ~~smooth transition / animation when switching boards~~ ✓
+- ~~keyboard shortcut to focus search bar (`/` or `Ctrl+F`)~~ ✓
+- ~~keyboard shortcut `N` for new bookmark in the focused column~~ ✓
+- ~~Global Settings panel getting a little bit cluttered. Split between behavioral and style settings.~~ ✓
 - board tab bar as alternative navigation style (tabs across the top instead of sidebar list) (possibly a great QoL thing. but i will eventually have a rather big collection of boards. thats why i want to be able to store boards inside folders. possible solution: select a board folder in the navpane and the boards in this folder will go into the board tab bar)
-- Global Settings: Select Icon size for Speed Dial / Essentials via radio buttons. Give small/medium/large options. set them with sensible values.
-- Essentials: enable/disable the display of the Essential rows in global settings behavioral settings. (not every user might want them). If disabled, don't delete any stored essentials. just don't show them.
+- ~~Global Settings: Select Icon size for Speed Dial / Essentials via radio buttons. Give small/medium/large options. set them with sensible values.~~ ✓
+- ~~Essentials: enable/disable the display of the Essential rows in global settings behavioral settings. (not every user might want them). If disabled, don't delete any stored essentials. just don't show them.~~ ✓
 - Essentials: Adjust the amount of Essentials displayed. Spread them equally amongst rows based on icon size / sidebar width. If amount of displayed essentials is less than actually stored essentials, don't delete them. just don't display them. (probably means essentials have to be stored in a list of type bookmarks to work properly)
-- Speed Dial: enable/disable the display of the speed dial bar in the board settings. if disabled don't delete the speed dial bookmarks. just don't display the bar.
+- ~~Speed Dial: enable/disable the display of the speed dial bar in the board settings. if disabled don't delete the speed dial bookmarks. just don't display the bar.~~ ✓
 - smart tags prediction: when the user adds tags, predict the tag while typing based on the list of already known tags. tab-key to complete tag. also possibly have a separate edit tags panel available via context menu with extended tab management. List all known tags, add tags to bookmark by clicking on them, remove tag by clicking on it etc. (Or better to add this to the general create/edit bookmark panel?)
 
 ## Bookmarks
 
-- "Open all" context menu option on folders — opens every bookmark in the folder as new tabs
-- favicon refresh option on right-click context menu (force re-fetch, clear stale cache)
-- duplicate / copy bookmark via context menu
+- ~~"Open all" context menu option on folders — opens every bookmark in the folder as new tabs~~ ✓
+- ~~favicon refresh option on right-click context menu (force re-fetch, clear stale cache)~~ ✓
+- ~~duplicate / copy bookmark via context menu~~ ✓
 - "Move to board" option in bookmark context menu (alternative to cross-board drag)
 - bulk operations: multi-select bookmarks for bulk delete, tag, or move
 - browser bookmark import — parse the standard HTML export format all browsers produce
