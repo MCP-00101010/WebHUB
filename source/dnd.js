@@ -260,8 +260,13 @@ function handleBoardColumnDrop(event, columnId) {
   let draggedItem;
   if (dragPayload.area === 'board') {
     const origIdx = column.items.findIndex(i => i.id === dragPayload.itemId);
+    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
+    const oldParent = oldFound?.parent;
     draggedItem = removeBoardItemById(dragPayload.itemId);
     if (draggedItem && origIdx !== -1 && origIdx < stateInsertIndex) stateInsertIndex -= 1;
+    if (draggedItem && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
+      draggedItem.tags = (draggedItem.tags || []).filter(t => !oldParent.sharedTags.includes(t));
+    }
   } else if (dragPayload.area === 'speed-dial') {
     const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
     if (sdIdx === -1) { dragPayload = null; return; }
@@ -312,7 +317,12 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   const board = getActiveBoard();
   let dragged;
   if (dragPayload.area === 'board') {
+    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
+    const oldParent = oldFound?.parent;
     dragged = removeBoardItemById(dragPayload.itemId);
+    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
+      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
+    }
   } else if (dragPayload.area === 'speed-dial') {
     const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
     if (sdIdx === -1) { dragPayload = null; return; }
@@ -369,7 +379,12 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   const board = getActiveBoard();
   let dragged;
   if (dragPayload.area === 'board') {
+    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
+    const oldParent = oldFound?.parent;
     dragged = removeBoardItemById(dragPayload.itemId);
+    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
+      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
+    }
   } else if (dragPayload.area === 'speed-dial') {
     const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
     if (sdIdx === -1) { dragPayload = null; return; }

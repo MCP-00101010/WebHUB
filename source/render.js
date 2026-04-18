@@ -17,7 +17,11 @@ const elements = {
   modalInput2: document.getElementById('modalInput2'),
   modalUrlRow: document.getElementById('modalUrlRow'),
   modalTagsRow: document.getElementById('modalTagsRow'),
+  modalTagsLabel: document.getElementById('modalTagsLabel'),
   modalInput3: document.getElementById('modalInput3'),
+  modalTagsRow2: document.getElementById('modalTagsRow2'),
+  modalTags2Label: document.getElementById('modalTags2Label'),
+  modalInput4: document.getElementById('modalInput4'),
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
@@ -161,31 +165,36 @@ function renderSearchResults(query) {
   const pane = elements.searchResultsPane;
   pane.innerHTML = '';
 
-  const matchesQuery = item => {
-    if (item.type !== 'bookmark') return false;
+  const matchesQuery = (item, board) => {
     if ((item.title || '').toLowerCase().includes(q)) return true;
-    if ((item.url || '').toLowerCase().includes(q)) return true;
+    if (item.url && item.url.toLowerCase().includes(q)) return true;
     if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
+    if (item.sharedTags && item.sharedTags.some(t => t.toLowerCase().includes(q))) return true;
+    if (item.labels && item.labels.some(t => t.toLowerCase().includes(q))) return true;
+    if (board) {
+      const inherited = computeInheritedTags(item, board);
+      if (inherited.some(t => t.toLowerCase().includes(q))) return true;
+    }
     return false;
   };
 
-  const collectFromList = items => {
+  const collectFromList = (items, board) => {
     const hits = [];
     for (const item of (items || [])) {
-      if (matchesQuery(item)) hits.push(item);
-      if (item.children) hits.push(...collectFromList(item.children));
+      if (matchesQuery(item, board)) hits.push(item);
+      if (item.children) hits.push(...collectFromList(item.children, board));
     }
     return hits;
   };
 
   const groups = [];
-  const essHits = state.essentials.filter(e => e && matchesQuery(e));
+  const essHits = state.essentials.filter(e => e && matchesQuery(e, null));
   if (essHits.length) groups.push({ label: 'Essentials', items: essHits });
   for (const board of state.boards) {
-    const hits = [
-      ...board.speedDial.filter(matchesQuery),
-      ...board.columns.flatMap(col => collectFromList(col.items))
-    ];
+    const hits = [];
+    if (matchesQuery(board, null)) hits.push(board);
+    hits.push(...board.speedDial.filter(i => matchesQuery(i, board)));
+    hits.push(...board.columns.flatMap(col => collectFromList(col.items, board)));
     if (hits.length) groups.push({ label: board.title, items: hits });
   }
 
@@ -213,6 +222,9 @@ function renderSearchResults(query) {
 }
 
 function createSearchResultItem(item) {
+  if (item.type === 'folder') return createFolderSearchResultItem(item);
+  if (item.type === 'board') return createBoardSearchResultItem(item);
+
   const el = document.createElement('a');
   el.className = 'board-column-item bookmark-item';
   el.href = item.url || '#';
@@ -258,12 +270,120 @@ function createSearchResultItem(item) {
   return el;
 }
 
+function createFolderSearchResultItem(item) {
+  const el = document.createElement('div');
+  el.className = 'board-column-item bookmark-item';
+
+  const icon = document.createElement('span');
+  icon.className = 'bookmark-favicon';
+  icon.style.cssText = 'font-size:1rem;display:grid;place-items:center;';
+  icon.textContent = '📁';
+  el.appendChild(icon);
+
+  const body = document.createElement('div');
+  body.className = 'bookmark-body';
+  const label = document.createElement('span');
+  label.className = 'bookmark-label';
+  label.textContent = item.title || 'Untitled Folder';
+  body.appendChild(label);
+
+  const allTags = [...(item.sharedTags || []), ...(item.labels || [])];
+  if (allTags.length) {
+    const tagsEl = document.createElement('div');
+    tagsEl.className = 'bookmark-tags';
+    (item.sharedTags || []).forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = t;
+      applyTagColor(chip, t);
+      tagsEl.appendChild(chip);
+    });
+    (item.labels || []).forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip label-chip';
+      chip.textContent = t;
+      tagsEl.appendChild(chip);
+    });
+    body.appendChild(tagsEl);
+  }
+
+  el.appendChild(body);
+  return el;
+}
+
+function createBoardSearchResultItem(item) {
+  const el = document.createElement('div');
+  el.className = 'board-column-item bookmark-item';
+  el.style.cursor = 'pointer';
+  el.addEventListener('click', () => {
+    state.activeBoardId = item.id;
+    elements.searchInput.value = '';
+    elements.mainPanel.classList.remove('search-active');
+    elements.searchResultsPane.classList.add('hidden');
+    renderAll();
+    saveState();
+  });
+
+  const icon = document.createElement('span');
+  icon.className = 'bookmark-favicon';
+  icon.style.cssText = 'font-size:1rem;display:grid;place-items:center;';
+  icon.textContent = '🗂️';
+  el.appendChild(icon);
+
+  const body = document.createElement('div');
+  body.className = 'bookmark-body';
+  const label = document.createElement('span');
+  label.className = 'bookmark-label';
+  label.textContent = item.title || 'Untitled Board';
+  body.appendChild(label);
+
+  const allTags = [...(item.sharedTags || []), ...(item.labels || [])];
+  if (allTags.length) {
+    const tagsEl = document.createElement('div');
+    tagsEl.className = 'bookmark-tags';
+    (item.sharedTags || []).forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = t;
+      applyTagColor(chip, t);
+      tagsEl.appendChild(chip);
+    });
+    (item.labels || []).forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip label-chip';
+      chip.textContent = t;
+      tagsEl.appendChild(chip);
+    });
+    body.appendChild(tagsEl);
+  }
+
+  el.appendChild(body);
+  return el;
+}
+
 function applyTagColor(chip, tag) {
   const color = state.settings.tagColors?.[tag];
   if (color) {
     chip.style.background = hexToRgba(color, 0.15);
     chip.style.color = color;
   }
+}
+
+function createTagSection(labelText, tags, chipClass) {
+  const section = document.createElement('div');
+  section.className = 'tag-section';
+  const lbl = document.createElement('span');
+  lbl.className = 'tag-section-label';
+  lbl.textContent = labelText;
+  section.appendChild(lbl);
+  tags.forEach(t => {
+    const chip = document.createElement('span');
+    chip.className = `tag-chip ${chipClass}`;
+    chip.textContent = t;
+    if (chipClass !== 'inherited-tag-chip' && chipClass !== 'label-chip') applyTagColor(chip, t);
+    section.appendChild(chip);
+  });
+  return section;
 }
 
 let lastRenderedBoardId = null;
@@ -616,6 +736,15 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     header.appendChild(title);
     itemEl.appendChild(header);
 
+    const board = getActiveBoard();
+    const folderTagArea = document.createElement('div');
+    folderTagArea.className = 'folder-tag-area';
+    const inherited = computeInheritedTags(item, board);
+    if (inherited.length) folderTagArea.appendChild(createTagSection('Inherited', inherited, 'inherited-tag-chip'));
+    if (item.sharedTags?.length) folderTagArea.appendChild(createTagSection('Shared', item.sharedTags, 'tag-chip'));
+    if (item.labels?.length) folderTagArea.appendChild(createTagSection('Labels', item.labels, 'label-chip'));
+    if (folderTagArea.children.length) itemEl.appendChild(folderTagArea);
+
     header.addEventListener('dragover', event => handleBoardFolderHeaderDragOver(event, item, columnId, depth));
     header.addEventListener('dragleave', event => {
       if (header.contains(event.relatedTarget)) return;
@@ -673,6 +802,14 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     label.className = 'bookmark-label';
     label.textContent = item.title || item.url || 'Untitled Bookmark';
     body.appendChild(label);
+
+    const bmBoard = getActiveBoard();
+    const bmInherited = computeInheritedTags(item, bmBoard);
+    if (bmInherited.length) {
+      const iSection = createTagSection('Inherited', bmInherited, 'inherited-tag-chip');
+      iSection.classList.add('bookmark-tags');
+      body.appendChild(iSection);
+    }
 
     if (item.tags && item.tags.length > 0) {
       const tagsEl = document.createElement('div');

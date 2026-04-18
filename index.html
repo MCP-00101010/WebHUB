@@ -137,7 +137,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.6.1</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.7.0</button>
       </div>
     </aside>
 
@@ -184,11 +184,15 @@
         </div>
         <div id="modalDuplicateWarning" class="modal-duplicate-warning hidden"></div>
         <div class="form-row hidden" id="modalTagsRow">
-          <label for="modalInput3">Tags</label>
+          <label id="modalTagsLabel" for="modalInput3">Tags</label>
           <div class="tags-input-container">
             <input id="modalInput3" type="text" placeholder="work tools productivity" />
             <div id="tagSuggestions" class="tag-suggestions hidden"></div>
           </div>
+        </div>
+        <div class="form-row hidden" id="modalTagsRow2">
+          <label id="modalTags2Label" for="modalInput4">Labels</label>
+          <input id="modalInput4" type="text" placeholder="for-later review urgent" />
         </div>
         <div class="form-row hidden" id="modalSelectRow">
           <label id="modalSelectLabel" for="modalSelect">Select</label>
@@ -224,6 +228,25 @@
           </div>
           <div class="settings-row">
             <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-label">Tags</div>
+          <div class="settings-row">
+            <span>Shared tags</span>
+            <input id="bstgSharedTags" type="text" class="settings-text-input" placeholder="topic category" />
+          </div>
+          <div class="settings-row">
+            <span>Labels</span>
+            <input id="bstgLabels" type="text" class="settings-text-input" placeholder="for-later urgent" />
+          </div>
+          <div class="settings-row">
+            <span>Pass tags to children</span>
+            <label class="settings-toggle">
+              <input id="bstgInheritTags" type="checkbox" checked />
+              <span class="toggle-track"></span>
+            </label>
           </div>
         </div>
 
@@ -628,7 +651,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.6.1</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.7.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>

@@ -38,6 +38,7 @@ const defaultSettings = {
   folderTextAlign: 'left', folderColor: '',
   titleColor: '',
   tagColors: {},
+  tagGroups: [],
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
   showEssentials: true,
@@ -57,6 +58,9 @@ const defaultState = {
       columnCount: 3,
       backgroundImage: '',
       containerOpacity: 100,
+      sharedTags: [],
+      labels: [],
+      inheritTags: true,
       speedDial: [
         { id: 'sd-1', type: 'bookmark', title: 'Inbox', url: 'https://mail.example.com', tags: [] },
         { id: 'sd-2', type: 'bookmark', title: 'Docs', url: 'https://www.example.com', tags: [] }
@@ -91,6 +95,12 @@ function migrateItems(items) {
       if (!item.tags) item.tags = [];
       if (item.faviconCache === undefined) item.faviconCache = '';
     }
+    if (item.type === 'folder') {
+      if (!item.sharedTags) item.sharedTags = [];
+      if (!item.labels) item.labels = [];
+      if (item.inheritTags === undefined) item.inheritTags = true;
+      if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
+    }
     if (item.children) migrateItems(item.children);
   }
 }
@@ -113,6 +123,9 @@ function loadState() {
       if (board.backgroundImage === undefined) board.backgroundImage = '';
       if (board.containerOpacity === undefined) board.containerOpacity = 100;
       if (board.showSpeedDial === undefined) board.showSpeedDial = true;
+      if (!board.sharedTags) board.sharedTags = [];
+      if (!board.labels) board.labels = [];
+      if (board.inheritTags === undefined) board.inheritTags = true;
       for (const item of (board.speedDial || [])) {
         if (!item.type) item.type = 'bookmark';
         if (!item.tags) item.tags = [];
@@ -303,6 +316,9 @@ function createBoard(title) {
     backgroundImage: '',
     containerOpacity: 100,
     showSpeedDial: true,
+    sharedTags: [],
+    labels: [],
+    inheritTags: true,
     speedDial: [],
     columns: [
       { id: `${id}-col-1`, title: 'Column 1', items: [] },
@@ -337,7 +353,13 @@ function addBookmarkItem(type, title, columnId) {
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
   const item = { id: `id-${Date.now()}`, type, title };
-  if (type === 'folder') item.children = [];
+  if (type === 'folder') {
+    item.children = [];
+    item.sharedTags = [];
+    item.labels = [];
+    item.inheritTags = true;
+    item.autoRemoveTags = false;
+  }
   column.items.push(item);
 }
 
@@ -417,6 +439,33 @@ function removeEssential(slot) {
   trimEssentialsTail();
 }
 
+// --- Tag inheritance ---
+
+function computeInheritedTags(item, board) {
+  if (!board) return [];
+  function findParentChain(targetId, items, chain) {
+    for (const i of (items || [])) {
+      if (i.id === targetId) return chain;
+      if (i.type === 'folder' && i.children) {
+        const found = findParentChain(targetId, i.children, [...chain, i]);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  let chain = null;
+  for (const col of (board.columns || [])) {
+    chain = findParentChain(item.id, col.items, [board]);
+    if (chain) break;
+  }
+  if (!chain) return [];
+  const tags = [];
+  for (const ancestor of chain) {
+    if (ancestor.inheritTags !== false && ancestor.sharedTags) tags.push(...ancestor.sharedTags);
+  }
+  return [...new Set(tags)];
+}
+
 // --- Bookmark management utilities ---
 
 function findDuplicateUrl(url) {
@@ -449,15 +498,28 @@ function getKnownTags() {
   const walk = (items) => {
     for (const item of (items || [])) {
       if (item?.tags) item.tags.forEach(t => tags.add(t));
+      if (item?.sharedTags) item.sharedTags.forEach(t => tags.add(t));
+      if (item?.labels) item.labels.forEach(t => tags.add(t));
       if (item?.children) walk(item.children);
     }
   };
   walk(state.essentials);
   for (const board of state.boards) {
+    if (board.sharedTags) board.sharedTags.forEach(t => tags.add(t));
+    if (board.labels) board.labels.forEach(t => tags.add(t));
     walk(board.speedDial);
     for (const col of board.columns) walk(col.items);
   }
   return Array.from(tags).sort();
+}
+
+function editFolderTags(itemId, sharedTags, labels) {
+  const board = getActiveBoard();
+  const found = findBoardItemInColumns(board, itemId);
+  if (found?.item?.type === 'folder') {
+    found.item.sharedTags = sharedTags;
+    found.item.labels = labels;
+  }
 }
 
 // --- Undo snapshot ---

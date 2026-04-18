@@ -5,6 +5,31 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.7.0] — 2026-04-18
+
+### Added
+
+- **Tag inheritance system**: folders and boards now carry `sharedTags[]` that propagate to all descendants; computed on-the-fly at render time — never stored in state
+- **Two tag types on folders/boards**: `sharedTags[]` (inherited by children) and `labels[]` (folder/board-only, not inherited)
+- **`inheritTags` flag** on folders and boards (default `true`): controls whether this node passes its `sharedTags` down to children
+- **`autoRemoveTags` flag** on folders (default `false`): when `true`, strips parent's `sharedTags` from an item's `tags[]` when moved out
+- **Three-section tag display**: inherited (grey italic, read-only) | shared tags (blue) | labels (amber) — shown on folder headers and bookmark cards
+- **Folder context menu**: "Edit tags", "✓/○ Pass tags to children" toggle, "✓/○ Strip tags on move out" toggle
+- **Board settings panel**: Shared Tags, Labels, and Inherit Tags inputs wired up with live updates
+- **Extended search**: folders, boards, and inherited tags are now searchable; clicking a folder result navigates into it; clicking a board result switches to that board
+- **`computeInheritedTags(item, board)`** helper in state.js: walks parent chain recursively without a separate buildParentMap step
+- **`editFolderTags(itemId, sharedTags, labels)`** state function
+- **`tagGroups: []`** scaffolded in defaultSettings (design TBD)
+
+### Changed
+
+- Modal second tags row (Labels) shown only for folders/boards; hidden for bookmarks
+- `getKnownTags()` now collects sharedTags and labels from folders and boards for autocomplete
+- DnD drop handlers apply `autoRemoveTags` logic on item move-out across all three drop targets
+- Grid column overflow fixed: `.folder-children` uses `grid-template-columns: minmax(0, 1fr)`
+
+---
+
 ## [0.6.1] — 2026-04-18
 
 ### Fixed

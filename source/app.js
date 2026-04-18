@@ -1,4 +1,4 @@
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.7.0';
 
 let activeModal = null;
 let contextTarget = null;
@@ -245,7 +245,11 @@ function showModal(type, options = {}) {
   elements.modalNameRow.classList.toggle('hidden', !showName);
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
+  elements.modalTagsRow2.classList.toggle('hidden', !options.showTags2);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
+  if (elements.modalTagsLabel) elements.modalTagsLabel.textContent = options.label3 || 'Tags';
+  if (elements.modalTags2Label) elements.modalTags2Label.textContent = options.label4 || 'Labels';
+  elements.modalInput4.value = options.value4 || '';
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
   const selectLabel = document.getElementById('modalSelectLabel');
@@ -269,6 +273,7 @@ function showModal(type, options = {}) {
 function hideModal() {
   activeModal = null;
   elements.modalOverlay.classList.add('hidden');
+  elements.modalInput4.value = '';
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
 }
@@ -308,7 +313,7 @@ function handleModalSubmit(event) {
   const value3 = elements.modalInput3.value.trim();
   const tags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
 
-  const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags'];
+  const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags', 'editFolderTags'];
   if (!value1 && !noNameRequired.includes(activeModal)) return;
 
   pushUndoSnapshot();
@@ -397,6 +402,12 @@ function handleModalSubmit(event) {
       clearSelection();
       break;
     }
+    case 'editFolderTags': {
+      const sharedTags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
+      const labels = elements.modalInput4.value.trim().split(/\s+/).filter(Boolean);
+      editFolderTags(contextTarget.itemId, sharedTags, labels);
+      break;
+    }
     default:
       break;
   }
@@ -428,6 +439,9 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
+  document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
+  document.getElementById('bstgLabels').value = (board.labels || []).join(' ');
+  document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
 }
 
 function hideBoardSettingsPanel() {
@@ -538,6 +552,26 @@ function attachBoardSettingsListeners() {
     const board = getActiveBoard();
     if (!board) return;
     board.showSpeedDial = e.target.checked;
+    renderBoard();
+  });
+
+  document.getElementById('bstgSharedTags').addEventListener('input', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    board.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
+    renderBoard();
+  });
+
+  document.getElementById('bstgLabels').addEventListener('input', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    board.labels = e.target.value.trim().split(/\s+/).filter(Boolean);
+  });
+
+  document.getElementById('bstgInheritTags').addEventListener('change', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    board.inheritTags = e.target.checked;
     renderBoard();
   });
 
@@ -806,6 +840,41 @@ function handleContextMenuAction(action) {
         showTags: true, contextTarget
       });
       break;
+    case 'editFolderTags': {
+      const board = getActiveBoard();
+      const found = findBoardItemInColumns(board, contextTarget.itemId);
+      if (!found?.item) break;
+      showModal('editFolderTags', {
+        title: 'Edit Folder Tags',
+        showName: false,
+        showTags: true, label3: 'Shared tags',
+        showTags2: true, label4: 'Labels',
+        value3: (found.item.sharedTags || []).join(' '),
+        value4: (found.item.labels || []).join(' '),
+        contextTarget
+      });
+      break;
+    }
+    case 'toggleFolderInheritTags': {
+      const board = getActiveBoard();
+      const found = findBoardItemInColumns(board, contextTarget.itemId);
+      if (found?.item) {
+        pushUndoSnapshot();
+        found.item.inheritTags = found.item.inheritTags === false ? true : false;
+        renderAll(); saveState();
+      }
+      break;
+    }
+    case 'toggleFolderAutoRemove': {
+      const board = getActiveBoard();
+      const found = findBoardItemInColumns(board, contextTarget.itemId);
+      if (found?.item) {
+        pushUndoSnapshot();
+        found.item.autoRemoveTags = !found.item.autoRemoveTags;
+        renderAll(); saveState();
+      }
+      break;
+    }
     default:
       break;
   }
@@ -824,6 +893,9 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
   const options = [];
   if (item.type === 'folder') {
     options.push({ label: 'Rename folder', action: 'renameItem' });
+    options.push({ label: 'Edit tags', action: 'editFolderTags' });
+    options.push({ label: `${item.inheritTags !== false ? '✓' : '○'} Pass tags to children`, action: 'toggleFolderInheritTags' });
+    options.push({ label: `${item.autoRemoveTags ? '✓' : '○'} Strip tags on move out`, action: 'toggleFolderAutoRemove' });
     options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
     options.push({ label: 'Delete folder', action: 'deleteItem' });

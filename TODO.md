@@ -156,7 +156,9 @@ See [0.6.1] in CHANGELOG.
 
 ---
 
-### Phase 4 — Tag system overhaul
+### Phase 4 — Tag system overhaul ✓ *Completed 2026-04-18*
+
+*See [0.7.0] in CHANGELOG.*
 
 *Foundational. Touches state schema, DnD logic, and every item-facing UI. Must land before widgets (which may also carry tags) and before the extension (tag propagation is independent of file I/O).*
 
@@ -215,14 +217,15 @@ See [0.6.1] in CHANGELOG.
 *Inbox from Phase 5 is already in place — extension just needs to write to it. Build the API contract first.*
 
 1. **Design the postMessage API spec** — define all message types and response shapes before writing a single line of extension code. This is the most important design decision in this phase.
-2. Native messaging host (Python or Node, ~50 lines)
-3. Firefox extension (Manifest V3, content script on `file://` pages)
-4. Page-side bridge module — wraps postMessage in promises, **gracefully falls back** if extension is absent (existing manual export/import remains the fallback path)
-5. Chromium / File Access API shim — implement the same bridge interface using `window.showOpenFilePicker` / `showDirectoryPicker` so the hub works on Chrome/Edge without the extension
-6. Auto-save / auto-load wiring — replace manual export/import with silent reads/writes when bridge is available
-7. Background folder browser UI (reuses existing data URL + background image pipeline)
-8. Theme file browser (scans `./themes` folder, used by Phase 7)
-9. "Send current tab" button in extension → active board's inbox column
+2. Native messaging host (Python or Node, ~50 line
+3. s)
+4. Firefox extension (Manifest V3, content script on `file://` pages)
+5. Page-side bridge module — wraps postMessage in promises, **gracefully falls back** if extension is absent (existing manual export/import remains the fallback path)
+6. Chromium / File Access API shim — implement the same bridge interface using `window.showOpenFilePicker` / `showDirectoryPicker` so the hub works on Chrome/Edge without the extension
+7. Auto-save / auto-load wiring — replace manual export/import with silent reads/writes when bridge is available
+8. Background folder browser UI (reuses existing data URL + background image pipeline)
+9. Theme file browser (scans `./themes` folder, used by Phase 7)
+10. "Send current tab" button in extension → active board's inbox column
 
 ---
 
