@@ -1,12 +1,47 @@
 // --- Context menu ---
 
+function _clearSubmenus() {
+  document.querySelectorAll('.context-submenu').forEach(s => s.remove());
+}
+
 function showContextMenu(x, y, actions) {
   const menu = elements.contextMenu;
   menu.innerHTML = '';
   actions.forEach(action => {
     const button = document.createElement('button');
     button.textContent = action.label;
-    button.addEventListener('click', () => { handleContextMenuAction(action.action); hideContextMenu(); });
+    if (action.submenu && action.submenu.length) {
+      button.classList.add('has-submenu');
+      const arrow = document.createElement('span');
+      arrow.className = 'submenu-arrow';
+      arrow.textContent = '›';
+      button.appendChild(arrow);
+      button.addEventListener('mouseenter', () => {
+        _clearSubmenus();
+        const sub = document.createElement('div');
+        sub.className = 'context-menu context-submenu';
+        action.submenu.forEach(subAction => {
+          const subBtn = document.createElement('button');
+          subBtn.textContent = subAction.label;
+          subBtn.addEventListener('click', () => { handleContextMenuAction(subAction.action); hideContextMenu(); });
+          sub.appendChild(subBtn);
+        });
+        document.body.appendChild(sub);
+        const rect = button.getBoundingClientRect();
+        let left = rect.right + 2;
+        let top = rect.top;
+        sub.style.left = `${left}px`;
+        sub.style.top = `${top}px`;
+        const subRect = sub.getBoundingClientRect();
+        if (subRect.right > window.innerWidth - 4) left = rect.left - subRect.width - 2;
+        if (subRect.bottom > window.innerHeight - 4) top = window.innerHeight - subRect.height - 4;
+        sub.style.left = `${left}px`;
+        sub.style.top = `${top}px`;
+      });
+    } else {
+      button.addEventListener('mouseenter', _clearSubmenus);
+      button.addEventListener('click', () => { handleContextMenuAction(action.action); hideContextMenu(); });
+    }
     menu.appendChild(button);
   });
   menu.style.left = '0';
@@ -19,6 +54,7 @@ function showContextMenu(x, y, actions) {
 }
 
 function hideContextMenu() {
+  _clearSubmenus();
   elements.contextMenu.classList.add('hidden');
   elements.contextMenu.innerHTML = '';
 }
@@ -240,8 +276,9 @@ function handleContextMenuAction(action) {
     case 'editWidget':
       openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); });
       break;
-    case 'addWidget':
-      openWidgetPicker('column', type => {
+    default:
+      if (action.startsWith('addWidget:')) {
+        const type = action.slice('addWidget:'.length);
         pushUndoSnapshot();
         const widget = _newWidgetState(type);
         const board = getActiveBoard();
@@ -249,18 +286,14 @@ function handleContextMenuAction(action) {
         if (col) col.items.push(widget);
         renderAll();
         saveState();
-      });
-      break;
-    case 'addNavWidget':
-      openWidgetPicker('navpane', type => {
+      } else if (action.startsWith('addNavWidget:')) {
+        const type = action.slice('addNavWidget:'.length);
         pushUndoSnapshot();
         const widget = _newWidgetState(type);
         state.navItems.push(widget);
         renderNav();
         saveState();
-      });
-      break;
-    default:
+      }
       break;
   }
 }
@@ -337,23 +370,31 @@ function handleBoardColumnContextMenu(event, columnId) {
   event.preventDefault();
   lastActiveColumnId = columnId;
   contextTarget = { area: 'board-empty', columnId };
-  showContextMenu(event.clientX, event.clientY, [
+  const widgetSubmenu = Object.entries(WIDGET_REGISTRY)
+    .filter(([, def]) => def.allowedIn.includes('column'))
+    .map(([type, def]) => ({ label: def.name, action: `addWidget:${type}` }));
+  const items = [
     { label: 'Add folder', action: 'addFolder' },
     { label: 'Add bookmark', action: 'addBookmark' },
     { label: 'Add title', action: 'addTitle' },
-    { label: 'Add divider', action: 'addDivider' },
-    { label: 'Add widget', action: 'addWidget' }
-  ]);
+    { label: 'Add divider', action: 'addDivider' }
+  ];
+  if (widgetSubmenu.length) items.push({ label: 'Add widget', submenu: widgetSubmenu });
+  showContextMenu(event.clientX, event.clientY, items);
 }
 
 function handleNavListContextMenu(event) {
   event.preventDefault();
   contextTarget = { area: 'nav-empty' };
-  showContextMenu(event.clientX, event.clientY, [
+  const widgetSubmenu = Object.entries(WIDGET_REGISTRY)
+    .filter(([, def]) => def.allowedIn.includes('navpane'))
+    .map(([type, def]) => ({ label: def.name, action: `addNavWidget:${type}` }));
+  const items = [
     { label: 'Add board', action: 'addBoard' },
     { label: 'Add folder', action: 'addNavFolder' },
     { label: 'Add title', action: 'addNavTitle' },
-    { label: 'Add divider', action: 'addNavDivider' },
-    { label: 'Add widget', action: 'addNavWidget' }
-  ]);
+    { label: 'Add divider', action: 'addNavDivider' }
+  ];
+  if (widgetSubmenu.length) items.push({ label: 'Add widget', submenu: widgetSubmenu });
+  showContextMenu(event.clientX, event.clientY, items);
 }

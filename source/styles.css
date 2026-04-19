@@ -828,6 +828,21 @@ button {
   background: var(--surface-2);
 }
 
+.context-menu button.has-submenu {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.submenu-arrow {
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.context-submenu {
+  z-index: 301;
+}
+
 .drop-target {
   outline: 2px dashed rgba(111, 115, 255, 0.85);
 }
