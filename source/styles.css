@@ -857,11 +857,9 @@ button {
   pointer-events: none;
 }
 
-.drag-placeholder.drag-preview {
-  border: none;
-  background: transparent;
-  min-height: unset;
+.drag-preview {
   opacity: 0.5;
+  pointer-events: none;
 }
 .drag-preview * { pointer-events: none; }
 

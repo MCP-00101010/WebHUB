@@ -25,7 +25,7 @@ function getExternalDrop(event) {
 function removeDragPlaceholders() {
   _dropTarget = null;
   _dropPos    = null;
-  document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
+  document.querySelectorAll('.drag-placeholder, .drag-preview').forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
     el.classList.remove('drop-position-before', 'drop-position-after');
@@ -41,7 +41,7 @@ function createDragPlaceholder(kind) {
     const sourceEl = document.querySelector(selector);
     if (sourceEl) {
       const clone = sourceEl.cloneNode(true);
-      clone.classList.add('drag-placeholder', 'drag-preview');
+      clone.classList.add('drag-preview');
       clone.classList.remove('selected', 'drop-position-before', 'drop-position-after');
       clone.removeAttribute('draggable');
       clone.removeAttribute('data-drop-position');
