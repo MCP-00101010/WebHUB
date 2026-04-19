@@ -123,6 +123,9 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   itemEl.dataset.dropPosition = position;
   itemEl.classList.toggle('drop-position-before', position === 'before');
   itemEl.classList.toggle('drop-position-after', position === 'after');
+  const preview = createDragPlaceholder('board');
+  if (position === 'before') itemEl.parentElement.insertBefore(preview, itemEl);
+  else itemEl.parentElement.insertBefore(preview, itemEl.nextSibling);
 }
 
 function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
@@ -615,6 +618,9 @@ function handleNavItemDragOver(event, item, parent) {
   element.dataset.dropPosition = position;
   element.classList.toggle('drop-position-before', position === 'before');
   element.classList.toggle('drop-position-after', position === 'after');
+  const preview = createDragPlaceholder('nav');
+  if (position === 'before') element.parentElement.insertBefore(preview, element);
+  else element.parentElement.insertBefore(preview, element.nextSibling);
 }
 
 function handleNavDrop(event, targetItem, parent) {

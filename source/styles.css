@@ -899,21 +899,6 @@ button {
   background: var(--surface-1);
 }
 
-.board-column-item.drop-position-before {
-  box-shadow: 0 -3px 0 0 var(--accent);
-}
-
-.board-column-item.drop-position-after {
-  box-shadow: 0 3px 0 0 var(--accent);
-}
-
-.nav-item.drop-position-before {
-  box-shadow: 0 -2px 0 0 var(--accent);
-}
-
-.nav-item.drop-position-after {
-  box-shadow: 0 2px 0 0 var(--accent);
-}
 
 .board-column-item.drop-target,
 .nav-item.drop-target {
