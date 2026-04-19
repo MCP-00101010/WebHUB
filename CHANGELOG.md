@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.8.1] — 2026-04-19
+
+### Changed
+
+- **Refactored source files**: split large `app.js` and `render.js` into five focused modules:
+  - `source/render-items.js` — tag chip helpers (`applyTagColor`, `makeTagChip`, `renderTagsInto`, `createTagSection`) and `createBoardItemElement`
+  - `source/modal.js` — tag autocomplete, generic modal, folder modal, `openExternalBookmarkModal`
+  - `source/context.js` — context menu rendering and all `handle*ContextMenu` handlers
+  - `source/settings.js` — board settings panel, global settings panel, font/color helpers, `attachSettingsListeners`
+  - `source/import.js` — inbox panel, browser bookmark HTML parser, `attachBookmarkImportListener`
+- Removed duplicate `item.tags` check in `renderSearchResults.matchesQuery`
+- Removed dead `countBookmarks` function (superseded by `countItemsRecursive` in state.js)
+
+---
+
 ## [0.8.0] — 2026-04-19
 
 ### Added

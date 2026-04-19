@@ -32,6 +32,7 @@
 ## Drag and Drop functionality
 
 - previews: instead of rendering these blue frames to indicate where the object we are currently drag will end up when we drop it, can we render the actual object? to reduce the little flicker, only update the preview when the order of objects on screen does actually change. (Modernization/QoL)
+- allow folders and bookmarks to DnD to boards in the navpane -> send them to targets board inbox
 
 ## Firefox Extension (Native Bridge) (!! Should be added sooner rather than later as features like backgound image browser and loading/saving of color schemes and font settings depend on it)
 
@@ -191,6 +192,10 @@ See [0.6.1] in CHANGELOG.
 ### Phase 5 — Board inbox & Import Manager ✓ *Completed 2026-04-19*
 
 See [0.8.0] in CHANGELOG.
+
+### Source refactor (v0.8.1) ✓ *Completed 2026-04-19*
+
+See [0.8.1] in CHANGELOG.
 
 ---
 
