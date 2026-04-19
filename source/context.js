@@ -237,6 +237,29 @@ function handleContextMenuAction(action) {
     case 'editFolder':
       showFolderModal('edit', contextTarget);
       break;
+    case 'editWidget':
+      openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); });
+      break;
+    case 'addWidget':
+      openWidgetPicker('column', type => {
+        pushUndoSnapshot();
+        const widget = _newWidgetState(type);
+        const board = getActiveBoard();
+        const col = board?.columns.find(c => c.id === contextTarget.columnId);
+        if (col) col.items.push(widget);
+        renderAll();
+        saveState();
+      });
+      break;
+    case 'addNavWidget':
+      openWidgetPicker('navpane', type => {
+        pushUndoSnapshot();
+        const widget = _newWidgetState(type);
+        state.navItems.push(widget);
+        renderNav();
+        saveState();
+      });
+      break;
     default:
       break;
   }
@@ -286,6 +309,9 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
     options.push({ label: 'Delete', action: 'deleteNavItem' });
+  } else if (item.type === 'widget') {
+    options.push({ label: 'Widget settings', action: 'editWidget' });
+    options.push({ label: 'Delete widget', action: 'deleteNavItem' });
   }
 
   showContextMenu(event.clientX, event.clientY, options);
@@ -315,7 +341,8 @@ function handleBoardColumnContextMenu(event, columnId) {
     { label: 'Add folder', action: 'addFolder' },
     { label: 'Add bookmark', action: 'addBookmark' },
     { label: 'Add title', action: 'addTitle' },
-    { label: 'Add divider', action: 'addDivider' }
+    { label: 'Add divider', action: 'addDivider' },
+    { label: 'Add widget', action: 'addWidget' }
   ]);
 }
 
@@ -326,6 +353,7 @@ function handleNavListContextMenu(event) {
     { label: 'Add board', action: 'addBoard' },
     { label: 'Add folder', action: 'addNavFolder' },
     { label: 'Add title', action: 'addNavTitle' },
-    { label: 'Add divider', action: 'addNavDivider' }
+    { label: 'Add divider', action: 'addNavDivider' },
+    { label: 'Add widget', action: 'addNavWidget' }
   ]);
 }

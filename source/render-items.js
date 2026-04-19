@@ -34,6 +34,8 @@ function createTagSection(labelText, tags) {
 // --- Board item element ---
 
 function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) {
+  if (item.type === 'widget') return createWidgetElement(item, columnId) || document.createElement('div');
+
   const itemEl = document.createElement('div');
   itemEl.className = 'board-column-item';
   itemEl.dataset.itemId = item.id;

@@ -143,7 +143,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.10.0</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.0</button>
       </div>
     </aside>
 
@@ -667,7 +667,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.10.0</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.11.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -707,6 +707,27 @@
           <button type="button" id="folderModalCancelBtn" class="secondary-btn">Cancel</button>
           <button type="button" id="folderModalSubmitBtn" class="primary-btn">Create</button>
         </div>
+      </div>
+    </div>
+
+    <div id="widgetSettingsPanel" class="settings-panel draggable hidden" style="width:min(480px,calc(100vw - 40px))">
+      <div id="wstgHeader" class="settings-header">
+        <input id="wstgTitle" type="text" class="bstg-title-input" placeholder="Widget title (optional)" />
+      </div>
+      <div id="wstgBody"></div>
+      <div class="form-actions">
+        <button type="button" id="wstgCancelBtn" class="secondary-btn">Cancel</button>
+        <button type="button" id="wstgDoneBtn" class="primary-btn">Done</button>
+      </div>
+    </div>
+
+    <div id="widgetPickerPanel" class="settings-panel draggable hidden" style="width:min(400px,calc(100vw - 40px))">
+      <div class="settings-header">
+        <h3>Add Widget</h3>
+      </div>
+      <div id="wPickerList" class="widget-picker-list"></div>
+      <div class="form-actions">
+        <button type="button" id="wPickerCancelBtn" class="secondary-btn">Cancel</button>
       </div>
     </div>
 
@@ -757,6 +778,7 @@
   <div id="tooltip" class="tooltip hidden"></div>
   <script src="source/bridge.js" defer></script>
   <script src="source/themes.js" defer></script>
+  <script src="source/widgets.js" defer></script>
   <script src="source/icons.js" defer></script>
   <script src="source/state.js" defer></script>
   <script src="source/render-items.js" defer></script>

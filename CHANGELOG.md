@@ -5,6 +5,32 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.0] — 2026-04-19
+
+### Added
+
+- **Widget framework** — new board item type alongside bookmarks, folders, titles, and dividers
+  - `source/widgets.js` — `WIDGET_REGISTRY` pattern; adding a widget requires one object in one file
+  - `WIDGET_REGISTRY[type]` fields: `name`, `description`, `allowedIn` (array of contexts), `defaultConfig`, `defaultData`, `render(widget, el, context)`, `renderSettings(widget, container)`
+  - `render` context is `'column'` or `'navpane'` — same function produces full card or compact strip
+  - Timer management keyed by `"widgetId:context"` to prevent accumulation on re-render; `clearColumnWidgetTimers()` / `clearNavWidgetTimers()` called at start of each render pass
+  - Widget settings panel (`widgetSettingsPanel` in HTML) — title input + dynamic settings via `[data-cfg]` attributes; AbortController cleans up listeners on close; Cancel reverts config
+  - Widget picker panel (`widgetPickerPanel`) — lists widgets allowed in the current context; AbortController cleanup
+- **Clock widget** — live time display; column: large time + optional date; navpane: compact time; config: 24h/12h format, show seconds, show date, timezone (IANA string)
+- **Countdown widget** — counts down to a target datetime; column: label + formatted time remaining; navpane: compact remaining; config: label, target date
+- "Add widget" option in column right-click context menu
+- "Add widget" option in navpane right-click context menu (shows only navpane-allowed widgets)
+- Widget right-click menu: "Widget settings" and "Delete widget"
+
+### Changed
+
+- `renderColumns` now calls `clearColumnWidgetTimers()` before rebuilding DOM
+- `renderNav` now calls `clearNavWidgetTimers()` before rebuilding DOM
+- `createBoardItemElement` delegates `type === 'widget'` items to `createWidgetElement`
+- `createNavItem` handles `type === 'widget'` — renders compact widget strip in navpane
+
+---
+
 ## [0.10.0] — 2026-04-19
 
 ### Added

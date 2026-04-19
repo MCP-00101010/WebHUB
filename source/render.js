@@ -458,6 +458,7 @@ function renderEssentials() {
 }
 
 function renderNav() {
+  clearNavWidgetTimers();
   elements.navList.innerHTML = '';
   if (importManagerHasItems()) {
     const importBoard = getImportManagerBoard();
@@ -512,6 +513,23 @@ function createNavItem(item, depth = 0, parent = null) {
   el.dataset.id = item.id;
   el.dataset.type = item.type;
   el.draggable = true;
+
+  if (item.type === 'widget') {
+    const def = WIDGET_REGISTRY[item.widgetType];
+    el.classList.add('nav-widget-item');
+    if (def) {
+      const body = document.createElement('div');
+      body.className = 'nav-widget-body';
+      el.appendChild(body);
+      def.render(item, body, 'navpane');
+    }
+    el.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleNavContextMenu(e, item, parent, depth);
+    });
+    return el;
+  }
 
   if (item.type === 'title') el.classList.add(item.title ? 'nav-title' : 'nav-divider');
 
@@ -717,6 +735,7 @@ function renderSpeedDial(board) {
 }
 
 function renderColumns(board) {
+  clearColumnWidgetTimers();
   elements.bookmarkColumns.innerHTML = '';
   board.columns.filter(c => !c.isInbox).forEach(column => {
     const columnEl = document.createElement('div');

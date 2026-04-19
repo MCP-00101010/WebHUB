@@ -15,14 +15,11 @@
 
 ## Widgets
 
-- widget support as a new board item type alongside bookmarks, folders, titles and dividers
 - to-do list widget (checklist with add/remove/check-off)
-- clock widget (live time display, configurable timezone/format)
 - weather widget (current conditions, configurable location)
 - image widget (display a static image or gif inline in a column; allow fetch from URL e.g. NASA image of the day)
 - news feed / RSS widget (fetch and display headlines from a feed URL)
 - notes widget (freeform text / markdown block)
-- countdown widget (days until a target date and/or time)
 
 ## Drag and Drop
 
@@ -110,21 +107,16 @@ See [0.10.0] in CHANGELOG.
 
 ---
 
-### Phase 8 — Widget framework
+### Phase 8 — Widget framework ✓ *Completed 2026-04-19*
 
-*Comes after state is stable and after tag system (widgets may carry tags). Build the framework before individual widgets so each widget slots in cleanly.*
+See [0.11.0] in CHANGELOG.
 
-1. Design widget item type in state schema (type, config object, live data store)
-2. Widget rendering framework — how widgets size, resize, and sit alongside bookmarks in columns
-3. Widget settings modal pattern (reuse existing modal infrastructure)
-4. Individual widgets in complexity order:
-   - Clock (simplest — pure JS, no external data)
-   - Notes (freeform text / markdown)
-   - To-do list (local state, checklist)
-   - Countdown (target date/time)
-   - Image (URL or local via extension bridge)
-   - Weather (external API, configurable location)
-   - News feed / RSS (external fetch, configurable URL)
+Remaining widgets (not yet built):
+- Notes (freeform text / markdown)
+- To-do list (local state, checklist)
+- Image (URL or local via extension bridge)
+- Weather (external API, configurable location)
+- News feed / RSS (external fetch, configurable URL)
 
 ---
 
