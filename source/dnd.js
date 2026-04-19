@@ -30,6 +30,24 @@ function removeDragPlaceholders() {
 }
 
 function createDragPlaceholder(kind) {
+  if (dragPayload?.itemId && kind !== 'speed-dial') {
+    const selector = kind === 'nav'
+      ? `.nav-item[data-id="${CSS.escape(dragPayload.itemId)}"]`
+      : `[data-item-id="${CSS.escape(dragPayload.itemId)}"]`;
+    const sourceEl = document.querySelector(selector);
+    if (sourceEl) {
+      const clone = sourceEl.cloneNode(true);
+      clone.classList.add('drag-placeholder', 'drag-preview');
+      clone.classList.remove('selected', 'drop-position-before', 'drop-position-after');
+      clone.removeAttribute('draggable');
+      clone.removeAttribute('data-drop-position');
+      clone.querySelectorAll('[data-drop-position]').forEach(el => {
+        el.removeAttribute('data-drop-position');
+        el.classList.remove('drop-position-before', 'drop-position-after', 'selected');
+      });
+      return clone;
+    }
+  }
   const placeholder = document.createElement('div');
   placeholder.className = `drag-placeholder ${kind}-placeholder`;
   return placeholder;
@@ -574,6 +592,14 @@ function handleSpeedDialContainerDrop(event) {
 // --- Nav drag & drop ---
 
 function handleNavItemDragOver(event, item, parent) {
+  if (dragPayload?.area === 'board' && item.type === 'board') {
+    if (!['bookmark', 'folder'].includes(dragPayload.itemType)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    event.currentTarget.classList.add('drop-target');
+    return;
+  }
   if (!dragPayload || dragPayload.area !== 'nav') return;
   event.preventDefault();
   event.stopPropagation();
@@ -591,6 +617,22 @@ function handleNavItemDragOver(event, item, parent) {
 }
 
 function handleNavDrop(event, targetItem, parent) {
+  if (dragPayload?.area === 'board' && targetItem.type === 'board') {
+    if (!['bookmark', 'folder'].includes(dragPayload.itemType)) { dragPayload = null; return; }
+    removeDragPlaceholders();
+    pushUndoSnapshot();
+    const targetBoard = state.boards.find(b => b.id === targetItem.boardId);
+    if (!targetBoard) { dragPayload = null; return; }
+    const inbox = getBoardInbox(targetBoard);
+    if (!inbox) { dragPayload = null; return; }
+    const dragged = removeBoardItemById(dragPayload.itemId);
+    if (!dragged) { dragPayload = null; return; }
+    inbox.items.push(dragged);
+    dragPayload = null;
+    renderAll();
+    saveState();
+    return;
+  }
   if (!dragPayload || dragPayload.area !== 'nav') return;
   if (dragPayload.itemId === targetItem.id) return;
   event.preventDefault();

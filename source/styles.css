@@ -844,18 +844,26 @@ button {
 }
 
 .drop-target {
-  outline: 2px dashed rgba(111, 115, 255, 0.85);
+  outline: 2px dashed var(--accent);
 }
 
 .drag-placeholder {
   display: block;
   min-height: 44px;
   border-radius: 14px;
-  border: 2px dashed rgba(111, 115, 255, 0.75);
-  background: rgba(111, 115, 255, 0.08);
+  border: 2px dashed var(--accent);
+  background: var(--accent-chip);
   margin: 6px 0;
   pointer-events: none;
 }
+
+.drag-placeholder.drag-preview {
+  border: none;
+  background: transparent;
+  min-height: unset;
+  opacity: 0.5;
+}
+.drag-preview * { pointer-events: none; }
 
 .speed-dial-placeholder {
   min-height: unset;
