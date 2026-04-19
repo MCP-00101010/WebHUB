@@ -6,6 +6,8 @@
 
 ## UI
 
+- bug: when bulk-deleting items in an folder-inbox, the confirmation dialogue is rendered underneath the column.
+
 - board tab bar as alternative navigation style (tabs across the top instead of sidebar list) — select a board folder in the navpane and the boards in that folder populate the tab bar
 - tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
 
@@ -20,13 +22,16 @@
 
 ## Drag and Drop
 
-- allow folders and bookmarks to DnD onto boards in the navpane → send to target board's inbox
+- Visual: when dragging a bookmark from a column into speed dial / essentials no preview clone gets rendered.
+- Visual: when dragging a bookmark directly from firefox/zen into the hub, no preview clone gets rendered - only a blue outline were the bookmark will show up (if in a column) or no preview clone at all (in speed dial / essentials)
 
 ## Firefox Extension — Remaining
 
+- Visual / Feature: In the Hubs about dialogue, show if the Hub is connected to the Extension and if so, which features the extension provides.
+  
 - [ ] Chromium shim — same bridge interface backed by File System Access API for Chrome/Edge
 - [ ] Watch for external file changes — detect if the JSON was modified externally (e.g. Dropbox/OneDrive sync) and prompt the user to reload
-- [ ] Configurable paths — let the user set the database path in extension settings (enables cloud folder sync via Dropbox, Proton Drive, etc.)
+- [ ] Configurable paths — path stored as a top-level field in the JSON itself (not in browser extension storage), so it is shared across all browsers automatically; a small bootstrap `config.json` next to the native host binary holds the initial/fallback path; the hub settings panel exposes a path field (gated on `bridge.isAvailable()`); the extension popup shows the resolved path read-only
 
 ## Compatibility / Portability / Readability
 
@@ -94,6 +99,8 @@ See [0.8.0] and [0.8.1] in CHANGELOG.
 See [0.9.0] and [0.9.1] in CHANGELOG.
 
 Remaining open items: Chromium shim, external file change detection, configurable paths (see Firefox Extension — Remaining above).
+
+**Configurable paths — architecture decision:** path will be stored as a top-level field in the JSON file itself, not in browser extension storage. This keeps the setting consistent across all browsers (Firefox, Zen, Chrome, etc.) since they all read the same JSON. A bootstrap `config.json` next to the native host binary holds the initial path for first-run and fallback. The hub settings panel exposes the path field; the extension popup shows it read-only.
 
 ---
 

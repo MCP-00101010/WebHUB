@@ -40,6 +40,7 @@ function attachTagAutocomplete(input) {
 function showModal(type, options = {}) {
   activeModal = type;
   if (options.contextTarget) contextTarget = options.contextTarget;
+  document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   elements.modalTitle.textContent = options.title || 'Action';
   elements.modalLabel1.textContent = options.label1 || 'Name';

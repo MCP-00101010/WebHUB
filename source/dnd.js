@@ -12,6 +12,21 @@ function _canDropAsColumnWidget() {
   return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
 }
 
+// Returns true when the active drag payload contains a bookmark or folder
+// that can be sent to another board's inbox.
+function _canSendToInbox() {
+  if (!dragPayload) return false;
+  if (dragPayload.area === 'board') return ['bookmark', 'folder'].includes(dragPayload.itemType);
+  if (dragPayload.area === 'speed-dial') return true;
+  if (dragPayload.area === 'essential') return !!state.essentials[dragPayload.slot];
+  if (dragPayload.area === 'nav') {
+    const path = findNavItemPath(dragPayload.itemId);
+    const item = path?.list.find(i => i.id === dragPayload.itemId);
+    return !!item && ['bookmark', 'folder'].includes(item.type);
+  }
+  return false;
+}
+
 function isExternalDrag(event) {
   return !dragPayload;
 }
@@ -724,8 +739,8 @@ function handleSpeedDialContainerDrop(event) {
 // --- Nav drag & drop ---
 
 function handleNavItemDragOver(event, item, parent) {
-  // Board item as inbox target — only for bookmark/folder drags, not widget repositioning
-  if (dragPayload?.area === 'board' && item.type === 'board' && ['bookmark', 'folder'].includes(dragPayload.itemType)) {
+  // Board item as inbox target — any bookmark/folder from any source
+  if (item.type === 'board' && _canSendToInbox()) {
     if (item.boardId !== state.activeBoardId) {
       event.preventDefault();
       event.stopPropagation();
@@ -766,15 +781,27 @@ function handleNavDrop(event, targetItem, parent) {
     }
     dragPayload = null; renderAll(); saveState(); return;
   }
-  if (dragPayload?.area === 'board' && targetItem.type === 'board') {
-    if (!['bookmark', 'folder'].includes(dragPayload.itemType)) { dragPayload = null; return; }
+  if (targetItem.type === 'board' && _canSendToInbox()) {
+    if (targetItem.boardId === state.activeBoardId) { dragPayload = null; return; }
     removeDragPlaceholders();
     pushUndoSnapshot();
     const targetBoard = state.boards.find(b => b.id === targetItem.boardId);
     if (!targetBoard) { dragPayload = null; return; }
     const inbox = getBoardInbox(targetBoard);
     if (!inbox) { dragPayload = null; return; }
-    const dragged = removeBoardItemById(dragPayload.itemId);
+    let dragged = null;
+    const board = getActiveBoard();
+    if (dragPayload.area === 'board') {
+      dragged = removeBoardItemById(dragPayload.itemId);
+    } else if (dragPayload.area === 'nav') {
+      dragged = removeNavItemById(dragPayload.itemId);
+    } else if (dragPayload.area === 'speed-dial') {
+      const idx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
+      if (idx !== -1) { [dragged] = board.speedDial.splice(idx, 1); dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
+    } else if (dragPayload.area === 'essential') {
+      dragged = state.essentials[dragPayload.slot];
+      if (dragged) { state.essentials[dragPayload.slot] = null; trimEssentialsTail(); dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
+    }
     if (!dragged) { dragPayload = null; return; }
     inbox.items.push(dragged);
     dragPayload = null; renderAll(); saveState(); return;

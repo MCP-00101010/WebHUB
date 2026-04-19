@@ -16,39 +16,29 @@ header {
   border-bottom: 1px solid #2d2f35;
 }
 
-.logo { width: 20px; height: 20px; }
+.logo  { width: 20px; height: 20px; }
+.title { font-size: 14px; font-weight: 600; color: #c7a8ff; }
 
-.title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #c7a8ff;
-}
-
-.status-bar {
-  padding: 6px 14px;
+.status-row {
+  padding: 4px 14px;
   font-size: 12px;
   color: #9ca3af;
-  border-bottom: 1px solid #2d2f35;
-  min-height: 28px;
-  display: flex;
-  align-items: center;
+  line-height: 1.6;
 }
+.status-row:first-of-type { padding-top: 8px; }
+.status-row:last-of-type  { padding-bottom: 8px; border-bottom: 1px solid #2d2f35; }
 
-.status-bar.ok   { color: #6ee7b7; }
-.status-bar.warn { color: #fbbf24; }
-.status-bar.err  { color: #f87171; }
+.status-row.ok   { color: #6ee7b7; }
+.status-row.warn { color: #fbbf24; }
+.status-row.err  { color: #f87171; }
+.status-row.muted{ color: #6b7280; }
 
-.tab-info {
-  padding: 10px 14px;
-  border-bottom: 1px solid #2d2f35;
-}
-
+.tab-info { padding: 10px 14px; border-bottom: 1px solid #2d2f35; }
 .tab-info.hidden { display: none; }
 
 .tab-title {
   font-size: 13px;
   font-weight: 500;
-  color: #e5e7eb;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -63,9 +53,7 @@ header {
   text-overflow: ellipsis;
 }
 
-.actions {
-  padding: 12px 14px;
-}
+.actions { padding: 12px 14px 8px; }
 
 .btn-primary {
   width: 100%;
@@ -79,15 +67,10 @@ header {
   cursor: pointer;
   transition: background 0.15s;
 }
-
 .btn-primary:hover:not(:disabled) { background: #7c5cff; }
 .btn-primary:disabled { background: #374151; color: #6b7280; cursor: default; }
 
-.feedback {
-  padding: 0 14px 12px;
-  font-size: 12px;
-  color: #6ee7b7;
-}
-
+.feedback { padding: 0 14px 12px; font-size: 12px; color: #6ee7b7; }
 .feedback.hidden { display: none; }
 .feedback.err    { color: #f87171; }
+.feedback.ok     { color: #6ee7b7; }

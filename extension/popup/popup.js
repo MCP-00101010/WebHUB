@@ -1,53 +1,60 @@
 'use strict';
 
 async function main() {
-  const statusBar = document.getElementById('statusBar');
-  const tabInfo   = document.getElementById('tabInfo');
-  const tabTitle  = document.getElementById('tabTitle');
-  const tabUrl    = document.getElementById('tabUrl');
-  const sendBtn   = document.getElementById('sendBtn');
-  const feedback  = document.getElementById('feedback');
+  const elMorpheus = document.getElementById('statusMorpheus');
+  const elNative   = document.getElementById('statusNative');
+  const tabInfo    = document.getElementById('tabInfo');
+  const tabTitle   = document.getElementById('tabTitle');
+  const tabUrl     = document.getElementById('tabUrl');
+  const sendBtn    = document.getElementById('sendBtn');
+  const feedback   = document.getElementById('feedback');
 
-  function setStatus(msg, cls = '') {
-    statusBar.textContent = msg;
-    statusBar.className = 'status-bar ' + cls;
+  function setRow(el, text, cls) {
+    el.textContent = text;
+    el.className = 'status-row ' + (cls || '');
   }
 
-  function showFeedback(msg, cls = '') {
-    feedback.textContent = msg;
-    feedback.className = 'feedback ' + cls;
+  function showFeedback(text, cls) {
+    feedback.textContent = text;
+    feedback.className = 'feedback ' + (cls || '');
   }
 
-  // Get the current active tab.
+  // Current active tab.
   const [currentTab] = await browser.tabs.query({ active: true, currentWindow: true });
+  const isReal = currentTab?.url &&
+    !currentTab.url.startsWith('about:') &&
+    !currentTab.url.startsWith('moz-extension:');
 
-  // Show tab info if it looks like a real page (not extension UI etc.).
-  const isReal = currentTab?.url && !currentTab.url.startsWith('about:') && !currentTab.url.startsWith('moz-extension:');
   if (isReal) {
     tabTitle.textContent = currentTab.title || 'Untitled';
     tabUrl.textContent   = currentTab.url;
     tabInfo.classList.remove('hidden');
   }
 
-  // Check whether Morpheus is open.
+  // Extension status.
   let morpheusOpen = false;
+  let nativeAvailable = false;
   try {
     const res = await browser.runtime.sendMessage({ type: 'MW_GET_STATUS' });
-    morpheusOpen = res.morpheusOpen;
+    morpheusOpen    = res.morpheusOpen;
+    nativeAvailable = res.nativeAvailable;
   } catch {
-    setStatus('Extension error.', 'err');
+    setRow(elMorpheus, '⚠ Extension error', 'err');
     return;
   }
 
-  if (!morpheusOpen) {
-    setStatus('Morpheus WebHub is not open.', 'warn');
-    return;
-  }
+  setRow(elMorpheus,
+    morpheusOpen ? '● Morpheus is open' : '○ Morpheus is not open',
+    morpheusOpen ? 'ok' : 'warn'
+  );
 
-  setStatus('Morpheus WebHub is open.', 'ok');
+  setRow(elNative,
+    nativeAvailable ? '● File save: enabled' : '○ File save: extension storage only',
+    nativeAvailable ? 'ok' : 'muted'
+  );
 
-  if (!isReal) {
-    setStatus('Navigate to a page first.', 'warn');
+  if (!morpheusOpen || !isReal) {
+    if (!morpheusOpen) setRow(elMorpheus, '○ Open Morpheus to send tabs', 'warn');
     return;
   }
 
@@ -57,16 +64,16 @@ async function main() {
     sendBtn.disabled = true;
     try {
       const res = await browser.runtime.sendMessage({
-        type: 'MW_SEND_TAB',
+        type:  'MW_SEND_TAB',
         url:   currentTab.url,
         title: currentTab.title || currentTab.url
       });
       if (res.ok) {
-        showFeedback('Sent to inbox!');
+        showFeedback('Sent to inbox!', 'ok');
         setTimeout(() => window.close(), 1200);
       } else {
         sendBtn.disabled = false;
-        showFeedback('Error: ' + (res.error || 'Unknown'), 'err');
+        showFeedback('Error: ' + (res.error || 'unknown'), 'err');
       }
     } catch (err) {
       sendBtn.disabled = false;

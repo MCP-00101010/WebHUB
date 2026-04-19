@@ -4,10 +4,10 @@
 const IS_MORPHEUS = !!document.querySelector('meta[name="morpheus-webhub"]');
 
 if (IS_MORPHEUS) {
-  // Tell the background script which tab we're in.
-  browser.runtime.sendMessage({ type: 'MW_REGISTER' });
+  // Register with the background, sending our URL so it can derive the save path.
+  browser.runtime.sendMessage({ type: 'MW_REGISTER', pageUrl: window.location.href });
 
-  // Receive tab data sent from the popup via background → content → page.
+  // Receive tab data pushed from the popup via background.
   browser.runtime.onMessage.addListener(msg => {
     if (msg.type === 'MW_RECEIVE_TAB') {
       window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_TAB', url: msg.url, title: msg.title }, '*');
@@ -15,9 +15,12 @@ if (IS_MORPHEUS) {
   });
 }
 
-// Bridge: relay postMessage requests from the page to extension APIs and back.
+// ---------------------------------------------------------------------------
+// Bridge: relay postMessage requests from the page → background → page.
+// ---------------------------------------------------------------------------
+
 window.addEventListener('message', async e => {
-  if (e.source !== window || !e.data?._mw || !e.data._req) return;
+  if (!e.data?._mw || e.source !== window || !e.data._req) return;
 
   const { id, type } = e.data;
 
@@ -26,26 +29,15 @@ window.addEventListener('message', async e => {
   }
 
   try {
-    switch (type) {
-      case 'MW_PING':
-        reply({ ok: true, version: '1.0' });
-        break;
-
-      case 'MW_SAVE': {
-        await browser.storage.local.set({ morpheusState: e.data.json });
-        reply({ ok: true });
-        break;
-      }
-
-      case 'MW_LOAD': {
-        const result = await browser.storage.local.get('morpheusState');
-        reply({ ok: true, json: result.morpheusState || null });
-        break;
-      }
-
-      default:
-        break;
+    // MW_PING is answered directly — no background round-trip needed.
+    if (type === 'MW_PING') {
+      reply({ ok: true, version: '1.0' });
+      return;
     }
+
+    // Everything else (MW_SAVE, MW_LOAD, MW_OPEN_FILE_PICKER) goes to background.
+    const res = await browser.runtime.sendMessage({ type, ...e.data });
+    reply(res);
   } catch (err) {
     reply({ ok: false, error: err.message });
   }
