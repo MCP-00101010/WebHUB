@@ -19,9 +19,6 @@ const elements = {
   modalTagsRow: document.getElementById('modalTagsRow'),
   modalTagsLabel: document.getElementById('modalTagsLabel'),
   modalInput3: document.getElementById('modalInput3'),
-  modalTagsRow2: document.getElementById('modalTagsRow2'),
-  modalTags2Label: document.getElementById('modalTags2Label'),
-  modalInput4: document.getElementById('modalInput4'),
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
@@ -170,7 +167,7 @@ function renderSearchResults(query) {
     if (item.url && item.url.toLowerCase().includes(q)) return true;
     if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
     if (item.sharedTags && item.sharedTags.some(t => t.toLowerCase().includes(q))) return true;
-    if (item.labels && item.labels.some(t => t.toLowerCase().includes(q))) return true;
+    if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
     if (board) {
       const inherited = computeInheritedTags(item, board);
       if (inherited.some(t => t.toLowerCase().includes(q))) return true;
@@ -257,13 +254,7 @@ function createSearchResultItem(item) {
   if (item.tags && item.tags.length > 0) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'bookmark-tags';
-    item.tags.forEach(tag => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip';
-      chip.textContent = tag;
-      applyTagColor(chip, tag);
-      tagsEl.appendChild(chip);
-    });
+    renderTagsInto(tagsEl, item.tags);
     body.appendChild(tagsEl);
   }
   el.appendChild(body);
@@ -287,23 +278,11 @@ function createFolderSearchResultItem(item) {
   label.textContent = item.title || 'Untitled Folder';
   body.appendChild(label);
 
-  const allTags = [...(item.sharedTags || []), ...(item.labels || [])];
+  const allTags = [...(item.sharedTags || []), ...(item.tags || [])];
   if (allTags.length) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'bookmark-tags';
-    (item.sharedTags || []).forEach(t => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip';
-      chip.textContent = t;
-      applyTagColor(chip, t);
-      tagsEl.appendChild(chip);
-    });
-    (item.labels || []).forEach(t => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip label-chip';
-      chip.textContent = t;
-      tagsEl.appendChild(chip);
-    });
+    renderTagsInto(tagsEl, allTags);
     body.appendChild(tagsEl);
   }
 
@@ -337,23 +316,11 @@ function createBoardSearchResultItem(item) {
   label.textContent = item.title || 'Untitled Board';
   body.appendChild(label);
 
-  const allTags = [...(item.sharedTags || []), ...(item.labels || [])];
+  const allTags = [...(item.sharedTags || []), ...(item.tags || [])];
   if (allTags.length) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'bookmark-tags';
-    (item.sharedTags || []).forEach(t => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip';
-      chip.textContent = t;
-      applyTagColor(chip, t);
-      tagsEl.appendChild(chip);
-    });
-    (item.labels || []).forEach(t => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip label-chip';
-      chip.textContent = t;
-      tagsEl.appendChild(chip);
-    });
+    renderTagsInto(tagsEl, allTags);
     body.appendChild(tagsEl);
   }
 
@@ -369,20 +336,26 @@ function applyTagColor(chip, tag) {
   }
 }
 
-function createTagSection(labelText, tags, chipClass) {
+function makeTagChip(tag) {
+  const chip = document.createElement('span');
+  chip.className = 'tag-chip';
+  chip.textContent = tag;
+  applyTagColor(chip, tag);
+  return chip;
+}
+
+function renderTagsInto(container, tags) {
+  (tags || []).forEach(t => container.appendChild(makeTagChip(t)));
+}
+
+function createTagSection(labelText, tags) {
   const section = document.createElement('div');
   section.className = 'tag-section';
   const lbl = document.createElement('span');
   lbl.className = 'tag-section-label';
   lbl.textContent = labelText;
   section.appendChild(lbl);
-  tags.forEach(t => {
-    const chip = document.createElement('span');
-    chip.className = `tag-chip ${chipClass}`;
-    chip.textContent = t;
-    if (chipClass !== 'inherited-tag-chip' && chipClass !== 'label-chip') applyTagColor(chip, t);
-    section.appendChild(chip);
-  });
+  tags.forEach(t => section.appendChild(makeTagChip(t)));
   return section;
 }
 
@@ -740,9 +713,9 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     const folderTagArea = document.createElement('div');
     folderTagArea.className = 'folder-tag-area';
     const inherited = computeInheritedTags(item, board);
-    if (inherited.length) folderTagArea.appendChild(createTagSection('Inherited', inherited, 'inherited-tag-chip'));
-    if (item.sharedTags?.length) folderTagArea.appendChild(createTagSection('Shared', item.sharedTags, 'tag-chip'));
-    if (item.labels?.length) folderTagArea.appendChild(createTagSection('Labels', item.labels, 'label-chip'));
+    if (inherited.length) folderTagArea.appendChild(createTagSection('Inherited', inherited));
+    if (item.sharedTags?.length) folderTagArea.appendChild(createTagSection('Shared', item.sharedTags));
+    if (item.tags?.length) folderTagArea.appendChild(createTagSection('Tags', item.tags));
     if (folderTagArea.children.length) itemEl.appendChild(folderTagArea);
 
     header.addEventListener('dragover', event => handleBoardFolderHeaderDragOver(event, item, columnId, depth));
@@ -806,7 +779,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     const bmBoard = getActiveBoard();
     const bmInherited = computeInheritedTags(item, bmBoard);
     if (bmInherited.length) {
-      const iSection = createTagSection('Inherited', bmInherited, 'inherited-tag-chip');
+      const iSection = createTagSection('Inherited', bmInherited);
       iSection.classList.add('bookmark-tags');
       body.appendChild(iSection);
     }
@@ -814,13 +787,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     if (item.tags && item.tags.length > 0) {
       const tagsEl = document.createElement('div');
       tagsEl.className = 'bookmark-tags';
-      item.tags.forEach(tag => {
-        const chip = document.createElement('span');
-        chip.className = 'tag-chip';
-        chip.textContent = tag;
-        applyTagColor(chip, tag);
-        tagsEl.appendChild(chip);
-      });
+      renderTagsInto(tagsEl, item.tags);
       body.appendChild(tagsEl);
     }
 

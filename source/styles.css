@@ -324,15 +324,17 @@ button {
   white-space: nowrap;
 }
 
-.inherited-tag-chip {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-  font-style: italic;
+
+
+#folderModal {
+  width: min(480px, calc(100vw - 40px));
 }
 
-.label-chip {
-  background: rgba(255, 180, 60, 0.15);
-  color: #ffb43c;
+
+.folder-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .folder-tag-area {

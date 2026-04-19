@@ -5,6 +5,25 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.7.1] — 2026-04-19
+
+### Added
+
+- **Folder modal**: unified create/edit panel with editable name in header (same pattern as board settings), Tags, Shared Tags, and two toggle rows with clear "shared tags" wording; replaces the four separate context menu entries
+- **`attachTagAutocomplete(input)`** helper — wires inline tag prediction (Tab/ArrowRight to accept) to any input; used by bookmark modal, folder modal, and board settings tag fields
+- **Tag autocomplete on board settings**: `bstgSharedTags` and `bstgTags` now have inline prediction
+
+### Changed
+
+- `labels` renamed to `tags` on folder and board objects; backward-compat migration preserves existing data
+- Folder context menu simplified to a single "Edit folder" entry
+- All tag chips rendered through `makeTagChip` / `renderTagsInto` — identical appearance everywhere (no amber/grey variants)
+- `createTagSection` no longer accepts a chipClass argument; all chips use the same style
+- `getTagSuggestions` / `renderTagSuggestions` now take the input element as a parameter instead of hardcoding `modalInput3`
+- Inherited tag chips no longer styled differently from user-defined tag chips
+
+---
+
 ## [0.7.0] — 2026-04-18
 
 ### Added

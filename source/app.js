@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.7.1';
 
 let activeModal = null;
 let contextTarget = null;
@@ -245,11 +245,8 @@ function showModal(type, options = {}) {
   elements.modalNameRow.classList.toggle('hidden', !showName);
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
-  elements.modalTagsRow2.classList.toggle('hidden', !options.showTags2);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   if (elements.modalTagsLabel) elements.modalTagsLabel.textContent = options.label3 || 'Tags';
-  if (elements.modalTags2Label) elements.modalTags2Label.textContent = options.label4 || 'Labels';
-  elements.modalInput4.value = options.value4 || '';
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
   const selectLabel = document.getElementById('modalSelectLabel');
@@ -273,22 +270,20 @@ function showModal(type, options = {}) {
 function hideModal() {
   activeModal = null;
   elements.modalOverlay.classList.add('hidden');
-  elements.modalInput4.value = '';
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
 }
 
 // --- Tag autocomplete ---
 
-function getTagSuggestions(partial) {
+function getTagSuggestions(partial, input) {
   if (!partial) return [];
   const known = getKnownTags();
-  const current = elements.modalInput3.value.split(/\s+/).filter(Boolean);
+  const current = input.value.split(/\s+/).filter(Boolean);
   return known.filter(t => t.startsWith(partial) && t !== partial && !current.includes(t));
 }
 
-function renderTagSuggestions() {
-  const input = elements.modalInput3;
+function renderTagSuggestions(input) {
   const pos = input.selectionStart;
   if (pos !== input.value.length) return;
 
@@ -296,7 +291,7 @@ function renderTagSuggestions() {
   const partial = val.split(/\s+/).pop();
   if (!partial) return;
 
-  const suggestions = getTagSuggestions(partial);
+  const suggestions = getTagSuggestions(partial, input);
   if (!suggestions.length) return;
 
   const completion = suggestions[0].slice(partial.length);
@@ -306,6 +301,20 @@ function renderTagSuggestions() {
   input.setSelectionRange(val.length, input.value.length);
 }
 
+function attachTagAutocomplete(input) {
+  input.addEventListener('input', () => renderTagSuggestions(input));
+  input.addEventListener('keydown', e => {
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === input.value.length) {
+      e.preventDefault();
+      const accepted = input.value.slice(0, end);
+      input.value = accepted + ' ';
+      input.setSelectionRange(accepted.length + 1, accepted.length + 1);
+    }
+  });
+}
+
 function handleModalSubmit(event) {
   event.preventDefault();
   const value1 = elements.modalInput1.value.trim();
@@ -313,7 +322,7 @@ function handleModalSubmit(event) {
   const value3 = elements.modalInput3.value.trim();
   const tags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
 
-  const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags', 'editFolderTags'];
+  const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags'];
   if (!value1 && !noNameRequired.includes(activeModal)) return;
 
   pushUndoSnapshot();
@@ -348,10 +357,8 @@ function handleModalSubmit(event) {
       const parent = contextTarget?.item;
       if (area === 'nav-empty') {
         addNavSection({ type: 'folder', title: value1 });
-      } else if (area === 'nav-subfolder' || area === 'board-subfolder') {
+      } else if (area === 'nav-subfolder') {
         if (parent) { parent.children = parent.children || []; parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: value1, children: [] }); parent.collapsed = false; }
-      } else {
-        addBookmarkItem('folder', value1, contextTarget?.columnId);
       }
       break;
     }
@@ -402,12 +409,6 @@ function handleModalSubmit(event) {
       clearSelection();
       break;
     }
-    case 'editFolderTags': {
-      const sharedTags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
-      const labels = elements.modalInput4.value.trim().split(/\s+/).filter(Boolean);
-      editFolderTags(contextTarget.itemId, sharedTags, labels);
-      break;
-    }
     default:
       break;
   }
@@ -440,7 +441,7 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
   document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
-  document.getElementById('bstgLabels').value = (board.labels || []).join(' ');
+  document.getElementById('bstgTags').value = (board.tags || []).join(' ');
   document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
 }
 
@@ -555,18 +556,22 @@ function attachBoardSettingsListeners() {
     renderBoard();
   });
 
-  document.getElementById('bstgSharedTags').addEventListener('input', e => {
+  const bstgSharedTagsEl = document.getElementById('bstgSharedTags');
+  bstgSharedTagsEl.addEventListener('input', e => {
     const board = getActiveBoard();
     if (!board) return;
     board.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
     renderBoard();
   });
+  attachTagAutocomplete(bstgSharedTagsEl);
 
-  document.getElementById('bstgLabels').addEventListener('input', e => {
+  const bstgTagsEl = document.getElementById('bstgTags');
+  bstgTagsEl.addEventListener('input', e => {
     const board = getActiveBoard();
     if (!board) return;
-    board.labels = e.target.value.trim().split(/\s+/).filter(Boolean);
+    board.tags = e.target.value.trim().split(/\s+/).filter(Boolean);
   });
+  attachTagAutocomplete(bstgTagsEl);
 
   document.getElementById('bstgInheritTags').addEventListener('change', e => {
     const board = getActiveBoard();
@@ -577,6 +582,86 @@ function attachBoardSettingsListeners() {
 
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
   document.getElementById('boardSettingsCancelBtn').addEventListener('click', cancelBoardSettingsPanel);
+}
+
+// --- Folder modal ---
+
+let folderModalMode = 'create';
+
+function showFolderModal(mode, ct) {
+  folderModalMode = mode;
+  if (ct) contextTarget = ct;
+  document.getElementById('modalCard').classList.add('hidden');
+  const panel = document.getElementById('folderModal');
+  panel.classList.remove('hidden');
+  elements.modalOverlay.classList.remove('hidden');
+  const submitBtn = document.getElementById('folderModalSubmitBtn');
+  if (mode === 'edit') {
+    submitBtn.textContent = 'Save';
+    const board = getActiveBoard();
+    const found = findBoardItemInColumns(board, contextTarget.itemId);
+    if (found?.item) {
+      document.getElementById('fmName').value = found.item.title || '';
+      document.getElementById('fmTags').value = (found.item.tags || []).join(' ');
+      document.getElementById('fmSharedTags').value = (found.item.sharedTags || []).join(' ');
+      document.getElementById('fmInheritTags').checked = found.item.inheritTags !== false;
+      document.getElementById('fmAutoRemove').checked = found.item.autoRemoveTags === true;
+    }
+  } else {
+    submitBtn.textContent = 'Create';
+    document.getElementById('fmName').value = '';
+    document.getElementById('fmTags').value = '';
+    document.getElementById('fmSharedTags').value = '';
+    document.getElementById('fmInheritTags').checked = true;
+    document.getElementById('fmAutoRemove').checked = false;
+  }
+  centerPanel(panel);
+  makeDraggable(panel, document.getElementById('folderModalHeader'));
+  document.getElementById('fmName').focus();
+}
+
+function hideFolderModal() {
+  document.getElementById('folderModal').classList.add('hidden');
+  document.getElementById('modalCard').classList.remove('hidden');
+  elements.modalOverlay.classList.add('hidden');
+}
+
+function handleFolderModalSubmit() {
+  const name = document.getElementById('fmName').value.trim();
+  if (!name) { document.getElementById('fmName').focus(); return; }
+  const tags = document.getElementById('fmTags').value.trim().split(/\s+/).filter(Boolean);
+  const sharedTags = document.getElementById('fmSharedTags').value.trim().split(/\s+/).filter(Boolean);
+  const inheritTags = document.getElementById('fmInheritTags').checked;
+  const autoRemoveTags = document.getElementById('fmAutoRemove').checked;
+  pushUndoSnapshot();
+  if (folderModalMode === 'edit') {
+    editFolder(contextTarget.itemId, name, tags, sharedTags, inheritTags, autoRemoveTags);
+  } else {
+    const area = contextTarget?.area;
+    const parent = contextTarget?.item;
+    if (area === 'board-subfolder') {
+      if (parent) {
+        parent.children = parent.children || [];
+        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags, inheritTags, autoRemoveTags });
+        parent.collapsed = false;
+      }
+    } else {
+      addBookmarkItem('folder', name, contextTarget?.columnId, { tags, sharedTags, inheritTags, autoRemoveTags });
+    }
+  }
+  hideFolderModal();
+  renderAll();
+  saveState();
+}
+
+function attachFolderModalListeners() {
+  document.getElementById('folderModalCancelBtn').addEventListener('click', hideFolderModal);
+  document.getElementById('folderModalSubmitBtn').addEventListener('click', handleFolderModalSubmit);
+  document.getElementById('fmName').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); handleFolderModalSubmit(); }
+  });
+  attachTagAutocomplete(document.getElementById('fmTags'));
+  attachTagAutocomplete(document.getElementById('fmSharedTags'));
 }
 
 function openExternalBookmarkModal(url, title, target) {
@@ -708,7 +793,7 @@ function handleContextMenuAction(action) {
       saveState();
       break;
     case 'addFolder':
-      showModal('addFolder', { title: 'Add Folder', placeholder1: 'Folder title', contextTarget });
+      showFolderModal('create', contextTarget);
       break;
     case 'addBookmark':
       showModal('addBookmark', {
@@ -755,8 +840,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addBoardSubfolder':
-      contextTarget = { ...contextTarget, area: 'board-subfolder' };
-      showModal('addFolder', { title: 'Create Subfolder', placeholder1: 'Folder name' });
+      showFolderModal('create', { ...contextTarget, area: 'board-subfolder' });
       break;
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
@@ -840,41 +924,9 @@ function handleContextMenuAction(action) {
         showTags: true, contextTarget
       });
       break;
-    case 'editFolderTags': {
-      const board = getActiveBoard();
-      const found = findBoardItemInColumns(board, contextTarget.itemId);
-      if (!found?.item) break;
-      showModal('editFolderTags', {
-        title: 'Edit Folder Tags',
-        showName: false,
-        showTags: true, label3: 'Shared tags',
-        showTags2: true, label4: 'Labels',
-        value3: (found.item.sharedTags || []).join(' '),
-        value4: (found.item.labels || []).join(' '),
-        contextTarget
-      });
+    case 'editFolder':
+      showFolderModal('edit', contextTarget);
       break;
-    }
-    case 'toggleFolderInheritTags': {
-      const board = getActiveBoard();
-      const found = findBoardItemInColumns(board, contextTarget.itemId);
-      if (found?.item) {
-        pushUndoSnapshot();
-        found.item.inheritTags = found.item.inheritTags === false ? true : false;
-        renderAll(); saveState();
-      }
-      break;
-    }
-    case 'toggleFolderAutoRemove': {
-      const board = getActiveBoard();
-      const found = findBoardItemInColumns(board, contextTarget.itemId);
-      if (found?.item) {
-        pushUndoSnapshot();
-        found.item.autoRemoveTags = !found.item.autoRemoveTags;
-        renderAll(); saveState();
-      }
-      break;
-    }
     default:
       break;
   }
@@ -892,10 +944,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
 
   const options = [];
   if (item.type === 'folder') {
-    options.push({ label: 'Rename folder', action: 'renameItem' });
-    options.push({ label: 'Edit tags', action: 'editFolderTags' });
-    options.push({ label: `${item.inheritTags !== false ? '✓' : '○'} Pass tags to children`, action: 'toggleFolderInheritTags' });
-    options.push({ label: `${item.autoRemoveTags ? '✓' : '○'} Strip tags on move out`, action: 'toggleFolderAutoRemove' });
+    options.push({ label: 'Edit folder', action: 'editFolder' });
     options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
     options.push({ label: 'Delete folder', action: 'deleteItem' });
@@ -1535,20 +1584,7 @@ function attachEventListeners() {
       warning.classList.add('hidden');
     }
   });
-  elements.modalInput3.addEventListener('input', () => {
-    if (activeModal === 'addBookmark' || activeModal === 'editBookmark' || activeModal === 'bulkAddTags') renderTagSuggestions();
-  });
-  elements.modalInput3.addEventListener('keydown', e => {
-    const input = elements.modalInput3;
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === input.value.length) {
-      e.preventDefault();
-      const accepted = input.value.slice(0, end);
-      input.value = accepted + ' ';
-      input.setSelectionRange(accepted.length + 1, accepted.length + 1);
-    }
-  });
+  attachTagAutocomplete(elements.modalInput3);
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);
   elements.navList.addEventListener('drop', handleNavListDrop);
@@ -1665,6 +1701,7 @@ function attachEventListeners() {
 attachEventListeners();
 attachSettingsListeners();
 attachBoardSettingsListeners();
+attachFolderModalListeners();
 renderAll();
 saveState();
 updateUndoRedoUI();

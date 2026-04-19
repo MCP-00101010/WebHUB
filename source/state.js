@@ -59,7 +59,7 @@ const defaultState = {
       backgroundImage: '',
       containerOpacity: 100,
       sharedTags: [],
-      labels: [],
+      tags: [],
       inheritTags: true,
       speedDial: [
         { id: 'sd-1', type: 'bookmark', title: 'Inbox', url: 'https://mail.example.com', tags: [] },
@@ -97,7 +97,9 @@ function migrateItems(items) {
     }
     if (item.type === 'folder') {
       if (!item.sharedTags) item.sharedTags = [];
-      if (!item.labels) item.labels = [];
+      if (item.labels && !item.tags) item.tags = item.labels;
+      delete item.labels;
+      if (!item.tags) item.tags = [];
       if (item.inheritTags === undefined) item.inheritTags = true;
       if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
     }
@@ -124,7 +126,9 @@ function loadState() {
       if (board.containerOpacity === undefined) board.containerOpacity = 100;
       if (board.showSpeedDial === undefined) board.showSpeedDial = true;
       if (!board.sharedTags) board.sharedTags = [];
-      if (!board.labels) board.labels = [];
+      if (board.labels && !board.tags) board.tags = board.labels;
+      delete board.labels;
+      if (!board.tags) board.tags = [];
       if (board.inheritTags === undefined) board.inheritTags = true;
       for (const item of (board.speedDial || [])) {
         if (!item.type) item.type = 'bookmark';
@@ -317,7 +321,7 @@ function createBoard(title) {
     containerOpacity: 100,
     showSpeedDial: true,
     sharedTags: [],
-    labels: [],
+    tags: [],
     inheritTags: true,
     speedDial: [],
     columns: [
@@ -349,16 +353,16 @@ function addSpeedDialBookmark(title, url, tags = []) {
   board.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
 }
 
-function addBookmarkItem(type, title, columnId) {
+function addBookmarkItem(type, title, columnId, options = {}) {
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
   const item = { id: `id-${Date.now()}`, type, title };
   if (type === 'folder') {
     item.children = [];
-    item.sharedTags = [];
-    item.labels = [];
-    item.inheritTags = true;
-    item.autoRemoveTags = false;
+    item.tags = options.tags || [];
+    item.sharedTags = options.sharedTags || [];
+    item.inheritTags = options.inheritTags !== undefined ? options.inheritTags : true;
+    item.autoRemoveTags = options.autoRemoveTags || false;
   }
   column.items.push(item);
 }
@@ -499,26 +503,28 @@ function getKnownTags() {
     for (const item of (items || [])) {
       if (item?.tags) item.tags.forEach(t => tags.add(t));
       if (item?.sharedTags) item.sharedTags.forEach(t => tags.add(t));
-      if (item?.labels) item.labels.forEach(t => tags.add(t));
       if (item?.children) walk(item.children);
     }
   };
   walk(state.essentials);
   for (const board of state.boards) {
     if (board.sharedTags) board.sharedTags.forEach(t => tags.add(t));
-    if (board.labels) board.labels.forEach(t => tags.add(t));
+    if (board.tags) board.tags.forEach(t => tags.add(t));
     walk(board.speedDial);
     for (const col of board.columns) walk(col.items);
   }
   return Array.from(tags).sort();
 }
 
-function editFolderTags(itemId, sharedTags, labels) {
+function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {
   const board = getActiveBoard();
   const found = findBoardItemInColumns(board, itemId);
   if (found?.item?.type === 'folder') {
+    found.item.title = title;
+    found.item.tags = tags;
     found.item.sharedTags = sharedTags;
-    found.item.labels = labels;
+    found.item.inheritTags = inheritTags;
+    found.item.autoRemoveTags = autoRemoveTags;
   }
 }
 
