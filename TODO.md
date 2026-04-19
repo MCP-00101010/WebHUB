@@ -200,18 +200,20 @@ See [0.8.1] in CHANGELOG.
 ---
 
 ### Phase 6 — Firefox extension & native bridge
-*Inbox from Phase 5 is already in place — extension just needs to write to it. Build the API contract first.*
 
-1. **Design the postMessage API spec** — define all message types and response shapes before writing a single line of extension code. This is the most important design decision in this phase.
-2. Native messaging host (Python or Node, ~50 line
-3. s)
-4. Firefox extension (Manifest V3, content script on `file://` pages)
-5. Page-side bridge module — wraps postMessage in promises, **gracefully falls back** if extension is absent (existing manual export/import remains the fallback path)
-6. Chromium / File Access API shim — implement the same bridge interface using `window.showOpenFilePicker` / `showDirectoryPicker` so the hub works on Chrome/Edge without the extension
-7. Auto-save / auto-load wiring — replace manual export/import with silent reads/writes when bridge is available
-8. Background folder browser UI (reuses existing data URL + background image pipeline)
-9. Theme file browser (scans `./themes` folder, used by Phase 7)
-10. "Send current tab" button in extension → active board's inbox column
+#### ✓ Done (v0.9.0)
+
+- `extension/` — MV2 skeleton: manifest, background, content script, popup (HTML/CSS/JS), SVG icons
+- `source/bridge.js` — page-side bridge: `isAvailable()`, `whenReady`, `saveState()`, `loadState()`
+- `morpheus:receive-tab` handler in `app.js` — sends tab straight to active board inbox
+- Bridge storage backup — `saveState()` mirrors to `browser.storage.local`; restores if `localStorage` is empty on startup
+- `<meta name="morpheus-webhub">` identity tag in `index.html`
+
+#### Remaining
+- [ ] Native messaging host (Python or Node) — enables silent read/write to the JSON file next to `index.html`
+- [ ] Background image file picker via extension (`MW_OPEN_FILE_PICKER` message + board settings hook)
+- [ ] Theme file browser — scans `./themes/` folder (Phase 7 dependency)
+- [ ] Chromium shim — same bridge interface backed by File System Access API (`showSaveFilePicker`) for Chrome/Edge
 
 ---
 
@@ -253,7 +255,7 @@ See [0.8.1] in CHANGELOG.
 
 ### Phase 10 — Documentation, localization & code health
 
-*Post-feature-freeze. Adding i18n infrastructure mid-build means re-extracting strings from every new feature added after. Do this once, at the end, when the string surface is stable.*
+*Post-feature-freeze. Adding i18n infrastructure mid-build means re-tracting strings from every new feature added after. Do this once, at the end, when the string surface is stable.*
 
 1. **Code restructuring** — reorganise source files for readability; add JSDoc-style comments to all major functions and data types. No behavioural changes.
 2. **Localisation (i18n)** — extract all user-facing strings into a locale file (`en.json`); wire a locale-loader so additional language files can be dropped in. Provide at least English + one additional language as proof-of-concept.

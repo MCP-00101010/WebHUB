@@ -1,4 +1,4 @@
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.9.0';
 
 let activeModal = null;
 let contextTarget = null;
@@ -481,6 +481,28 @@ function attachEventListeners() {
   document.addEventListener('drop', event => {
     if (isExternalDrag(event)) event.preventDefault();
   });
+
+  // Receive a tab sent by the extension popup → drop into the active board's inbox.
+  window.addEventListener('morpheus:receive-tab', e => {
+    const { url, title } = e.detail;
+    const board = getActiveBoard();
+    if (!board) return;
+    const inbox = getBoardInbox(board);
+    if (!inbox) return;
+    pushUndoSnapshot();
+    inbox.items.push({
+      id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type: 'bookmark',
+      title: title || url || 'Untitled',
+      url,
+      tags: [],
+      faviconCache: ''
+    });
+    saveState();
+    renderNav();
+    updateInboxBadge();
+    if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
+  });
 }
 
 attachEventListeners();
@@ -492,3 +514,16 @@ attachBookmarkImportListener();
 renderAll();
 saveState();
 updateUndoRedoUI();
+
+// If localStorage is empty and bridge storage has a backup, restore from it.
+if (typeof bridge !== 'undefined') {
+  bridge.whenReady.then(async () => {
+    if (!bridge.isAvailable()) return;
+    if (localStorage.getItem('morpheus-webhub-state')) return; // already have local state
+    const json = await bridge.loadState();
+    if (!json) return;
+    restoreStateSnapshot(json);
+    localStorage.setItem('morpheus-webhub-state', json);
+    renderAll();
+  });
+}

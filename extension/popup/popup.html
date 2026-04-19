@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Morpheus WebHub</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/icon-48.svg" alt="" class="logo">
+    <span class="title">Morpheus WebHub</span>
+  </header>
+
+  <div id="statusBar" class="status-bar"></div>
+
+  <section id="tabInfo" class="tab-info hidden">
+    <div id="tabTitle" class="tab-title"></div>
+    <div id="tabUrl" class="tab-url"></div>
+  </section>
+
+  <div class="actions">
+    <button id="sendBtn" class="btn-primary" disabled>Send to inbox</button>
+  </div>
+
+  <div id="feedback" class="feedback hidden"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

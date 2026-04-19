@@ -171,8 +171,12 @@ function loadState() {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const json = JSON.stringify(state);
+  localStorage.setItem(STORAGE_KEY, json);
   isDirty = true;
+  if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
+    bridge.saveState(json); // fire-and-forget; extension storage is a backup
+  }
 }
 
 function getActiveBoard() {

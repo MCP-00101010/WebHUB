@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="morpheus-webhub" content="1.0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Morpheus WebHub</title>
   <link rel="stylesheet" href="source/styles.css" />
@@ -142,7 +143,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.8.1</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.9.0</button>
       </div>
     </aside>
 
@@ -656,7 +657,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.8.1</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.9.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -744,6 +745,7 @@
 
   <div id="contextMenu" class="context-menu hidden"></div>
   <div id="tooltip" class="tooltip hidden"></div>
+  <script src="source/bridge.js" defer></script>
   <script src="source/icons.js" defer></script>
   <script src="source/state.js" defer></script>
   <script src="source/render-items.js" defer></script>

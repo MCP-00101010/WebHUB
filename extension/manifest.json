@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "Morpheus WebHub",
+  "version": "1.0.0",
+  "description": "Send tabs to your Morpheus WebHub inbox and enable bridge storage.",
+
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "storage"
+  ],
+
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["file://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon-48.svg",
+      "96": "icons/icon-96.svg"
+    },
+    "default_title": "Morpheus WebHub"
+  },
+
+  "icons": {
+    "48": "icons/icon-48.svg",
+    "96": "icons/icon-96.svg"
+  }
+}

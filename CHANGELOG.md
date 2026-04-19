@@ -5,6 +5,29 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.9.0] — 2026-04-19
+
+### Added
+
+- **Firefox extension** (`extension/`) — MV2, persistent background, content script on `file://*/*`
+  - **Popup**: shows current tab title/URL, "Send to inbox" button, live status indicator
+  - **Background script**: tracks the registered Morpheus tab; routes send-tab messages from popup to content script
+  - **Content script**: detects Morpheus pages via `<meta name="morpheus-webhub">`; registers with background; bridges `postMessage` ↔ `browser.storage.local` and `browser.runtime`
+  - **SVG icons** (48 × 48 and 96 × 96) with the Morpheus "M" mark
+- **`source/bridge.js`** — page-side bridge module (IIFE, no dependencies)
+  - Pings extension on load; exposes `bridge.isAvailable()`, `bridge.whenReady`, `bridge.saveState()`, `bridge.loadState()`
+  - Listens for `MW_RECEIVE_TAB` push and fires `morpheus:receive-tab` CustomEvent
+  - All methods no-op gracefully when extension is absent
+- **`<meta name="morpheus-webhub" content="1.0">`** in `index.html` — lets the content script identify the page without URL matching
+- **Receive-tab handler** in `app.js` — listens for `morpheus:receive-tab`, pushes bookmark into active board's inbox, updates badge and panel
+- **Bridge storage backup**: `saveState()` fire-and-forgets to `browser.storage.local` when bridge is available; on startup, restores from bridge storage if `localStorage` is empty
+
+### Changed
+
+- `saveState()` in `state.js` writes to bridge storage in addition to `localStorage` when extension is present
+
+---
+
 ## [0.8.1] — 2026-04-19
 
 ### Changed
