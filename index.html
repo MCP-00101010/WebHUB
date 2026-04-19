@@ -105,6 +105,11 @@
         <path d="M9 6V4h6v2"/>
       </symbol>
 
+      <symbol id="icon-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 17.76 4H6.24a2 2 0 0 0-1.79 1.11z"/>
+      </symbol>
+
     </defs>
   </svg>
 
@@ -137,7 +142,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.7.1</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.8.0</button>
       </div>
     </aside>
 
@@ -153,6 +158,10 @@
           </button>
           <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
             <svg width="20" height="20" aria-hidden="true"><use href="#icon-redo"/></svg>
+          </button>
+          <button id="inboxBtn" class="icon-btn inbox-btn" title="Board Inbox" aria-label="Board Inbox">
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-inbox"/></svg>
+            <span id="inboxBadge" class="inbox-badge hidden">0</span>
           </button>
           <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
             <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
@@ -647,7 +656,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.7.1</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.8.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -721,6 +730,16 @@
     <button id="bulkTagBtn" class="secondary-btn">Add Tags…</button>
     <button id="bulkMoveBtn" class="secondary-btn">Move to Board…</button>
     <button id="bulkDeselectBtn" class="secondary-btn">✕ Deselect</button>
+  </div>
+
+  <div id="inboxPanel" class="inbox-panel hidden">
+    <div id="inboxPanelHeader" class="inbox-panel-header">
+      <span class="inbox-panel-title">Inbox</span>
+      <span id="inboxPanelBmCount" class="nav-inbox-badge hidden"></span>
+      <span id="inboxPanelFlCount" class="nav-inbox-badge nav-inbox-badge--folder hidden"></span>
+      <button type="button" id="inboxPanelClose" class="icon-btn" title="Close">×</button>
+    </div>
+    <div id="inboxPanelBody" class="inbox-panel-body"></div>
   </div>
 
   <div id="contextMenu" class="context-menu hidden"></div>

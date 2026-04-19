@@ -146,13 +146,58 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+function updateInboxBadge() {
+  const board = getActiveBoard();
+  const { bookmarks, folders } = getBoardInboxCounts(board);
+  const count = bookmarks + folders;
+  const badge = document.getElementById('inboxBadge');
+  if (badge) {
+    badge.textContent = count;
+    badge.classList.toggle('hidden', count === 0);
+  }
+}
+
+function renderInboxPanel() {
+  const board = getActiveBoard();
+  const inbox = getBoardInbox(board);
+  const body = document.getElementById('inboxPanelBody');
+  if (!body) return;
+  body.innerHTML = '';
+  const { bookmarks, folders } = getBoardInboxCounts(board);
+  const bmEl = document.getElementById('inboxPanelBmCount');
+  const flEl = document.getElementById('inboxPanelFlCount');
+  if (bmEl) { bmEl.textContent = bookmarks; bmEl.classList.toggle('hidden', bookmarks === 0); }
+  if (flEl) { flEl.textContent = folders; flEl.classList.toggle('hidden', folders === 0); }
+  updateInboxBadge();
+  if (!inbox?.items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'inbox-empty';
+    empty.textContent = 'Inbox is empty.';
+    body.appendChild(empty);
+    return;
+  }
+  inbox.items.forEach(item => body.appendChild(createBoardItemElement(item, inbox.id, null, 0)));
+}
+
 function renderAll() {
   applySettings();
   elements.hubNameEl.textContent = state.hubName || 'Morpheus WebHub';
   document.title = state.hubName || 'Morpheus WebHub';
+  // If active board is Import Manager but it's now empty, switch to first nav board
+  const activeBoard = state.boards.find(b => b.id === state.activeBoardId);
+  if (activeBoard?.isImportManager && !importManagerHasItems()) {
+    function findFirstBoardId(items) {
+      for (const i of items) { if (i.boardId) return i.boardId; if (i.children) { const r = findFirstBoardId(i.children); if (r) return r; } }
+      return null;
+    }
+    const fallbackId = findFirstBoardId(state.navItems);
+    if (fallbackId) state.activeBoardId = fallbackId;
+  }
   renderNav();
   renderEssentials();
   renderBoard();
+  updateInboxBadge();
+  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
   const q = elements.searchInput.value.trim();
   if (q) renderSearchResults(q);
 }
@@ -191,7 +236,7 @@ function renderSearchResults(query) {
     const hits = [];
     if (matchesQuery(board, null)) hits.push(board);
     hits.push(...board.speedDial.filter(i => matchesQuery(i, board)));
-    hits.push(...board.columns.flatMap(col => collectFromList(col.items, board)));
+    hits.push(...board.columns.filter(c => !c.isInbox).flatMap(col => collectFromList(col.items, board)));
     if (hits.length) groups.push({ label: board.title, items: hits });
   }
 
@@ -444,7 +489,51 @@ function renderEssentials() {
 
 function renderNav() {
   elements.navList.innerHTML = '';
+  if (importManagerHasItems()) {
+    const importBoard = getImportManagerBoard();
+    if (importBoard) elements.navList.appendChild(createImportManagerNavItem(importBoard));
+  }
   state.navItems.forEach(item => elements.navList.appendChild(createNavItem(item)));
+}
+
+function createImportManagerNavItem(board) {
+  const el = document.createElement('div');
+  el.className = 'nav-item nav-import-manager';
+  el.dataset.type = 'board';
+
+  const label = document.createElement('div');
+  label.textContent = board.title;
+  el.appendChild(label);
+
+  const { bookmarks, folders } = getImportManagerCounts();
+  if (bookmarks > 0 || folders > 0) {
+    const bmBadge = document.createElement('span');
+    bmBadge.className = 'nav-inbox-badge';
+    bmBadge.title = 'Bookmarks';
+    bmBadge.textContent = bookmarks;
+    el.appendChild(bmBadge);
+    const folderBadge = document.createElement('span');
+    folderBadge.className = 'nav-inbox-badge nav-inbox-badge--folder';
+    folderBadge.title = 'Folders';
+    folderBadge.textContent = folders;
+    el.appendChild(folderBadge);
+  }
+
+  el.addEventListener('click', () => {
+    state.activeBoardId = board.id;
+    elements.searchInput.value = '';
+    elements.mainPanel.classList.remove('search-active');
+    elements.searchResultsPane.classList.add('hidden');
+    renderAll();
+    saveState();
+  });
+
+  el.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+
+  return el;
 }
 
 function createNavItem(item, depth = 0, parent = null) {
@@ -491,6 +580,20 @@ function createNavItem(item, depth = 0, parent = null) {
   }
 
   if (item.type === 'board') {
+    const board = state.boards.find(b => b.id === item.boardId);
+    const { bookmarks: ibm, folders: ifl } = getBoardInboxCounts(board);
+    if (ibm + ifl > 0) {
+      const bmBadge = document.createElement('span');
+      bmBadge.className = 'nav-inbox-badge';
+      bmBadge.title = 'Bookmarks in inbox';
+      bmBadge.textContent = ibm;
+      el.appendChild(bmBadge);
+      const flBadge = document.createElement('span');
+      flBadge.className = 'nav-inbox-badge nav-inbox-badge--folder';
+      flBadge.title = 'Folders in inbox';
+      flBadge.textContent = ifl;
+      el.appendChild(flBadge);
+    }
     el.addEventListener('click', () => {
       if (item.boardId) {
         state.activeBoardId = item.boardId;
@@ -645,7 +748,7 @@ function renderSpeedDial(board) {
 
 function renderColumns(board) {
   elements.bookmarkColumns.innerHTML = '';
-  board.columns.forEach(column => {
+  board.columns.filter(c => !c.isInbox).forEach(column => {
     const columnEl = document.createElement('div');
     columnEl.className = 'board-column';
     columnEl.dataset.columnId = column.id;
@@ -698,7 +801,8 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
       event.stopPropagation();
       item.collapsed = !item.collapsed;
       saveState();
-      renderBoard();
+      const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
+      if (inInbox) renderInboxPanel(); else renderBoard();
     });
 
     const title = document.createElement('div');

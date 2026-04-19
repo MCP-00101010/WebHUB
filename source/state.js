@@ -68,7 +68,8 @@ const defaultState = {
       columns: [
         { id: 'col-1', title: 'Column 1', items: [] },
         { id: 'col-2', title: 'Column 2', items: [] },
-        { id: 'col-3', title: 'Column 3', items: [] }
+        { id: 'col-3', title: 'Column 3', items: [] },
+        { id: 'board-1-inbox', title: 'Inbox', isInbox: true, items: [] }
       ]
     }
   ],
@@ -130,6 +131,9 @@ function loadState() {
       delete board.labels;
       if (!board.tags) board.tags = [];
       if (board.inheritTags === undefined) board.inheritTags = true;
+      if (!board.columns.some(c => c.isInbox)) {
+        board.columns.push({ id: `${board.id}-inbox`, title: 'Inbox', isInbox: true, items: [] });
+      }
       for (const item of (board.speedDial || [])) {
         if (!item.type) item.type = 'bookmark';
         if (!item.tags) item.tags = [];
@@ -152,9 +156,9 @@ function loadState() {
       if (!e.tags) e.tags = [];
       if (e.faviconCache === undefined) e.faviconCache = '';
     }
-    // Remove boards with no nav item referencing them
+    // Remove boards with no nav item referencing them (keep Import Manager)
     const referencedIds = collectReferencedBoardIds(parsed.navItems);
-    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id));
+    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id) || b.isImportManager);
     if (!parsed.boards.some(b => b.id === parsed.activeBoardId)) {
       const first = parsed.boards[0] || null;
       parsed.activeBoardId = first ? first.id : null;
@@ -257,7 +261,7 @@ function deleteBoardAndNavItem(navItemId, boardId) {
   removeNavItemById(navItemId);
   // Remove by explicit boardId and also sweep any boards no longer in nav
   const referenced = referencedBoardIds();
-  state.boards = state.boards.filter(b => referenced.has(b.id));
+  state.boards = state.boards.filter(b => referenced.has(b.id) || b.isImportManager);
   const activeStillExists = state.boards.some(b => b.id === state.activeBoardId);
   if (!activeStillExists) {
     const next = findNextNavBoard(state.navItems);
@@ -327,7 +331,8 @@ function createBoard(title) {
     columns: [
       { id: `${id}-col-1`, title: 'Column 1', items: [] },
       { id: `${id}-col-2`, title: 'Column 2', items: [] },
-      { id: `${id}-col-3`, title: 'Column 3', items: [] }
+      { id: `${id}-col-3`, title: 'Column 3', items: [] },
+      { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
     ]
   });
   state.activeBoardId = id;
@@ -371,19 +376,22 @@ function updateBoardSettings(title, columnCount) {
   const board = getActiveBoard();
   board.title = title;
   const newCount = parseInt(columnCount, 10) || 3;
-  if (newCount < board.columns.length) {
-    const removed = board.columns.slice(newCount);
-    const lastKept = board.columns[newCount - 1];
+  const regularCols = board.columns.filter(c => !c.isInbox);
+  const inboxCol = board.columns.find(c => c.isInbox);
+  if (newCount < regularCols.length) {
+    const removed = regularCols.slice(newCount);
+    const lastKept = regularCols[newCount - 1];
     for (const col of removed) lastKept.items.push(...col.items);
-    board.columns = board.columns.slice(0, newCount);
+    board.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
   } else {
-    while (board.columns.length < newCount) {
-      board.columns.push({
-        id: `col-${Date.now()}-${board.columns.length + 1}`,
-        title: `Column ${board.columns.length + 1}`,
+    while (regularCols.length < newCount) {
+      regularCols.push({
+        id: `col-${Date.now()}-${regularCols.length + 1}`,
+        title: `Column ${regularCols.length + 1}`,
         items: []
       });
     }
+    board.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
   }
   board.columnCount = newCount;
   syncBoardTitleInNav(board.id, board.title);
@@ -514,6 +522,82 @@ function getKnownTags() {
     for (const col of board.columns) walk(col.items);
   }
   return Array.from(tags).sort();
+}
+
+function getBoardInbox(board) {
+  return board?.columns.find(c => c.isInbox) || null;
+}
+
+function getBoardInboxCount(board) {
+  return getBoardInbox(board)?.items.length || 0;
+}
+
+function getBoardInboxCounts(board) {
+  const inbox = getBoardInbox(board);
+  if (!inbox) return { bookmarks: 0, folders: 0 };
+  return {
+    bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
+    folders:   countItemsRecursive(inbox.items, 'folder')
+  };
+}
+
+function getImportManagerBoard() {
+  return state.boards.find(b => b.isImportManager) || null;
+}
+
+function getOrCreateImportManagerBoard() {
+  let board = getImportManagerBoard();
+  if (!board) {
+    const id = 'board-import-manager';
+    board = {
+      id,
+      title: 'Import Manager',
+      isImportManager: true,
+      columnCount: 1,
+      backgroundImage: '',
+      containerOpacity: 100,
+      showSpeedDial: false,
+      sharedTags: [],
+      tags: [],
+      inheritTags: true,
+      speedDial: [],
+      columns: [
+        { id: `${id}-col-1`, title: 'Imports', items: [] },
+        { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
+      ]
+    };
+    state.boards.push(board);
+  }
+  return board;
+}
+
+function importManagerHasItems() {
+  const board = getImportManagerBoard();
+  return board ? board.columns.filter(c => !c.isInbox).some(c => c.items.length > 0) : false;
+}
+
+function countItemsRecursive(items, type = null) {
+  let n = 0;
+  for (const item of (items || [])) {
+    if (!type || item.type === type) n++;
+    if (item.children) n += countItemsRecursive(item.children, type);
+  }
+  return n;
+}
+
+function getImportManagerCounts() {
+  const board = getImportManagerBoard();
+  if (!board) return { bookmarks: 0, folders: 0 };
+  const cols = board.columns.filter(c => !c.isInbox);
+  return {
+    bookmarks: cols.reduce((s, c) => s + countItemsRecursive(c.items, 'bookmark'), 0),
+    folders:   cols.reduce((s, c) => s + countItemsRecursive(c.items, 'folder'), 0)
+  };
+}
+
+function getImportManagerItemCount() {
+  const { bookmarks, folders } = getImportManagerCounts();
+  return bookmarks + folders;
 }
 
 function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {

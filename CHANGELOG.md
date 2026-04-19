@@ -5,6 +5,41 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.8.0] — 2026-04-19
+
+### Added
+
+- **Per-board inbox**: each board has a hidden `{ isInbox: true }` column in `board.columns`; rendered as a floating draggable panel with position saved to `localStorage`
+- **Inbox toggle button** in board header with badge showing total item count; panel header shows two badges (bookmarks / folders) using recursive counts
+- **Nav inbox badges**: board nav items show two right-aligned badges (accent for bookmarks, muted for folders) when inbox is non-empty
+- **Import Manager**: special persistent board pinned to the top of the nav when non-empty, hidden when empty; accepts HTML bookmark imports instead of the active board
+- **Import Manager nav item**: two count badges (bookmarks / folders); accent-coloured border distinguishes it from regular boards
+- **Robust bookmark HTML parser**: handles both nested and sibling `<DL>` layouts including Firefox's `<DL><p>` pattern; skips intermediate `<P>` elements when looking for a folder's child `<DL>`
+- **Import alert** reports "X bookmarks in Y folders" using recursive counts
+- **"Move to board"** added to folder context menu (was bookmark-only); correctly shows when on the Import Manager with at least one regular board
+- `getBoardInbox()`, `getBoardInboxCount()`, `getBoardInboxCounts()` helpers in state.js
+- `countItemsRecursive(items, type)` helper; `getImportManagerCounts()`, `getImportManagerItemCount()` in state.js
+- `getImportManagerBoard()`, `getOrCreateImportManagerBoard()`, `importManagerHasItems()` in state.js
+- `createImportManagerNavItem()` in render.js
+
+### Changed
+
+- `updateBoardSettings` and board settings column-count radio listener preserve the inbox column when resizing
+- `loadState()` and `deleteBoardAndNavItem()` exempt the Import Manager board from the nav-reference sweep so it is never silently deleted
+- HTML bookmark import routes to Import Manager (creates it if absent) and switches the active board to it; all imported folders start collapsed
+- "Move to board" and "Bulk Move to Board" target lists exclude the Import Manager
+- Inbox panel width matches a 3-column board column (`calc((100vw - 320px - 72px) / 3)`)
+- Context menu `z-index` raised from 30 to 300 so it renders above the inbox panel (200)
+
+### Fixed
+
+- Folder expand/collapse inside the inbox panel called `renderBoard()` instead of `renderInboxPanel()`; now detects inbox column by `isInbox` flag and calls the correct renderer
+- Import Manager board silently deleted when any regular board was deleted (`deleteBoardAndNavItem` sweep)
+- "Move to board" option not appearing on Import Manager when only one regular board existed — context menu now uses `isImportManager`-aware logic for both single-item and bulk moves
+- Context menu rendered behind the inbox panel due to lower z-index
+
+---
+
 ## [0.7.1] — 2026-04-19
 
 ### Added

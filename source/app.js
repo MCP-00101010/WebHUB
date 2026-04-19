@@ -1,4 +1,4 @@
-const APP_VERSION = '0.7.1';
+const APP_VERSION = '0.8.0';
 
 let activeModal = null;
 let contextTarget = null;
@@ -378,7 +378,7 @@ function handleModalSubmit(event) {
       if (!targetBoard || !contextTarget?.item) break;
       const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
       deleteBoardTarget(contextTarget);
-      targetBoard.columns[0].items.push(capturedItem);
+      (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(capturedItem);
       break;
     }
     case 'bulkAddTags': {
@@ -404,7 +404,7 @@ function handleModalSubmit(event) {
       }
       toMove.forEach(({ item, list }) => {
         list.splice(list.indexOf(item), 1);
-        targetBoard.columns[0].items.push(item);
+        (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(item);
       });
       clearSelection();
       break;
@@ -482,19 +482,22 @@ function attachBoardSettingsListeners() {
       const board = getActiveBoard();
       if (!board) return;
       const newCount = parseInt(e.target.value, 10) || 3;
-      if (newCount < board.columns.length) {
-        const removed = board.columns.slice(newCount);
-        const lastKept = board.columns[newCount - 1];
+      const regularCols = board.columns.filter(c => !c.isInbox);
+      const inboxCol = board.columns.find(c => c.isInbox);
+      if (newCount < regularCols.length) {
+        const removed = regularCols.slice(newCount);
+        const lastKept = regularCols[newCount - 1];
         for (const col of removed) lastKept.items.push(...col.items);
-        board.columns = board.columns.slice(0, newCount);
+        board.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
       } else {
-        while (board.columns.length < newCount) {
-          board.columns.push({
-            id: `col-${Date.now()}-${board.columns.length + 1}`,
-            title: `Column ${board.columns.length + 1}`,
+        while (regularCols.length < newCount) {
+          regularCols.push({
+            id: `col-${Date.now()}-${regularCols.length + 1}`,
+            title: `Column ${regularCols.length + 1}`,
             items: []
           });
         }
+        board.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
       }
       board.columnCount = newCount;
       renderBoard();
@@ -662,6 +665,71 @@ function attachFolderModalListeners() {
   });
   attachTagAutocomplete(document.getElementById('fmTags'));
   attachTagAutocomplete(document.getElementById('fmSharedTags'));
+}
+
+// --- Inbox panel ---
+
+const INBOX_POS_KEY = 'morpheus-inbox-pos';
+let inboxPanelOpen = false;
+
+function saveInboxPos() {
+  const panel = document.getElementById('inboxPanel');
+  if (!panel) return;
+  const rect = panel.getBoundingClientRect();
+  localStorage.setItem(INBOX_POS_KEY, JSON.stringify({ x: rect.left, y: rect.top }));
+}
+
+function showInboxPanel() {
+  inboxPanelOpen = true;
+  const panel = document.getElementById('inboxPanel');
+  panel.classList.remove('hidden');
+  panel.classList.add('draggable');
+  try {
+    const pos = JSON.parse(localStorage.getItem(INBOX_POS_KEY));
+    if (pos) { panel.style.left = pos.x + 'px'; panel.style.top = pos.y + 'px'; }
+    else centerPanel(panel);
+  } catch { centerPanel(panel); }
+  makeDraggable(panel, document.getElementById('inboxPanelHeader'), saveInboxPos);
+  renderInboxPanel();
+}
+
+function hideInboxPanel() {
+  inboxPanelOpen = false;
+  document.getElementById('inboxPanel').classList.add('hidden');
+}
+
+function attachInboxListeners() {
+  document.getElementById('inboxBtn').addEventListener('click', () => {
+    if (inboxPanelOpen) hideInboxPanel();
+    else showInboxPanel();
+  });
+  document.getElementById('inboxPanelClose').addEventListener('click', hideInboxPanel);
+
+  const body = document.getElementById('inboxPanelBody');
+  body.addEventListener('dragover', e => {
+    if (!dragPayload || dragPayload.area !== 'board') return;
+    e.preventDefault();
+    body.classList.add('drag-over');
+  });
+  body.addEventListener('dragleave', e => {
+    if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over');
+  });
+  body.addEventListener('drop', e => {
+    e.preventDefault();
+    body.classList.remove('drag-over');
+    if (!dragPayload || dragPayload.area !== 'board') return;
+    pushUndoSnapshot();
+    const board = getActiveBoard();
+    const inbox = getBoardInbox(board);
+    if (!inbox) return;
+    const dragged = removeBoardItemById(dragPayload.itemId);
+    if (dragged) inbox.items.push(dragged);
+    dragPayload = null;
+    renderInboxPanel();
+    renderBoard();
+    renderNav();
+    saveState();
+  });
 }
 
 function openExternalBookmarkModal(url, title, target) {
@@ -892,7 +960,10 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'moveToBoard': {
-      const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
+      const cab = getActiveBoard();
+      const boards = cab?.isImportManager
+        ? state.boards.filter(b => !b.isImportManager)
+        : state.boards.filter(b => !b.isImportManager && b.id !== cab?.id);
       showModal('moveToBoard', {
         title: 'Move to Board',
         showName: false,
@@ -942,17 +1013,24 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
     depth
   };
 
+  const activeBoard = getActiveBoard();
+  const regularBoards = state.boards.filter(b => !b.isImportManager);
+  const canMoveToBoard = activeBoard?.isImportManager
+    ? regularBoards.length > 0
+    : regularBoards.filter(b => b.id !== activeBoard?.id).length > 0;
+
   const options = [];
   if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
     options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
+    if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });
     options.push({ label: 'Delete folder', action: 'deleteItem' });
   } else if (item.type === 'bookmark') {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
     options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
-    if (state.boards.length > 1) options.push({ label: 'Move to board', action: 'moveToBoard' });
+    if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
@@ -1055,7 +1133,7 @@ function populateFontSelects() {
   });
 }
 
-function makeDraggable(panel, handle) {
+function makeDraggable(panel, handle, onDrop) {
   if (panel.dataset.draggableAttached) return;
   panel.dataset.draggableAttached = '1';
   handle.addEventListener('mousedown', e => {
@@ -1072,6 +1150,7 @@ function makeDraggable(panel, handle) {
     const onUp = () => {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      if (onDrop) onDrop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -1212,11 +1291,12 @@ function parseBookmarkHtml(htmlText) {
   function parseDL(dl) {
     const items = [];
     if (!dl) return items;
-    for (const dt of dl.children) {
-      if (dt.tagName !== 'DT') continue;
-      const a = dt.querySelector(':scope > A');
-      const h3 = dt.querySelector(':scope > H3');
-      const subDL = dt.querySelector(':scope > DL');
+    const children = Array.from(dl.children);
+    for (let i = 0; i < children.length; i++) {
+      const el = children[i];
+      if (el.tagName !== 'DT') continue;
+      const a = el.querySelector(':scope > A');
+      const h3 = el.querySelector(':scope > H3');
       if (a) {
         items.push({
           id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -1227,11 +1307,25 @@ function parseBookmarkHtml(htmlText) {
           faviconCache: ''
         });
       } else if (h3) {
+        // DL may be a direct child of DT, or a sibling (possibly after a <P> from "<DL><p>")
+        let subDL = el.querySelector(':scope > DL');
+        if (!subDL) {
+          let j = i + 1;
+          while (j < children.length && children[j].tagName !== 'DT' && children[j].tagName !== 'DL') j++;
+          if (j < children.length && children[j].tagName === 'DL') {
+            subDL = children[j];
+            i = j;
+          }
+        }
         items.push({
           id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           type: 'folder',
           title: h3.textContent.trim(),
-          collapsed: false,
+          collapsed: true,
+          tags: [],
+          sharedTags: [],
+          inheritTags: true,
+          autoRemoveTags: false,
           children: parseDL(subDL)
         });
       }
@@ -1465,14 +1559,16 @@ function attachSettingsListeners() {
       reader.onload = ev => {
         const items = parseBookmarkHtml(ev.target.result);
         if (!items.length) { alert('No bookmarks found in file.'); return; }
-        const board = getActiveBoard();
-        if (!board) return;
         pushUndoSnapshot();
-        board.columns[0].items.push(...items);
+        const importBoard = getOrCreateImportManagerBoard();
+        const targetCol = importBoard.columns.find(c => !c.isInbox);
+        targetCol.items.push(...items);
+        state.activeBoardId = importBoard.id;
         renderAll();
         saveState();
         hideSettingsPanel();
-        alert(`Imported ${countBookmarks(items)} bookmarks into "${board.title}".`);
+        const { bookmarks, folders } = getImportManagerCounts();
+        alert(`Imported ${bookmarks} bookmarks in ${folders} folders into Import Manager.`);
       };
       reader.readAsText(file);
       bmImportFile.value = '';
@@ -1531,7 +1627,10 @@ function attachEventListeners() {
     showModal('bulkAddTags', { title: 'Add Tags to Selected', showName: false, showTags: true });
   });
   document.getElementById('bulkMoveBtn').addEventListener('click', () => {
-    const boards = state.boards.filter(b => b.id !== getActiveBoard()?.id);
+    const ab = getActiveBoard();
+    const boards = ab?.isImportManager
+      ? state.boards.filter(b => !b.isImportManager)
+      : state.boards.filter(b => !b.isImportManager && b.id !== ab?.id);
     if (!boards.length) { alert('No other boards to move to.'); return; }
     showModal('bulkMoveToBoard', {
       title: 'Move Selected to Board',
@@ -1702,6 +1801,7 @@ attachEventListeners();
 attachSettingsListeners();
 attachBoardSettingsListeners();
 attachFolderModalListeners();
+attachInboxListeners();
 renderAll();
 saveState();
 updateUndoRedoUI();

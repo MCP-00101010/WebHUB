@@ -9,8 +9,6 @@
 - board tab bar as alternative navigation style (tabs across the top instead of sidebar list) (possibly a great QoL thing. but i will eventually have a rather big collection of boards. thats why i want to be able to store boards inside folders. possible solution: select a board folder in the navpane and the boards in this folder will go into the board tab bar)
 - tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
 
-## Bookmarks
-
 ## Board Backgrounds
 
 - background image browser using `webkitdirectory` folder picker — user selects their `backgrounds` folder once, app shows a thumbnail grid, clicking a thumbnail sets it as the board background (stored as data URL, same path as drag-drop). Browser remembers the last-used folder so subsequent opens land there automatically. Starting directory cannot be set programmatically — user navigates there manually the first time. (probably no longer needed if we use a firefox extension to handle file access for us)
@@ -190,26 +188,9 @@ See [0.6.1] in CHANGELOG.
 
 ---
 
-### Phase 5 — Board inbox & Import Manager
+### Phase 5 — Board inbox & Import Manager ✓ *Completed 2026-04-19*
 
-*Inbox comes before the extension because the extension will use the inbox as its delivery mechanism. Import Manager builds on top of the inbox pattern.*
-
-**Per-board inbox:**
-- Each board has one hidden `{ isInbox: true, items: [] }` column stored in `board.columns`
-- Rendered as a **floating draggable panel** (not an extra grid column) — position saved to `localStorage` globally
-- Toggle button in the board header opens/closes the floating inbox panel
-- Badge on the board's nav pane entry shows item count when inbox is non-empty
-- "Move to board" action targets the destination board's inbox column (replaces current hardcoded `columns[0]` target)
-- DnD out of the inbox into any board column is standard column-to-column drag behaviour
-- Extension will later use this same inbox path to deliver single tabs from the browser
-
-**Import Manager:**
-- Importing an HTML bookmarks file opens the Import Manager instead of dumping everything onto the active board
-- Import Manager is a special persistent board (hidden from nav when empty, pinned to top when non-empty) with a single scrollable column
-- Tree-view rendering of the imported bookmark file: folders are collapsible, bookmarks are standard items
-- User can rename, re-tag, or delete items/folders directly in the Import Manager
-- Sending a folder or bookmark to a board moves it to that board's inbox and removes it from the Import Manager
-- Import Manager state is persisted in the database so the user can close and return later
+See [0.8.0] in CHANGELOG.
 
 ---
 
