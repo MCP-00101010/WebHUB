@@ -1,0 +1,19 @@
+{
+  "id": "crimson",
+  "name": "Crimson",
+  "colorScheme": "dark",
+  "colors": {
+    "bg": "#120a0a",
+    "panel": "#1c1010",
+    "panelStrong": "#261414",
+    "panelMuted": "#1e1212",
+    "border": "#3a1f1f",
+    "text": "#f0e0e0",
+    "textMuted": "#9e7070",
+    "accent": "#e05454",
+    "accentStrong": "#c43a3a",
+    "danger": "#ff4444",
+    "radius": "18px",
+    "shadow": "0 20px 40px rgba(0,0,0,0.5)"
+  }
+}

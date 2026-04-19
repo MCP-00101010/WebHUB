@@ -109,6 +109,20 @@ function attachBoardSettingsListeners() {
     reader.readAsDataURL(file);
   });
 
+  document.getElementById('bstgBgBrowse').addEventListener('click', async () => {
+    if (!bridge.nativeIsAvailable()) {
+      alert('File browsing requires the native messaging host.\nSee extension/native/install.ps1 to set it up.');
+      return;
+    }
+    const result = await bridge.openFilePicker('image', 'Select background image');
+    if (!result) return;
+    const board = getActiveBoard();
+    if (!board) return;
+    board.backgroundImage = result.dataUrl;
+    document.getElementById('bstgBgUrl').value = '';
+    applyBg();
+  });
+
   document.getElementById('bstgBgClear').addEventListener('click', () => {
     const board = getActiveBoard();
     if (!board) return;
@@ -159,6 +173,81 @@ function attachBoardSettingsListeners() {
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
   document.getElementById('boardSettingsCancelBtn').addEventListener('click', cancelBoardSettingsPanel);
 }
+
+// --- Theme picker ---
+
+async function renderThemePicker() {
+  const container = document.getElementById('stgThemePicker');
+  const hint = document.getElementById('stgThemeHint');
+  const active = state.settings.activeThemeName || 'default-dark';
+
+  let diskThemes = [];
+  if (typeof bridge !== 'undefined' && bridge.nativeIsAvailable()) {
+    diskThemes = await bridge.listThemes();
+    const count = diskThemes.length;
+    hint.textContent = count ? `${count} theme${count !== 1 ? 's' : ''} in ./themes/` : '';
+  } else {
+    hint.textContent = '';
+  }
+
+  const allThemes = [...getAllThemes()];
+  for (const dt of diskThemes) {
+    if (!allThemes.find(t => t.id === dt.id)) allThemes.push(dt);
+  }
+
+  container.innerHTML = '';
+  for (const theme of allThemes) {
+    const card = document.createElement('div');
+    card.className = 'theme-card' + (theme.id === active ? ' active' : '');
+    card.dataset.themeId = theme.id;
+
+    const swatches = document.createElement('div');
+    swatches.className = 'theme-swatches';
+    for (const color of [theme.colors.bg, theme.colors.panel, theme.colors.accent, theme.colors.text]) {
+      const s = document.createElement('div');
+      s.className = 'theme-swatch';
+      s.style.background = color;
+      swatches.appendChild(s);
+    }
+
+    const name = document.createElement('div');
+    name.className = 'theme-name';
+    name.textContent = theme.name;
+
+    card.appendChild(swatches);
+    card.appendChild(name);
+
+    if (!theme.builtin) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'theme-delete-btn';
+      del.title = 'Delete theme';
+      del.textContent = '×';
+      del.addEventListener('click', e => {
+        e.stopPropagation();
+        state.settings.customThemes = (state.settings.customThemes || []).filter(t => t.id !== theme.id);
+        if (state.settings.activeThemeName === theme.id) {
+          state.settings.activeThemeName = 'default-dark';
+          applyTheme(getThemeById('default-dark'));
+        }
+        saveState();
+        renderThemePicker();
+      });
+      card.appendChild(del);
+    }
+
+    card.addEventListener('click', () => {
+      state.settings.activeThemeName = theme.id;
+      applyTheme(theme);
+      saveState();
+      container.querySelectorAll('.theme-card').forEach(c =>
+        c.classList.toggle('active', c.dataset.themeId === theme.id));
+    });
+
+    container.appendChild(card);
+  }
+}
+
 
 // --- Global settings panel ---
 
@@ -248,6 +337,7 @@ function showSettingsPanel() {
   populateTagColors();
   updateLastExportedLabel();
   updateEssentialsWarning();
+  renderThemePicker();
 }
 
 function hideSettingsPanel() {
@@ -403,6 +493,33 @@ function attachSettingsListeners() {
       const body = document.querySelector('.settings-body[data-active-tab]');
       if (body) body.dataset.activeTab = tab.dataset.tab;
     });
+  });
+
+  document.getElementById('stgSaveThemeBtn').addEventListener('click', async () => {
+    const name = prompt('Theme name:');
+    if (!name?.trim()) return;
+    const cs = getComputedStyle(document.documentElement);
+    const get = v => cs.getPropertyValue(v).trim();
+    const id = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const theme = {
+      id, name: name.trim(), builtin: false,
+      colorScheme: document.documentElement.style.colorScheme || 'dark',
+      colors: {
+        bg: get('--bg'), panel: get('--panel'), panelStrong: get('--panel-strong'),
+        panelMuted: get('--panel-muted'), border: get('--border'),
+        text: get('--text'), textMuted: get('--text-muted'),
+        accent: get('--accent'), accentStrong: get('--accent-strong'),
+        danger: get('--danger'), radius: get('--radius'), shadow: get('--shadow')
+      }
+    };
+    if (!state.settings.customThemes) state.settings.customThemes = [];
+    const idx = state.settings.customThemes.findIndex(t => t.id === id);
+    if (idx >= 0) state.settings.customThemes[idx] = theme;
+    else state.settings.customThemes.push(theme);
+    state.settings.activeThemeName = id;
+    saveState();
+    if (typeof bridge !== 'undefined' && bridge.nativeIsAvailable()) await bridge.saveTheme(theme);
+    renderThemePicker();
   });
 
   document.getElementById('settingsDoneBtn').addEventListener('click', hideSettingsPanel);

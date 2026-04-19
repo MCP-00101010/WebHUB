@@ -39,6 +39,8 @@ const defaultSettings = {
   titleColor: '',
   tagColors: {},
   tagGroups: [],
+  activeThemeName: 'default-dark',
+  customThemes: [],
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
   showEssentials: true,

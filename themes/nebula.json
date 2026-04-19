@@ -1,0 +1,19 @@
+{
+  "id": "nebula",
+  "name": "Nebula",
+  "colorScheme": "dark",
+  "colors": {
+    "bg": "#0f0e1a",
+    "panel": "#17162a",
+    "panelStrong": "#211f36",
+    "panelMuted": "#1a1930",
+    "border": "#2e2b4a",
+    "text": "#e8e6f5",
+    "textMuted": "#7c78a8",
+    "accent": "#9d75f5",
+    "accentStrong": "#7c55d5",
+    "danger": "#f06060",
+    "radius": "18px",
+    "shadow": "0 20px 40px rgba(0,0,0,0.5)"
+  }
+}

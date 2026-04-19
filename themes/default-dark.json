@@ -1,0 +1,19 @@
+{
+  "id": "default-dark",
+  "name": "Default Dark",
+  "colorScheme": "dark",
+  "colors": {
+    "bg": "#111213",
+    "panel": "#18191c",
+    "panelStrong": "#212226",
+    "panelMuted": "#1a1c20",
+    "border": "#2a2c31",
+    "text": "#e5e7eb",
+    "textMuted": "#9ca3af",
+    "accent": "#6d7cff",
+    "accentStrong": "#4f5bff",
+    "danger": "#ef4444",
+    "radius": "18px",
+    "shadow": "0 20px 40px rgba(0,0,0,0.35)"
+  }
+}

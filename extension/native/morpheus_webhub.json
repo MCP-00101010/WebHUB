@@ -1,0 +1,7 @@
+{
+  "name": "morpheus_webhub",
+  "description": "Morpheus WebHub native messaging host",
+  "path": "NATIVE_HOST_PATH",
+  "type": "stdio",
+  "allowed_extensions": ["morpheus-webhub@local"]
+}

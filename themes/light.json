@@ -1,0 +1,19 @@
+{
+  "id": "light",
+  "name": "Light",
+  "colorScheme": "light",
+  "colors": {
+    "bg": "#f5f6fa",
+    "panel": "#ffffff",
+    "panelStrong": "#eef0f5",
+    "panelMuted": "#f0f1f7",
+    "border": "#d1d5db",
+    "text": "#111213",
+    "textMuted": "#6b7280",
+    "accent": "#4f5bff",
+    "accentStrong": "#3748ff",
+    "danger": "#ef4444",
+    "radius": "18px",
+    "shadow": "0 10px 30px rgba(0,0,0,0.12)"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "catppuccin-mocha",
+  "name": "Catppuccin Mocha",
+  "colorScheme": "dark",
+  "colors": {
+    "bg": "#1e1e2e",
+    "panel": "#181825",
+    "panelStrong": "#313244",
+    "panelMuted": "#1e1e2e",
+    "border": "#45475a",
+    "text": "#cdd6f4",
+    "textMuted": "#6c7086",
+    "accent": "#cba6f7",
+    "accentStrong": "#b4a0f5",
+    "danger": "#f38ba8",
+    "radius": "18px",
+    "shadow": "0 20px 40px rgba(0,0,0,0.5)"
+  }
+}

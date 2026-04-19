@@ -143,7 +143,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.9.0</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.10.0</button>
       </div>
     </aside>
 
@@ -233,6 +233,7 @@
             <span>Drop an image file here</span>
           </div>
           <div class="settings-row">
+            <button type="button" id="bstgBgBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
             <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
           </div>
         </div>
@@ -294,6 +295,15 @@
         </div>
       </div>
       <div class="settings-body" data-active-tab="style">
+
+        <div class="settings-section span-full" data-tab="style">
+          <div class="settings-section-label">Theme</div>
+          <div id="stgThemePicker" class="theme-picker"></div>
+          <div class="theme-picker-actions">
+            <button type="button" id="stgSaveThemeBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Save current as theme…</button>
+            <span id="stgThemeHint" class="settings-muted"></span>
+          </div>
+        </div>
 
         <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Hub</div>
@@ -657,7 +667,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.9.0</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.10.0</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -746,6 +756,7 @@
   <div id="contextMenu" class="context-menu hidden"></div>
   <div id="tooltip" class="tooltip hidden"></div>
   <script src="source/bridge.js" defer></script>
+  <script src="source/themes.js" defer></script>
   <script src="source/icons.js" defer></script>
   <script src="source/state.js" defer></script>
   <script src="source/render-items.js" defer></script>

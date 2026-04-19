@@ -137,6 +137,8 @@ function applySettings() {
   r.setProperty('--speed-link-size', sdSizes[s.speedDialIconSize] || '44px');
   const essCols = { small: 8, medium: 6, large: 4 };
   r.setProperty('--essentials-cols', essCols[s.essentialsIconSize] || 6);
+
+  applyTheme(getThemeById(s.activeThemeName || 'default-dark'));
 }
 
 function hexToRgba(hex, alpha) {

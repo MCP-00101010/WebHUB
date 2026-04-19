@@ -5,6 +5,50 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.10.0] — 2026-04-19
+
+### Added
+
+- **Theme system** — Global Settings → Style tab now has a Theme section at the top
+  - 7 built-in themes: Default Dark, Light, Dracula, Catppuccin Mocha, Midnight (dark blue), Crimson (dark red), Nebula (dark purple)
+  - Theme picker renders color-swatch cards; clicking applies immediately and persists to state
+  - "Save current as theme…" button — captures all active CSS color variables as a named custom theme; stored in `state.settings.customThemes[]`
+  - Custom themes show a delete (×) button on hover
+  - If native host is connected, custom themes are also written to `./themes/<id>.json`; themes in that folder are loaded and shown alongside built-ins
+- **`source/themes.js`** — `BUILTIN_THEMES`, `applyTheme(theme)`, `getThemeById(id)`, `getAllThemes()`
+- **`themes/` folder** — 4 built-in theme JSON files for sharing and reference
+- **`--accent-glow` CSS variable** — derived from `--accent` at 20% opacity; body radial gradient now uses it so the glow color follows the active theme's accent
+- **Extension: `LIST_DIR` native message** — lists files in a directory with optional extension filter
+- **Extension: `MW_LIST_THEMES` / `MW_WRITE_THEME`** — background routes to native host; reads/writes JSON theme files in `./themes/` next to `index.html`
+- **Bridge: `listThemes()` / `saveTheme(theme)`** — page-side bridge methods for theme file access
+
+### Changed
+
+- `applySettings()` in `render.js` now calls `applyTheme()` at the end, keeping colors in sync with the active theme on every settings change
+- **CSS fully variabilized** — all hardcoded dark hex values (`#141518`, `#16181d`, `#24262a`, sidebar gradient, board/column/speed-dial backgrounds), semi-transparent white surfaces (`rgba(255,255,255,…)`), and accent tints (`rgba(109,124,255,…)`) replaced with CSS variables; light and custom themes now render correctly across every UI element
+- New CSS variables: `--panel-r/g/b` (RGB split for alpha-composited panel backgrounds), `--surface-1/2` (theme-aware hover/active surfaces), `--accent-chip/hover/selected/selected-border/glow`
+
+---
+
+## [0.9.1] — 2026-04-19
+
+### Added
+
+- **Native messaging host** (`extension/native/`)
+  - `morpheus_host.py` — handles `READ_FILE`, `WRITE_FILE`, `OPEN_FILE_PICKER`, `PING`; cross-platform file picker via tkinter with PowerShell fallback on Windows
+  - `morpheus_host.bat` — Windows launcher (path written by installer)
+  - `install.ps1` — Windows installer: detects Python, writes launcher `.bat`, writes native messaging manifest to `%APPDATA%\Mozilla\NativeMessagingHosts\`, registers registry key under `HKCU\Software\Mozilla\NativeMessagingHosts\`
+  - `install.sh` — Linux/macOS installer
+- **Extension ID** (`morpheus-webhub@local`) added to manifest — required for native messaging and permanent installation
+- **`nativeMessaging` permission** added to manifest
+- `background.js` now connects to native host: `WRITE_FILE` (debounced 800 ms), `READ_FILE`, `OPEN_FILE_PICKER`; falls back to `browser.storage.local` when host unavailable
+- `content.js` sends page URL on registration (used to derive JSON save path next to `index.html`); relays all bridge messages to background
+- **"Browse…" button** in board settings background panel — calls `bridge.openFilePicker('image')` → native file picker → sets `board.backgroundImage` as data URL
+- Popup now shows two status rows: Morpheus open/closed + file save enabled/storage-only
+- `bridge.nativeIsAvailable()` and `bridge.openFilePicker()` added to page bridge
+
+---
+
 ## [0.9.0] — 2026-04-19
 
 ### Added

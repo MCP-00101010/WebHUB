@@ -1,0 +1,19 @@
+{
+  "id": "midnight",
+  "name": "Midnight",
+  "colorScheme": "dark",
+  "colors": {
+    "bg": "#0d1117",
+    "panel": "#161b22",
+    "panelStrong": "#21262d",
+    "panelMuted": "#1a2030",
+    "border": "#30363d",
+    "text": "#e6edf3",
+    "textMuted": "#8b949e",
+    "accent": "#58a6ff",
+    "accentStrong": "#1f6feb",
+    "danger": "#f85149",
+    "radius": "18px",
+    "shadow": "0 20px 40px rgba(0,0,0,0.5)"
+  }
+}

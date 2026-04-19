@@ -209,22 +209,24 @@ See [0.8.1] in CHANGELOG.
 - Bridge storage backup — `saveState()` mirrors to `browser.storage.local`; restores if `localStorage` is empty on startup
 - `<meta name="morpheus-webhub">` identity tag in `index.html`
 
+#### ✓ Done (v0.9.1)
+
+- Native messaging host (`extension/native/`) — Python, install scripts for Windows/Linux/Mac
+- Extension ID `morpheus-webhub@local` — enables native messaging + permanent install
+- `background.js` — routes save/load through native host with storage fallback; debounced file writes
+- `content.js` — sends page URL on register; relays all bridge messages to background
+- "Browse…" button in board background settings — opens system file picker via native host
+- Popup shows native host status row
+
 #### Remaining
-- [ ] Native messaging host (Python or Node) — enables silent read/write to the JSON file next to `index.html`
-- [ ] Background image file picker via extension (`MW_OPEN_FILE_PICKER` message + board settings hook)
 - [ ] Theme file browser — scans `./themes/` folder (Phase 7 dependency)
-- [ ] Chromium shim — same bridge interface backed by File System Access API (`showSaveFilePicker`) for Chrome/Edge
+- [ ] Chromium shim — same bridge interface backed by File System Access API for Chrome/Edge
 
 ---
 
-### Phase 7 — Theme system
-*Depends on Phase 6 for file save/load. Must audit CSS variables before building the picker or theme files will be incomplete.*
+### Phase 7 — Theme system ✓ *Completed 2026-04-19*
 
-1. Audit and lock all CSS custom properties — produce a definitive list of what a theme file must contain
-2. Define theme JSON schema
-3. Built-in themes: default dark, light, Dracula, Catppuccin Mocha (at minimum)
-4. Theme picker UI in global settings
-5. Extension: scan `./themes` folder, load selected theme, save current theme as file
+See [0.10.0] in CHANGELOG.
 
 ---
 
