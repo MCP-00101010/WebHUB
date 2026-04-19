@@ -594,6 +594,7 @@ function handleSpeedDialContainerDrop(event) {
 function handleNavItemDragOver(event, item, parent) {
   if (dragPayload?.area === 'board' && item.type === 'board') {
     if (!['bookmark', 'folder'].includes(dragPayload.itemType)) return;
+    if (item.boardId === state.activeBoardId) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = 'move';
