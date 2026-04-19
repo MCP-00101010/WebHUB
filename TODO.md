@@ -76,13 +76,13 @@ How do we handle the Hub run on different browsers then? As I understand Chrome 
 
 ## Current issues / bugs
 
-- when dragging an object into an empty column, the blue preview indicator shows at the bottom of the column but the object gets inserted at the top. move indicator to the top as well (minor bug)
-- objects in columns seem to be rendered outside column boundaries occasionally. particular objects in nested folders as they are indented a little.
-- in bulk operations: bulk adding tags panel has a name field which we dont need. this panel should only allow to select tags. does bulk adding check if an item already has one of the added tags so we are not duplicating them?
-- in bulk operations: move to board. again the panel has a name field. should only have a select target board panel.
-- in bulk operations: delete confirmation button always says "Delete 1 Item" regardless of how many items are selected.
-- smart tag prediction: the drop down menu can get pretty long. could the prediction be done in the text field in a similar way browsers would display url prediction in the address bar?
-  - if that works the hub should have a list of generally used tags as a base baked into its config. (QoL Update)
+- ~~when dragging an object into an empty column, the blue preview indicator shows at the bottom of the column but the object gets inserted at the top.~~ ✓ *Fixed [0.6.1]*
+- ~~objects in columns seem to be rendered outside column boundaries occasionally. particular objects in nested folders as they are indented a little.~~ ✓ *Fixed [0.6.1]*
+- ~~in bulk operations: bulk adding tags panel has a name field which we don't need.~~ ✓ *Fixed [0.6.1]*
+- ~~in bulk operations: move to board panel has a name field.~~ ✓ *Fixed [0.6.1]*
+- ~~in bulk operations: delete confirmation button always says "Delete 1 Item" regardless of how many items are selected.~~ ✓ *Fixed [0.6.1]*
+- ~~smart tag prediction: the drop down menu can get pretty long.~~ ✓ *Fixed [0.6.1] — inline address-bar-style prediction; wired to all tag inputs in [0.7.1]*
+  - hub should have a list of generally used tags baked into its config as a base. (QoL — open)
   
 ## Tag Manager
 
