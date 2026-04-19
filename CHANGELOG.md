@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.1] — 2026-04-19
+
+### Added
+
+- **Notes widget** — freeform text, editable inline in the column; textarea auto-saves on blur; settings panel offers a larger editing area
+- **To-do list widget** — checklist with inline add (Enter or + button) and per-row delete; checked items strike through; settings panel shows done/total count and a "Clear completed" button
+- **Image widget** — displays any image URL; config: URL, fit (contain/cover/fill), optional caption; shows a placeholder prompt when no URL is set
+
+---
+
 ## [0.11.0] — 2026-04-19
 
 ### Added

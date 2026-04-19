@@ -380,3 +380,199 @@ WIDGET_REGISTRY['countdown'] = {
       </div>`;
   }
 };
+
+
+// ---- Notes widget ----
+
+WIDGET_REGISTRY['notes'] = {
+  name: 'Notes',
+  description: 'Freeform text note, editable inline',
+  allowedIn: ['column'],
+  defaultConfig: { content: '' },
+  defaultData: {},
+
+  render(widget, el, context) {
+    el.className = 'widget-notes';
+    const ta = document.createElement('textarea');
+    ta.className = 'widget-notes-textarea';
+    ta.value = widget.config.content || '';
+    ta.placeholder = 'Type a note…';
+    ta.addEventListener('mousedown', e => e.stopPropagation());
+    ta.addEventListener('input', () => { widget.config.content = ta.value; });
+    ta.addEventListener('blur', () => saveState());
+    el.appendChild(ta);
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config;
+    container.innerHTML = `
+      <div class="settings-row settings-row--top">
+        <span>Content</span>
+        <textarea data-cfg="content" class="settings-text-input widget-settings-textarea" rows="8" placeholder="Type a note…">${c.content || ''}</textarea>
+      </div>`;
+  }
+};
+
+
+// ---- To-do list widget ----
+
+WIDGET_REGISTRY['todo'] = {
+  name: 'To-do List',
+  description: 'Checklist with add and remove',
+  allowedIn: ['column'],
+  defaultConfig: {},
+  defaultData: { items: [] },
+
+  render(widget, el, context) {
+    el.className = 'widget-todo';
+    if (!widget.data.items) widget.data.items = [];
+
+    const list = document.createElement('div');
+    list.className = 'widget-todo-list';
+
+    const rerender = () => {
+      list.innerHTML = '';
+      widget.data.items.forEach(item => {
+        const row = document.createElement('label');
+        row.className = 'widget-todo-row' + (item.done ? ' done' : '');
+        row.addEventListener('mousedown', e => e.stopPropagation());
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = item.done;
+        cb.addEventListener('change', () => {
+          item.done = cb.checked;
+          row.classList.toggle('done', item.done);
+          saveState();
+        });
+
+        const span = document.createElement('span');
+        span.className = 'widget-todo-text';
+        span.textContent = item.text;
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'widget-todo-delete';
+        del.textContent = '×';
+        del.addEventListener('click', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          widget.data.items = widget.data.items.filter(i => i.id !== item.id);
+          rerender();
+          saveState();
+        });
+
+        row.appendChild(cb);
+        row.appendChild(span);
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+    };
+    rerender();
+
+    const addRow = document.createElement('div');
+    addRow.className = 'widget-todo-add';
+    addRow.addEventListener('mousedown', e => e.stopPropagation());
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'widget-todo-input';
+    input.placeholder = 'Add item…';
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'widget-todo-add-btn';
+    addBtn.textContent = '+';
+
+    const addItem = () => {
+      const text = input.value.trim();
+      if (!text) return;
+      widget.data.items.push({ id: `td-${Date.now()}`, text, done: false });
+      input.value = '';
+      rerender();
+      saveState();
+    };
+    addBtn.addEventListener('click', addItem);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } });
+
+    addRow.appendChild(input);
+    addRow.appendChild(addBtn);
+    el.appendChild(list);
+    el.appendChild(addRow);
+  },
+
+  renderSettings(widget, container) {
+    const done = (widget.data.items || []).filter(i => i.done).length;
+    const total = (widget.data.items || []).length;
+    container.innerHTML = `
+      <div class="settings-row">
+        <span>Progress</span>
+        <span class="settings-value">${done} / ${total} done</span>
+      </div>
+      <div class="settings-row">
+        <span>Clear completed</span>
+        <button type="button" class="secondary-btn" id="todoClearDoneBtn">Clear</button>
+      </div>`;
+    container.querySelector('#todoClearDoneBtn').addEventListener('click', () => {
+      widget.data.items = (widget.data.items || []).filter(i => !i.done);
+      container.querySelector('span.settings-value').textContent =
+        `${0} / ${widget.data.items.length} done`;
+    });
+  }
+};
+
+
+// ---- Image widget ----
+
+WIDGET_REGISTRY['image'] = {
+  name: 'Image',
+  description: 'Display an image from a URL',
+  allowedIn: ['column'],
+  defaultConfig: { url: '', fit: 'contain', caption: '' },
+  defaultData: {},
+
+  render(widget, el, context) {
+    const c = widget.config;
+    el.className = 'widget-image';
+    if (c.url) {
+      const img = document.createElement('img');
+      img.className = 'widget-image-img';
+      img.src = c.url;
+      img.style.objectFit = c.fit || 'contain';
+      img.alt = c.caption || '';
+      el.appendChild(img);
+      if (c.caption) {
+        const cap = document.createElement('div');
+        cap.className = 'widget-image-caption';
+        cap.textContent = c.caption;
+        el.appendChild(cap);
+      }
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'widget-image-placeholder';
+      ph.textContent = 'No image URL — open settings to add one';
+      el.appendChild(ph);
+    }
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config;
+    container.innerHTML = `
+      <div class="settings-row">
+        <span>Image URL</span>
+        <input type="text" data-cfg="url" value="${c.url || ''}" placeholder="https://example.com/image.png" class="settings-text-input" />
+      </div>
+      <div class="settings-row">
+        <span>Fit</span>
+        <select data-cfg="fit">
+          <option value="contain" ${(c.fit || 'contain') === 'contain' ? 'selected' : ''}>Contain</option>
+          <option value="cover"   ${c.fit === 'cover'   ? 'selected' : ''}>Cover</option>
+          <option value="fill"    ${c.fit === 'fill'    ? 'selected' : ''}>Fill</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <span>Caption</span>
+        <input type="text" data-cfg="caption" value="${c.caption || ''}" placeholder="Optional caption" class="settings-text-input" />
+      </div>`;
+  }
+};

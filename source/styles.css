@@ -2139,3 +2139,123 @@ button {
   color: var(--text-muted);
 }
 
+/* Notes widget */
+.widget-notes {
+  display: flex;
+  flex-direction: column;
+}
+.widget-notes-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  line-height: 1.5;
+  outline: none;
+  padding: 0;
+}
+.widget-notes-textarea::placeholder { color: var(--text-muted); }
+.widget-settings-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+.settings-row--top { align-items: flex-start; }
+
+/* To-do list widget */
+.widget-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.widget-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.widget-todo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 3px 0;
+}
+.widget-todo-text {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text);
+  word-break: break-word;
+}
+.widget-todo-row.done .widget-todo-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.widget-todo-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.widget-todo-row:hover .widget-todo-delete { opacity: 1; }
+.widget-todo-delete:hover { color: var(--danger); }
+.widget-todo-add {
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.widget-todo-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+.widget-todo-input::placeholder { color: var(--text-muted); }
+.widget-todo-add-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.widget-todo-add-btn:hover { color: var(--accent-strong); }
+.settings-value { color: var(--text-muted); font-size: 0.85rem; }
+
+/* Image widget */
+.widget-image {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.widget-image-img {
+  width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  display: block;
+}
+.widget-image-caption {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.widget-image-placeholder {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 20px 0;
+  font-style: italic;
+}
+

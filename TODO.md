@@ -15,11 +15,8 @@
 
 ## Widgets
 
-- to-do list widget (checklist with add/remove/check-off)
 - weather widget (current conditions, configurable location)
-- image widget (display a static image or gif inline in a column; allow fetch from URL e.g. NASA image of the day)
 - news feed / RSS widget (fetch and display headlines from a feed URL)
-- notes widget (freeform text / markdown block)
 
 ## Drag and Drop
 
@@ -112,9 +109,6 @@ See [0.10.0] in CHANGELOG.
 See [0.11.0] in CHANGELOG.
 
 Remaining widgets (not yet built):
-- Notes (freeform text / markdown)
-- To-do list (local state, checklist)
-- Image (URL or local via extension bridge)
 - Weather (external API, configurable location)
 - News feed / RSS (external fetch, configurable URL)
 
