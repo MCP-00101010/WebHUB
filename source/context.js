@@ -286,6 +286,7 @@ function handleContextMenuAction(action) {
         if (col) col.items.push(widget);
         renderAll();
         saveState();
+        openWidgetSettings(widget, () => { renderAll(); saveState(); });
       } else if (action.startsWith('addNavWidget:')) {
         const type = action.slice('addNavWidget:'.length);
         pushUndoSnapshot();
@@ -293,6 +294,7 @@ function handleContextMenuAction(action) {
         state.navItems.push(widget);
         renderNav();
         saveState();
+        openWidgetSettings(widget, () => { renderNav(); saveState(); });
       }
       break;
   }
