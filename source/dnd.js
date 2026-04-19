@@ -2,6 +2,16 @@ let dragPayload = null;
 let _dropTarget = null;
 let _dropPos    = null;
 
+function _canDropAsNavWidget() {
+  if (!dragPayload || dragPayload.area !== 'board' || dragPayload.itemType !== 'widget') return false;
+  return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('navpane');
+}
+
+function _canDropAsColumnWidget() {
+  if (!dragPayload || dragPayload.area !== 'nav' || dragPayload.itemType !== 'widget') return false;
+  return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
+}
+
 function isExternalDrag(event) {
   return !dragPayload;
 }
@@ -34,10 +44,13 @@ function removeDragPlaceholders() {
 }
 
 function createDragPlaceholder(kind) {
-  if (dragPayload?.itemId && kind !== 'speed-dial') {
+  if (dragPayload?.itemId) {
+    // Precise per-context selectors prevent matching the wrong area's element
     const selector = kind === 'nav'
       ? `.nav-item[data-id="${CSS.escape(dragPayload.itemId)}"]`
-      : `[data-item-id="${CSS.escape(dragPayload.itemId)}"]`;
+      : kind === 'speed-dial'
+        ? `.speed-link[data-item-id="${CSS.escape(dragPayload.itemId)}"]`
+        : `.board-column-item[data-item-id="${CSS.escape(dragPayload.itemId)}"]`;
     const sourceEl = document.querySelector(selector);
     if (sourceEl) {
       const clone = sourceEl.cloneNode(true);
@@ -45,16 +58,135 @@ function createDragPlaceholder(kind) {
       clone.classList.remove('selected', 'drop-position-before', 'drop-position-after');
       clone.removeAttribute('draggable');
       clone.removeAttribute('data-drop-position');
+      if (kind === 'speed-dial') clone.dataset.previewAxis = 'h';
       clone.querySelectorAll('[data-drop-position]').forEach(el => {
         el.removeAttribute('data-drop-position');
         el.classList.remove('drop-position-before', 'drop-position-after', 'selected');
       });
       return clone;
     }
+    // Element doesn't exist in target context yet — render a fresh preview
+    const fresh = _renderCrossContextPreview(kind);
+    if (fresh) return fresh;
   }
   const placeholder = document.createElement('div');
   placeholder.className = `drag-placeholder ${kind}-placeholder`;
   return placeholder;
+}
+
+function _renderCrossContextPreview(kind) {
+  const board = getActiveBoard();
+
+  if (kind === 'board') {
+    let item = null;
+    if (dragPayload.area === 'speed-dial') {
+      item = board?.speedDial.find(i => i.id === dragPayload.itemId);
+    } else if (dragPayload.area === 'essential') {
+      item = state.essentials.find?.(i => i?.id === dragPayload.itemId)
+          ?? (dragPayload.slot != null ? state.essentials[dragPayload.slot] : null);
+    } else if (dragPayload.area === 'nav') {
+      const p = findNavItemPath(dragPayload.itemId);
+      item = p?.list.find(i => i.id === dragPayload.itemId);
+    }
+    if (!item) return null;
+    const el = item.type === 'widget'
+      ? createWidgetElement(item, '_preview')
+      : createBoardItemElement(item, '_preview');
+    if (!el) return null;
+    el.classList.add('drag-preview');
+    el.removeAttribute('draggable');
+    return el;
+  }
+
+  if (kind === 'speed-dial') {
+    let item = null;
+    if (dragPayload.area === 'board') {
+      const p = findBoardItemInColumns(board, dragPayload.itemId);
+      item = p?.list.find(i => i.id === dragPayload.itemId);
+    } else if (dragPayload.area === 'essential') {
+      item = dragPayload.slot != null ? state.essentials[dragPayload.slot] : null;
+    }
+    if (!item) return null;
+    const link = document.createElement('a');
+    link.className = 'speed-link drag-preview';
+    link.dataset.previewAxis = 'h';
+    if (item.url) {
+      const img = document.createElement('img');
+      setFavicon(img, item, 256);
+      img.draggable = false;
+      link.appendChild(img);
+    } else {
+      const fb = document.createElement('span');
+      fb.className = 'speed-link-fallback';
+      fb.textContent = item.title ? item.title[0].toUpperCase() : '?';
+      link.appendChild(fb);
+    }
+    return link;
+  }
+
+  if (kind === 'nav') {
+    let item = null;
+    if (dragPayload.area === 'board') {
+      const p = findBoardItemInColumns(board, dragPayload.itemId);
+      item = p?.list.find(i => i.id === dragPayload.itemId);
+    }
+    if (!item || item.type !== 'widget') return null;
+    const def = WIDGET_REGISTRY[item.widgetType];
+    if (!def) return null;
+    const el = document.createElement('div');
+    el.className = 'nav-item nav-widget-item drag-preview';
+    const body = document.createElement('div');
+    body.className = 'nav-widget-body';
+    el.appendChild(body);
+    def.render(item, body, 'navpane');
+    return el;
+  }
+
+  return null;
+}
+
+// Reposition existing nav preview clone in-place (no destroy/recreate → no flicker).
+// Falls back to animated insertion when no preview exists yet.
+function _moveNavPreview(parentEl, beforeEl) {
+  document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
+  document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
+    el.classList.remove('drop-position-before', 'drop-position-after');
+    el.removeAttribute('data-drop-position');
+  });
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  const existing = document.querySelector('.drag-preview');
+  if (existing && existing.classList.contains('nav-item')) {
+    parentEl.insertBefore(existing, beforeEl || null);
+  } else {
+    if (existing) existing.remove();
+    _insertDragPreview(createDragPlaceholder('nav'), parentEl, beforeEl);
+  }
+}
+
+function _insertDragPreview(clone, parent, beforeEl) {
+  const isH = clone.dataset.previewAxis === 'h';
+  if (isH) {
+    clone.style.maxWidth = '0';
+    clone.style.minWidth = '0';
+    clone.style.overflow = 'hidden';
+    clone.style.opacity = '0';
+    clone.style.flexShrink = '0';
+  } else {
+    clone.style.maxHeight = '0';
+    clone.style.overflow = 'hidden';
+    clone.style.opacity = '0';
+  }
+  if (beforeEl != null) parent.insertBefore(clone, beforeEl);
+  else parent.appendChild(clone);
+  clone.offsetHeight;
+  clone.style.transition = isH
+    ? 'max-width 130ms ease, opacity 80ms ease'
+    : 'max-height 130ms ease, opacity 80ms ease';
+  requestAnimationFrame(() => {
+    if (isH) clone.style.maxWidth = '400px';
+    else clone.style.maxHeight = '400px';
+    clone.style.opacity = '0.5';
+  });
 }
 
 function applyDragImage(event, element) {
@@ -64,6 +196,37 @@ function applyDragImage(event, element) {
   const rect = element.getBoundingClientRect();
   event.dataTransfer.setDragImage(clone, event.clientX - rect.left, event.clientY - rect.top);
   requestAnimationFrame(() => clone.remove());
+}
+
+// Shared extraction logic for folder header/container drops.
+// Returns the extracted item or null on failure.
+function _extractDraggedItem(board) {
+  if (dragPayload.area === 'board') {
+    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
+    const oldParent = oldFound?.parent;
+    const dragged = removeBoardItemById(dragPayload.itemId);
+    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
+      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
+    }
+    return dragged;
+  }
+  if (dragPayload.area === 'speed-dial') {
+    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
+    if (sdIdx === -1) return null;
+    const [dragged] = board.speedDial.splice(sdIdx, 1);
+    dragged.type = 'bookmark';
+    if (!dragged.tags) dragged.tags = [];
+    return dragged;
+  }
+  if (dragPayload.area === 'essential') {
+    const dragged = state.essentials[dragPayload.slot];
+    if (!dragged) return null;
+    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
+    dragged.type = 'bookmark';
+    if (!dragged.tags) dragged.tags = [];
+    return dragged;
+  }
+  return null;
 }
 
 // --- Essential slot drop ---
@@ -113,7 +276,8 @@ function handleEssentialSlotDrop(targetSlot) {
 // --- Board item drag & drop ---
 
 function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload) return;
+  if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -129,22 +293,36 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   itemEl.dataset.dropPosition = position;
   itemEl.classList.toggle('drop-position-before', position === 'before');
   itemEl.classList.toggle('drop-position-after', position === 'after');
-  const preview = createDragPlaceholder('board');
-  if (position === 'before') itemEl.parentElement.insertBefore(preview, itemEl);
-  else itemEl.parentElement.insertBefore(preview, itemEl.nextSibling);
+  _insertDragPreview(createDragPlaceholder('board'), itemEl.parentElement, position === 'before' ? itemEl : itemEl.nextSibling);
 }
 
 function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload) return;
+  const isNavColWidget = dragPayload.area === 'nav' && _canDropAsColumnWidget();
+  if (!isNavColWidget && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential') return;
   if (dragPayload.itemId === targetItem.id) return;
 
   event.preventDefault();
   event.stopPropagation();
+  const position = _dropPos || 'before';
   removeDragPlaceholders();
   pushUndoSnapshot();
 
   const board = getActiveBoard();
-  const position = event.currentTarget.dataset.dropPosition || 'before';
+
+  if (isNavColWidget) {
+    const widget = removeNavItemById(dragPayload.itemId);
+    if (!widget) { dragPayload = null; return; }
+    const targetPath = findBoardItemInColumns(board, targetItem.id);
+    if (targetPath) {
+      const ti = targetPath.list.findIndex(i => i.id === targetItem.id);
+      targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, widget);
+    } else {
+      addBoardItemToColumn(columnId, widget);
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
   const targetPath = findBoardItemInColumns(board, targetItem.id);
 
   if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') {
@@ -166,10 +344,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
       const targetIndex = targetPath.list.findIndex(i => i.id === targetItem.id);
       targetPath.list.splice(Math.max(0, position === 'after' ? targetIndex + 1 : targetIndex), 0, extracted);
     }
-    dragPayload = null;
-    renderAll();
-    saveState();
-    return;
+    dragPayload = null; renderAll(); saveState(); return;
   }
 
   const draggedPath = findBoardItemInColumns(board, dragPayload.itemId);
@@ -177,10 +352,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   if (!targetPath) {
     const dragged = removeBoardItemById(dragPayload.itemId);
     if (dragged) addBoardItemToColumn(columnId, dragged);
-    dragPayload = null;
-    renderAll();
-    saveState();
-    return;
+    dragPayload = null; renderAll(); saveState(); return;
   }
 
   const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
@@ -206,8 +378,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 // --- Board column drag & drop ---
 
 function handleBoardColumnDragOver(event) {
-  if (!dragPayload && !isExternalDrag(event)) return;
-  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential') return;
+  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
@@ -220,7 +391,7 @@ function handleBoardColumnDragOver(event) {
     removeDragPlaceholders();
     _dropTarget = columnEl; _dropPos = 'start';
     columnEl.classList.add('drop-target');
-    columnEl.prepend(createDragPlaceholder('board'));
+    _insertDragPreview(createDragPlaceholder('board'), columnEl, columnEl.firstChild);
     return;
   }
 
@@ -240,7 +411,7 @@ function handleBoardColumnDragOver(event) {
     removeDragPlaceholders();
     _dropTarget = columnEl; _dropPos = 'end';
     columnEl.classList.add('drop-target');
-    columnEl.append(createDragPlaceholder('board'));
+    _insertDragPreview(createDragPlaceholder('board'), columnEl, null);
     return;
   }
 
@@ -250,15 +421,17 @@ function handleBoardColumnDragOver(event) {
   nearestEl.dataset.dropPosition = nearestPos;
   nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
   nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
-  const colPreview = createDragPlaceholder('board');
-  if (nearestPos === 'before') nearestEl.parentElement.insertBefore(colPreview, nearestEl);
-  else nearestEl.parentElement.insertBefore(colPreview, nearestEl.nextSibling);
+  _insertDragPreview(createDragPlaceholder('board'), nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
 }
 
 function handleBoardColumnDrop(event, columnId) {
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.classList.remove('drop-target');
+
+  // Capture position globals before removeDragPlaceholders clears them.
+  const savedTarget = _dropTarget;
+  const savedPos    = _dropPos;
   removeDragPlaceholders();
 
   if (isExternalDrag(event)) {
@@ -267,28 +440,26 @@ function handleBoardColumnDrop(event, columnId) {
     return;
   }
 
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  const isNavColWidget = dragPayload && dragPayload.area === 'nav' && _canDropAsColumnWidget();
+  if (!isNavColWidget && (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential'))) return;
   pushUndoSnapshot();
 
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId);
-  if (!column) { removeDragPlaceholders(); return; }
+  if (!column) return;
 
-  // Read insertion intent from the active indicator BEFORE modifying state
-  const columnEl = event.currentTarget;
-  const indicatedEl = columnEl.querySelector('[data-drop-position]');
   let stateInsertIndex = column.items.length;
-
-  if (indicatedEl) {
-    const refId = indicatedEl.dataset.itemId;
-    const refPos = indicatedEl.dataset.dropPosition;
-    const refIdx = column.items.findIndex(i => i.id === refId);
-    if (refIdx !== -1) {
-      stateInsertIndex = refPos === 'after' ? refIdx + 1 : refIdx;
-    }
+  if (savedTarget?.dataset.itemId) {
+    const refIdx = column.items.findIndex(i => i.id === savedTarget.dataset.itemId);
+    if (refIdx !== -1) stateInsertIndex = savedPos === 'after' ? refIdx + 1 : refIdx;
   }
 
-  removeDragPlaceholders();
+  if (isNavColWidget) {
+    const widget = removeNavItemById(dragPayload.itemId);
+    if (!widget) { dragPayload = null; return; }
+    column.items.splice(Math.max(0, Math.min(stateInsertIndex, column.items.length)), 0, widget);
+    dragPayload = null; renderAll(); saveState(); return;
+  }
 
   let draggedItem;
   if (dragPayload.area === 'board') {
@@ -315,8 +486,7 @@ function handleBoardColumnDrop(event, columnId) {
   }
   if (!draggedItem) return;
 
-  stateInsertIndex = Math.max(0, Math.min(stateInsertIndex, column.items.length));
-  column.items.splice(stateInsertIndex, 0, draggedItem);
+  column.items.splice(Math.max(0, Math.min(stateInsertIndex, column.items.length)), 0, draggedItem);
 
   dragPayload = null;
   renderAll();
@@ -335,7 +505,7 @@ function handleBoardFolderHeaderDragOver(event, folderItem, columnId, depth) {
   removeDragPlaceholders();
   header.classList.add('drop-target');
   const childrenContainer = header.parentElement.querySelector('.folder-children');
-  if (childrenContainer) childrenContainer.appendChild(createDragPlaceholder('board'));
+  if (childrenContainer) _insertDragPreview(createDragPlaceholder('board'), childrenContainer, null);
 }
 
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
@@ -348,28 +518,8 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   pushUndoSnapshot();
 
   const board = getActiveBoard();
-  let dragged;
-  if (dragPayload.area === 'board') {
-    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
-    const oldParent = oldFound?.parent;
-    dragged = removeBoardItemById(dragPayload.itemId);
-    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
-      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
-    }
-  } else if (dragPayload.area === 'speed-dial') {
-    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (sdIdx === -1) { dragPayload = null; return; }
-    [dragged] = board.speedDial.splice(sdIdx, 1);
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-  } else {
-    dragged = state.essentials[dragPayload.slot];
-    if (!dragged) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-  }
-  if (!dragged) return;
+  const dragged = _extractDraggedItem(board);
+  if (!dragged) { dragPayload = null; return; }
 
   if (depth >= 2 && dragged.type === 'folder') {
     alert('Cannot nest folders deeper than two levels.');
@@ -397,7 +547,7 @@ function handleBoardFolderContainerDragOver(event, folderItem, columnId, depth) 
   if (container.classList.contains('drop-target')) return;
   removeDragPlaceholders();
   container.classList.add('drop-target');
-  container.appendChild(createDragPlaceholder('board'));
+  _insertDragPreview(createDragPlaceholder('board'), container, null);
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
@@ -410,28 +560,8 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   pushUndoSnapshot();
 
   const board = getActiveBoard();
-  let dragged;
-  if (dragPayload.area === 'board') {
-    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
-    const oldParent = oldFound?.parent;
-    dragged = removeBoardItemById(dragPayload.itemId);
-    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
-      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
-    }
-  } else if (dragPayload.area === 'speed-dial') {
-    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (sdIdx === -1) { dragPayload = null; return; }
-    [dragged] = board.speedDial.splice(sdIdx, 1);
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-  } else {
-    dragged = state.essentials[dragPayload.slot];
-    if (!dragged) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-  }
-  if (!dragged) return;
+  const dragged = _extractDraggedItem(board);
+  if (!dragged) { dragPayload = null; return; }
 
   if (depth >= 2 && dragged.type === 'folder') {
     alert('Cannot nest folders deeper than two levels.');
@@ -461,34 +591,28 @@ function handleSpeedDialItemDragOver(event, item) {
   const el = event.currentTarget;
   const rect = el.getBoundingClientRect();
   const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-  if (el.dataset.dropPosition === position) return;
+  if (_dropTarget === el && _dropPos === position) return;
 
   removeDragPlaceholders();
+  _dropTarget = el; _dropPos = position;
   el.dataset.dropPosition = position;
-  el.classList.toggle('drop-position-before', position === 'before');
-  el.classList.toggle('drop-position-after', position === 'after');
-  const placeholder = createDragPlaceholder('speed-dial');
-  if (position === 'before') {
-    el.parentElement.insertBefore(placeholder, el);
-  } else {
-    el.parentElement.insertBefore(placeholder, el.nextSibling);
-  }
+  _insertDragPreview(createDragPlaceholder('speed-dial'), el.parentElement, position === 'before' ? el : el.nextSibling);
 }
 
 function handleSpeedDialItemDrop(event, targetItem) {
   if (!dragPayload) return;
   event.preventDefault();
   event.stopPropagation();
+  const position = _dropPos || 'before';
   removeDragPlaceholders();
   pushUndoSnapshot();
 
   const board = getActiveBoard();
-  const position = event.currentTarget.dataset.dropPosition || 'before';
 
   if (dragPayload.area === 'speed-dial') {
     if (dragPayload.itemId === targetItem.id) { dragPayload = null; return; }
     const draggedIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
+    const targetIdx  = board.speedDial.findIndex(i => i.id === targetItem.id);
     if (draggedIdx === -1 || targetIdx === -1) { dragPayload = null; return; }
     const [dragged] = board.speedDial.splice(draggedIdx, 1);
     let insertIdx = position === 'after' ? targetIdx + 1 : targetIdx;
@@ -501,16 +625,14 @@ function handleSpeedDialItemDrop(event, targetItem) {
     essItem.type = 'bookmark';
     if (!essItem.tags) essItem.tags = [];
     const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
-    const insertIdx = position === 'after' ? targetIdx + 1 : targetIdx;
-    board.speedDial.splice(Math.max(0, insertIdx), 0, essItem);
+    board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, essItem);
   } else if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
     const dragged = removeBoardItemById(dragPayload.itemId);
     if (!dragged) { dragPayload = null; return; }
     dragged.type = 'bookmark';
     if (!dragged.tags) dragged.tags = [];
     const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
-    const insertIdx = position === 'after' ? targetIdx + 1 : targetIdx;
-    board.speedDial.splice(Math.max(0, insertIdx), 0, dragged);
+    board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, dragged);
   } else {
     dragPayload = null;
     return;
@@ -522,15 +644,13 @@ function handleSpeedDialItemDrop(event, targetItem) {
 }
 
 function handleSpeedDialContainerDragOver(event) {
-  if (!dragPayload && !isExternalDrag(event)) return;
   if (dragPayload && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
-  const linkEls = Array.from(elements.speedDial.querySelectorAll('.speed-link'));
+  const linkEls = Array.from(elements.speedDial.querySelectorAll('.speed-link:not(.drag-preview)'));
   if (linkEls.length === 0) return;
 
-  // Find nearest item by cursor X — covers left padding and gaps between items
   let nearestEl = linkEls[linkEls.length - 1];
   let nearestPos = 'after';
   for (const el of linkEls) {
@@ -542,11 +662,11 @@ function handleSpeedDialContainerDragOver(event) {
     }
   }
 
-  if (nearestEl.dataset.dropPosition === nearestPos) return;
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
   removeDragPlaceholders();
+  _dropTarget = nearestEl; _dropPos = nearestPos;
   nearestEl.dataset.dropPosition = nearestPos;
-  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
-  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  _insertDragPreview(createDragPlaceholder('speed-dial'), nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
 }
 
 function handleSpeedDialContainerDrop(event) {
@@ -562,15 +682,12 @@ function handleSpeedDialContainerDrop(event) {
   const board = getActiveBoard();
   if (!board) { removeDragPlaceholders(); return; }
 
-  // Read insertion intent from the active indicator BEFORE modifying state
-  const indicatedEl = elements.speedDial.querySelector('.speed-link[data-drop-position]');
+  const refEl  = _dropTarget;
+  const refPos = _dropPos;
   let stateInsertIndex = board.speedDial.length;
-
-  if (indicatedEl?.dataset.itemId) {
-    const refIdx = board.speedDial.findIndex(i => i.id === indicatedEl.dataset.itemId);
-    if (refIdx !== -1) {
-      stateInsertIndex = indicatedEl.dataset.dropPosition === 'after' ? refIdx + 1 : refIdx;
-    }
+  if (refEl?.dataset.itemId) {
+    const refIdx = board.speedDial.findIndex(i => i.id === refEl.dataset.itemId);
+    if (refIdx !== -1) stateInsertIndex = refPos === 'after' ? refIdx + 1 : refIdx;
   }
 
   removeDragPlaceholders();
@@ -607,16 +724,18 @@ function handleSpeedDialContainerDrop(event) {
 // --- Nav drag & drop ---
 
 function handleNavItemDragOver(event, item, parent) {
-  if (dragPayload?.area === 'board' && item.type === 'board') {
-    if (!['bookmark', 'folder'].includes(dragPayload.itemType)) return;
-    if (item.boardId === state.activeBoardId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.dataTransfer.dropEffect = 'move';
-    event.currentTarget.classList.add('drop-target');
+  // Board item as inbox target — only for bookmark/folder drags, not widget repositioning
+  if (dragPayload?.area === 'board' && item.type === 'board' && ['bookmark', 'folder'].includes(dragPayload.itemType)) {
+    if (item.boardId !== state.activeBoardId) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      event.currentTarget.classList.add('drop-target');
+    }
     return;
   }
-  if (!dragPayload || dragPayload.area !== 'nav') return;
+  const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
+  if (!dragPayload || (dragPayload.area !== 'nav' && !isBoardWidget)) return;
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -624,20 +743,29 @@ function handleNavItemDragOver(event, item, parent) {
   const element = event.currentTarget;
   const rect = element.getBoundingClientRect();
   const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
-  if (element.dataset.dropPosition === position) return;
 
   if (_dropTarget === element && _dropPos === position) return;
-  removeDragPlaceholders();
   _dropTarget = element; _dropPos = position;
   element.dataset.dropPosition = position;
-  element.classList.toggle('drop-position-before', position === 'before');
-  element.classList.toggle('drop-position-after', position === 'after');
-  const preview = createDragPlaceholder('nav');
-  if (position === 'before') element.parentElement.insertBefore(preview, element);
-  else element.parentElement.insertBefore(preview, element.nextSibling);
+  _moveNavPreview(element.parentElement, position === 'before' ? element : element.nextSibling);
 }
 
 function handleNavDrop(event, targetItem, parent) {
+  if (dragPayload?.area === 'board' && _canDropAsNavWidget()) {
+    const position = _dropPos || 'before';
+    removeDragPlaceholders();
+    pushUndoSnapshot();
+    const widget = removeBoardItemById(dragPayload.itemId);
+    if (!widget) { dragPayload = null; return; }
+    const targetPath = findNavItemPath(targetItem.id);
+    if (targetPath) {
+      const ti = targetPath.list.findIndex(i => i.id === targetItem.id);
+      targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, widget);
+    } else {
+      state.navItems.push(widget);
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
   if (dragPayload?.area === 'board' && targetItem.type === 'board') {
     if (!['bookmark', 'folder'].includes(dragPayload.itemType)) { dragPayload = null; return; }
     removeDragPlaceholders();
@@ -649,40 +777,29 @@ function handleNavDrop(event, targetItem, parent) {
     const dragged = removeBoardItemById(dragPayload.itemId);
     if (!dragged) { dragPayload = null; return; }
     inbox.items.push(dragged);
-    dragPayload = null;
-    renderAll();
-    saveState();
-    return;
+    dragPayload = null; renderAll(); saveState(); return;
   }
   if (!dragPayload || dragPayload.area !== 'nav') return;
   if (dragPayload.itemId === targetItem.id) return;
-  event.preventDefault();
-  event.stopPropagation();
+  const position = _dropPos || 'before';
   removeDragPlaceholders();
   pushUndoSnapshot();
 
   const targetPath = findNavItemPath(targetItem.id);
   const draggedPath = findNavItemPath(dragPayload.itemId);
-  const position = event.currentTarget.dataset.dropPosition || 'before';
 
   if (targetItem.type === 'folder') {
     const dragged = removeNavItemById(dragPayload.itemId);
     if (!dragged) return;
     targetItem.children = targetItem.children || [];
     targetItem.children.push(dragged);
-    dragPayload = null;
-    renderNav();
-    saveState();
-    return;
+    dragPayload = null; renderNav(); saveState(); return;
   }
 
   if (!targetPath) {
     const dragged = removeNavItemById(dragPayload.itemId);
     if (dragged) state.navItems.push(dragged);
-    dragPayload = null;
-    renderNav();
-    saveState();
-    return;
+    dragPayload = null; renderNav(); saveState(); return;
   }
 
   const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
@@ -706,23 +823,74 @@ function handleNavDrop(event, targetItem, parent) {
 }
 
 function handleNavListDragOver(event) {
-  if (!dragPayload || dragPayload.area !== 'nav') return;
+  if (!dragPayload) return;
+  if (dragPayload.area !== 'nav' && !_canDropAsNavWidget()) return;
+  // Always accept the drop so the browser fires the drop event even when the
+  // cursor is over the preview clone's transparent space.
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
+  // If an item-level preview is already positioned, cursor is over the clone's
+  // transparent space — don't override preview position with end-of-list.
+  if (_dropTarget !== null && _dropTarget !== elements.navList) return;
   if (_dropTarget === elements.navList) return;
   removeDragPlaceholders();
   _dropTarget = elements.navList; _dropPos = 'end';
-  elements.navList.appendChild(createDragPlaceholder('nav'));
+  _insertDragPreview(createDragPlaceholder('nav'), elements.navList, null);
 }
 
 function handleNavListDrop(event) {
   event.preventDefault();
+  if (!dragPayload) { removeDragPlaceholders(); return; }
+
+  // Capture item-level position before removeDragPlaceholders clears globals.
+  // When cursor is over a preview clone, the drop fires on the navList container
+  // even though the intended position is at a specific nav item slot.
+  const savedTarget = _dropTarget;
+  const savedPos    = _dropPos;
   removeDragPlaceholders();
-  if (!dragPayload || dragPayload.area !== 'nav') return;
+
+  if (_canDropAsNavWidget()) {
+    pushUndoSnapshot();
+    const widget = removeBoardItemById(dragPayload.itemId);
+    if (!widget) { dragPayload = null; return; }
+    if (savedTarget && savedTarget !== elements.navList && savedTarget.dataset.id) {
+      const targetPath = findNavItemPath(savedTarget.dataset.id);
+      if (targetPath) {
+        const ti = targetPath.list.findIndex(i => i.id === savedTarget.dataset.id);
+        if (ti !== -1) { targetPath.list.splice(Math.max(0, savedPos === 'after' ? ti + 1 : ti), 0, widget); dragPayload = null; renderAll(); saveState(); return; }
+      }
+    }
+    state.navItems.push(widget);
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
+  if (dragPayload.area !== 'nav') return;
   pushUndoSnapshot();
+
+  if (savedTarget && savedTarget !== elements.navList && savedTarget.dataset.id) {
+    const targetId   = savedTarget.dataset.id;
+    const position   = savedPos || 'before';
+    const targetPath = findNavItemPath(targetId);
+    const draggedPath = findNavItemPath(dragPayload.itemId);
+    const dragged    = removeNavItemById(dragPayload.itemId);
+    if (!dragged) { dragPayload = null; return; }
+    if (targetPath) {
+      const targetIndex  = targetPath.list.findIndex(i => i.id === targetId);
+      const draggedIndex = draggedPath && draggedPath.list === targetPath.list
+        ? draggedPath.list.findIndex(i => i.id === dragged.id)
+        : -1;
+      let dest = position === 'after' ? targetIndex + 1 : targetIndex;
+      if (draggedIndex !== -1 && draggedIndex < targetIndex) dest -= 1;
+      targetPath.list.splice(Math.max(0, Math.min(dest, targetPath.list.length)), 0, dragged);
+    } else {
+      state.navItems.push(dragged);
+    }
+    dragPayload = null; renderNav(); saveState(); return;
+  }
+
   const dragged = removeNavItemById(dragPayload.itemId);
-  if (!dragged) return;
+  if (!dragged) { dragPayload = null; return; }
   state.navItems.push(dragged);
   dragPayload = null;
   renderNav();

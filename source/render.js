@@ -528,6 +528,28 @@ function createNavItem(item, depth = 0, parent = null) {
       e.stopPropagation();
       handleNavContextMenu(e, item, parent, depth);
     });
+    el.addEventListener('dragstart', e => {
+      if (e.target.closest('input, textarea, button, label, select')) { e.preventDefault(); return; }
+      e.stopPropagation();
+      dragPayload = { area: 'nav', itemId: item.id, itemType: 'widget', widgetType: item.widgetType, parentId: parent ? parent.id : null };
+      e.dataTransfer.setData('text/plain', item.id);
+      e.dataTransfer.effectAllowed = 'move';
+      applyDragImage(e, el);
+    });
+    el.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
+    el.addEventListener('dragover', e => handleNavItemDragOver(e, item, parent));
+    el.addEventListener('dragleave', e => {
+      if (el.contains(e.relatedTarget)) return;
+      el.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
+      el.removeAttribute('data-drop-position');
+    });
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
+      el.removeAttribute('data-drop-position');
+      handleNavDrop(e, item, parent);
+    });
     return el;
   }
 

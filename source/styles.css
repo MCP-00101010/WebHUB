@@ -169,7 +169,7 @@ button {
 }
 
 .essential-slot.drop-target {
-  outline: 2px dashed rgba(111, 115, 255, 0.85);
+  outline: 2px dashed var(--accent);
 }
 
 .essential-slot a {
@@ -872,14 +872,6 @@ button {
   background: var(--accent);
   margin: 0;
   flex-shrink: 0;
-}
-
-.speed-link.drop-position-before {
-  box-shadow: -4px 0 0 0 var(--accent);
-}
-
-.speed-link.drop-position-after {
-  box-shadow: 4px 0 0 0 var(--accent);
 }
 
 .nav-item + .drag-placeholder,

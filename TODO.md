@@ -20,7 +20,6 @@
 
 ## Drag and Drop
 
-- previews: render the actual item instead of the blue placeholder frame; only update when item order changes to reduce flicker
 - allow folders and bookmarks to DnD onto boards in the navpane → send to target board's inbox
 
 ## Firefox Extension — Remaining
@@ -114,12 +113,10 @@ Remaining widgets (not yet built):
 
 ---
 
-### Phase 9 — Advanced navigation & DnD
-
-*Last because board tab bar depends on the folder-of-boards concept being fully exercised, and DnD preview improvements should cover widgets (Phase 8) in one pass.*
+### Phase 9 — Advanced navigation & DnD *(in progress)*
 
 - Board tab bar (folder-selected boards populate the tab strip)
-- DnD live previews — render actual item instead of blue placeholder frame
+- DnD live previews — ✓ done in [0.11.2]
 
 ---
 

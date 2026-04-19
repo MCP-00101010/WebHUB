@@ -5,6 +5,24 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.2] — 2026-04-19
+
+### Fixed
+
+- **DnD: widget drag to navpane middle positions** — board nav items were exiting the dragover handler early for widget drags, making them invisible as position anchors; the middle of the navpane was effectively a dead zone when dropping widgets from columns into the nav list
+- **DnD: cross-context preview style** — dragging a widget from a column into the navpane now shows a navpane-style preview clone instead of the column card style; `_moveNavPreview` discards wrong-context clones and renders fresh in target context
+- **DnD: speed dial drop position** — leftmost drop and container-level drops now read position globals before `removeDragPlaceholders()` clears them
+- **DnD: navpane reorder drop** — `handleNavListDrop` captures `_dropTarget`/`_dropPos` before cleanup so drops that land on the container (cursor over clone) still insert at the correct item-level position
+- **DnD: essential slot indicator** — drop target outline now uses `var(--accent)` instead of a hardcoded colour
+- **DnD: speed dial shadow indicators** — removed stale CSS box-shadow rules that showed alongside the live preview
+
+### Changed
+
+- **DnD: navpane live preview** — preview clone is repositioned in-place (`insertBefore`) rather than destroyed and recreated, eliminating flicker during nav list reordering
+- **DnD: cross-context previews** — `_renderCrossContextPreview` renders items in the target context style for all cross-context drag combinations (board↔nav, board↔speed-dial, essential↔board, column widget↔navpane)
+
+---
+
 ## [0.11.1] — 2026-04-19
 
 ### Added

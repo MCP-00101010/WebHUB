@@ -92,7 +92,7 @@ function createWidgetElement(widget, columnId) {
   el.addEventListener('dragstart', e => {
     if (e.target.closest('input, textarea, button, label, select')) { e.preventDefault(); return; }
     e.stopPropagation();
-    dragPayload = { area: 'board', itemId: widget.id, itemType: 'widget', sourceColumnId: columnId, sourceParentId: null };
+    dragPayload = { area: 'board', itemId: widget.id, itemType: 'widget', widgetType: widget.widgetType, sourceColumnId: columnId, sourceParentId: null };
     e.dataTransfer.setData('text/plain', widget.id);
     e.dataTransfer.effectAllowed = 'move';
     applyDragImage(e, el);
