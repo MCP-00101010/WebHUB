@@ -33,7 +33,7 @@ function _newWidgetState(widgetType) {
     widgetType,
     title: '',
     config: { ...def.defaultConfig },
-    data: { ...def.defaultData }
+    data: JSON.parse(JSON.stringify(def.defaultData))
   };
 }
 
@@ -90,6 +90,7 @@ function createWidgetElement(widget, columnId) {
   });
 
   el.addEventListener('dragstart', e => {
+    if (e.target.closest('input, textarea, button, label, select')) { e.preventDefault(); return; }
     e.stopPropagation();
     dragPayload = { area: 'board', itemId: widget.id, itemType: 'widget', sourceColumnId: columnId, sourceParentId: null };
     e.dataTransfer.setData('text/plain', widget.id);
