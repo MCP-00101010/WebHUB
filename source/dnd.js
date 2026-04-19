@@ -1,4 +1,6 @@
 let dragPayload = null;
+let _dropTarget = null;
+let _dropPos    = null;
 
 function isExternalDrag(event) {
   return !dragPayload;
@@ -21,6 +23,8 @@ function getExternalDrop(event) {
 }
 
 function removeDragPlaceholders() {
+  _dropTarget = null;
+  _dropPos    = null;
   document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
@@ -117,9 +121,11 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   const itemEl = event.currentTarget;
   const rect = itemEl.getBoundingClientRect();
   const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
-  if (itemEl.dataset.dropPosition === position) return;
+  if (_dropTarget === itemEl && _dropPos === position) return;
 
   removeDragPlaceholders();
+  _dropTarget = itemEl;
+  _dropPos    = position;
   itemEl.dataset.dropPosition = position;
   itemEl.classList.toggle('drop-position-before', position === 'before');
   itemEl.classList.toggle('drop-position-after', position === 'after');
@@ -207,11 +213,12 @@ function handleBoardColumnDragOver(event) {
   event.stopPropagation();
 
   const columnEl = event.currentTarget;
-  const itemEls = Array.from(columnEl.querySelectorAll(':scope > .board-column-item'));
+  const itemEls = Array.from(columnEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
 
   if (itemEls.length === 0) {
-    if (columnEl.classList.contains('drop-target')) return;
+    if (_dropTarget === columnEl && _dropPos === 'start') return;
     removeDragPlaceholders();
+    _dropTarget = columnEl; _dropPos = 'start';
     columnEl.classList.add('drop-target');
     columnEl.prepend(createDragPlaceholder('board'));
     return;
@@ -229,18 +236,23 @@ function handleBoardColumnDragOver(event) {
   }
 
   if (!nearestEl) {
-    if (columnEl.classList.contains('drop-target')) return;
+    if (_dropTarget === columnEl && _dropPos === 'end') return;
     removeDragPlaceholders();
+    _dropTarget = columnEl; _dropPos = 'end';
     columnEl.classList.add('drop-target');
     columnEl.append(createDragPlaceholder('board'));
     return;
   }
 
-  if (nearestEl.dataset.dropPosition === nearestPos) return;
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
   removeDragPlaceholders();
+  _dropTarget = nearestEl; _dropPos = nearestPos;
   nearestEl.dataset.dropPosition = nearestPos;
   nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
   nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  const colPreview = createDragPlaceholder('board');
+  if (nearestPos === 'before') nearestEl.parentElement.insertBefore(colPreview, nearestEl);
+  else nearestEl.parentElement.insertBefore(colPreview, nearestEl.nextSibling);
 }
 
 function handleBoardColumnDrop(event, columnId) {
@@ -614,7 +626,9 @@ function handleNavItemDragOver(event, item, parent) {
   const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
   if (element.dataset.dropPosition === position) return;
 
+  if (_dropTarget === element && _dropPos === position) return;
   removeDragPlaceholders();
+  _dropTarget = element; _dropPos = position;
   element.dataset.dropPosition = position;
   element.classList.toggle('drop-position-before', position === 'before');
   element.classList.toggle('drop-position-after', position === 'after');
@@ -696,8 +710,9 @@ function handleNavListDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
-  if (elements.navList.querySelector('.drag-placeholder')) return;
+  if (_dropTarget === elements.navList) return;
   removeDragPlaceholders();
+  _dropTarget = elements.navList; _dropPos = 'end';
   elements.navList.appendChild(createDragPlaceholder('nav'));
 }
 
