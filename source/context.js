@@ -362,7 +362,7 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
     options.push({ label: 'Edit board', action: 'editBoard' });
     options.push({ label: 'Delete board', action: 'deleteNavItem' });
   } else if (item.type === 'folder') {
-    options.push({ label: 'Rename folder', action: 'renameItem' });
+    options.push({ label: 'Edit folder', action: 'editFolder' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addNavSubfolder' });
     options.push({ label: 'Delete folder', action: 'deleteNavItem' });
   } else if (item.type === 'title') {

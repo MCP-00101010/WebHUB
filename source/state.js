@@ -626,14 +626,14 @@ function getImportManagerItemCount() {
 }
 
 function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {
-  const board = getActiveBoard();
-  const found = findBoardItemInColumns(board, itemId);
-  if (found?.item?.type === 'folder') {
-    found.item.title = title;
-    found.item.tags = tags;
-    found.item.sharedTags = sharedTags;
-    found.item.inheritTags = inheritTags;
-    found.item.autoRemoveTags = autoRemoveTags;
+  let item = findBoardItemInColumns(getActiveBoard(), itemId)?.item;
+  if (!item) item = findNavItemPath(itemId)?.item;
+  if (item?.type === 'folder') {
+    item.title = title;
+    item.tags = tags;
+    item.sharedTags = sharedTags;
+    item.inheritTags = inheritTags;
+    item.autoRemoveTags = autoRemoveTags;
   }
 }
 

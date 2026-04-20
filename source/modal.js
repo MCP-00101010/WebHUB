@@ -226,14 +226,18 @@ function showFolderModal(mode, ct) {
   const submitBtn = document.getElementById('folderModalSubmitBtn');
   if (mode === 'edit') {
     submitBtn.textContent = 'Save';
-    const board = getActiveBoard();
-    const found = findBoardItemInColumns(board, contextTarget.itemId);
-    if (found?.item) {
-      document.getElementById('fmName').value = found.item.title || '';
-      document.getElementById('fmTags').value = (found.item.tags || []).join(' ');
-      document.getElementById('fmSharedTags').value = (found.item.sharedTags || []).join(' ');
-      document.getElementById('fmInheritTags').checked = found.item.inheritTags !== false;
-      document.getElementById('fmAutoRemove').checked = found.item.autoRemoveTags === true;
+    let folderItem = null;
+    if (contextTarget.area === 'nav-item') {
+      folderItem = findNavItemPath(contextTarget.itemId)?.item;
+    } else {
+      folderItem = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId)?.item;
+    }
+    if (folderItem) {
+      document.getElementById('fmName').value = folderItem.title || '';
+      document.getElementById('fmTags').value = (folderItem.tags || []).join(' ');
+      document.getElementById('fmSharedTags').value = (folderItem.sharedTags || []).join(' ');
+      document.getElementById('fmInheritTags').checked = folderItem.inheritTags !== false;
+      document.getElementById('fmAutoRemove').checked = folderItem.autoRemoveTags === true;
     }
   } else {
     submitBtn.textContent = 'Create';

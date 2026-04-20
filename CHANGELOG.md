@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.12] — 2026-04-20
+
+### Fixed
+
+- **Nav pane folder context menu** — "Rename folder" replaced with "Edit folder" which opens the full folder settings modal (name, tags, shared tags, inherit/auto-remove toggles); `editFolder` and `showFolderModal` now resolve the folder from nav items when the context originates from the nav pane
+
+---
+
 ## [0.11.11] — 2026-04-20
 
 ### Added
