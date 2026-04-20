@@ -424,9 +424,21 @@ function updateBoardSettings(title, columnCount) {
 
 // --- Context-driven mutations (called from UI handlers) ---
 
+function getBoardForContext(ct) {
+  if (ct?.boardId) return state.boards.find(b => b.id === ct.boardId) || getActiveBoard();
+  return getActiveBoard();
+}
+
 function deleteBoardTarget(contextTarget) {
   if (!contextTarget || contextTarget.area !== 'board-item') return;
-  removeBoardItemById(contextTarget.itemId);
+  const board = getBoardForContext(contextTarget);
+  for (const column of board.columns) {
+    const found = findBoardItemInList(column.items, contextTarget.itemId);
+    if (found) {
+      const index = found.list.findIndex(item => item.id === contextTarget.itemId);
+      if (index !== -1) { found.list.splice(index, 1); return; }
+    }
+  }
 }
 
 function renameContextItem(text, contextTarget) {
@@ -449,7 +461,7 @@ function renameContextItem(text, contextTarget) {
 
 function editBookmarkContext(title, url, tags = [], contextTarget) {
   if (!contextTarget || contextTarget.area !== 'board-item') return;
-  const board = getActiveBoard();
+  const board = getBoardForContext(contextTarget);
   const found = findBoardItemInColumns(board, contextTarget.itemId);
   if (found?.item?.type === 'bookmark') {
     if (normalizeUrl(url) !== found.item.url) found.item.faviconCache = '';

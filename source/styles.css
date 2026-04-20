@@ -350,14 +350,6 @@ button {
   object-fit: cover;
 }
 
-.bookmark-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .bookmark-label {
   white-space: nowrap;
   overflow: hidden;
@@ -369,12 +361,6 @@ button {
   text-decoration: var(--bookmark-text-decoration);
   text-align: var(--bookmark-text-align);
   color: var(--bookmark-color);
-}
-
-.bookmark-tags {
-  display: var(--tags-display);
-  flex-wrap: wrap;
-  gap: 4px;
 }
 
 .tag-chip {

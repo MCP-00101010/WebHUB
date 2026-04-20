@@ -219,23 +219,25 @@ function renderSearchResults(query) {
     return false;
   };
 
-  const collectFromList = (items, board) => {
+  const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
-      if (matchesQuery(item, board)) hits.push(item);
-      if (item.children) hits.push(...collectFromList(item.children, board));
+      if (matchesQuery(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId } });
+      if (item.children) hits.push(...collectFromList(item.children, board, columnId));
     }
     return hits;
   };
 
   const groups = [];
-  const essHits = state.essentials.filter(e => e && matchesQuery(e, null));
+  const essHits = state.essentials
+    .map((e, i) => e && matchesQuery(e, null) ? { item: e, meta: { area: 'essential', slot: i } } : null)
+    .filter(Boolean);
   if (essHits.length) groups.push({ label: 'Essentials', items: essHits });
   for (const board of state.boards) {
     const hits = [];
-    if (matchesQuery(board, null)) hits.push(board);
-    hits.push(...board.speedDial.filter(i => matchesQuery(i, board)));
-    hits.push(...board.columns.filter(c => !c.isInbox).flatMap(col => collectFromList(col.items, board)));
+    if (matchesQuery(board, null)) hits.push({ item: board, meta: { area: 'board-item', boardId: board.id } });
+    hits.push(...board.speedDial.filter(i => matchesQuery(i, board)).map(i => ({ item: i, meta: { area: 'speed-dial-item', boardId: board.id } })));
+    hits.push(...board.columns.filter(c => !c.isInbox).flatMap(col => collectFromList(col.items, board, col.id)));
     if (hits.length) groups.push({ label: board.title, items: hits });
   }
 
@@ -256,21 +258,23 @@ function renderSearchResults(query) {
     groupEl.appendChild(label);
     const list = document.createElement('div');
     list.className = 'search-results-list';
-    group.items.forEach(item => list.appendChild(createSearchResultItem(item)));
+    group.items.forEach(({ item, meta }) => list.appendChild(createSearchResultItem(item, meta)));
     groupEl.appendChild(list);
     pane.appendChild(groupEl);
   }
 }
 
-function createSearchResultItem(item) {
-  if (item.type === 'folder') return createFolderSearchResultItem(item);
-  if (item.type === 'board') return createBoardSearchResultItem(item);
+function createSearchResultItem(item, meta = {}) {
+  if (item.type === 'folder') return createFolderSearchResultItem(item, meta);
+  if (item.type === 'board') return createBoardSearchResultItem(item, meta);
 
   const el = document.createElement('a');
   el.className = 'board-column-item bookmark-item';
   el.href = item.url || '#';
   el.target = '_blank';
   el.rel = 'noreferrer noopener';
+  el.dataset.tooltip = buildTooltip(item);
+  el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
   const header = document.createElement('div');
   header.className = 'item-header';
@@ -305,9 +309,11 @@ function createSearchResultItem(item) {
   return el;
 }
 
-function createFolderSearchResultItem(item) {
+function createFolderSearchResultItem(item, meta = {}) {
   const el = document.createElement('div');
   el.className = 'board-column-item folder-card';
+  el.dataset.tooltip = item.title || 'Untitled Folder';
+  el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
   const header = document.createElement('div');
   header.className = 'item-header';
@@ -328,10 +334,12 @@ function createFolderSearchResultItem(item) {
   return el;
 }
 
-function createBoardSearchResultItem(item) {
+function createBoardSearchResultItem(item, meta = {}) {
   const el = document.createElement('div');
   el.className = 'board-column-item bookmark-item';
   el.style.cursor = 'pointer';
+  el.dataset.tooltip = item.title || 'Untitled Board';
+  el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
   el.addEventListener('click', () => {
     state.activeBoardId = item.id;
     elements.searchInput.value = '';
@@ -358,10 +366,9 @@ function createBoardSearchResultItem(item) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, allTags);
-    body.appendChild(tagsEl);
+    el.appendChild(tagsEl);
   }
 
-  el.appendChild(body);
   return el;
 }
 

@@ -45,6 +45,7 @@
 
 - ✓ *Completed 2026-04-20* Speed dial bookmarks: Duplicate and Refresh favicon added — see [0.11.22]
 - ✓ *Completed 2026-04-20* Essentials: Duplicate and Refresh favicon added — see [0.11.22]
+- ✓ *Completed 2026-04-20* Search results: tooltips and full context menus (Edit, Duplicate, Refresh favicon, Move to board, Open in board, Delete) — see [0.11.25]
 - Nav folders: "Add bookmark" not applicable (nav folders hold boards/sub-folders, not bookmarks); "Open all" could open all boards in folder — low priority
 
 ### Edit modal unification

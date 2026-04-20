@@ -5,6 +5,25 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.25] — 2026-04-20
+
+### Added
+
+- **Search result tooltips**: bookmark, folder, and board results now show tooltips on hover (matching board items, speed dial, and essentials)
+- **Search result context menus**: right-clicking a search result now opens the appropriate context menu — bookmarks get Edit / Duplicate / Refresh favicon / Move to board / Open in board / Delete; folders get Edit / Open in board / Delete; essentials and speed dial items delegate to their existing handlers; boards delegate to the nav context menu
+- **"Open in board" action**: navigates to the board containing the item and closes search, available for bookmark and folder search results
+
+### Fixed
+
+- **`createBoardSearchResultItem` used undefined `body` variable**: board search results with tags would throw a ReferenceError; fixed `body.appendChild` → `el.appendChild` and removed the phantom `el.appendChild(body)` call
+- **Cross-board edit/delete/duplicate/favicon-refresh**: all board-item context actions now use `getBoardForContext()` to resolve the correct board from `contextTarget.boardId`, so they work correctly on items from non-active boards (e.g. from search results)
+
+### Changed
+
+- **Removed dead CSS**: `.bookmark-body` and `.bookmark-tags` rules removed from `styles.css` (no JS callers remain; replaced by `.item-header` / `.item-tag-chips`)
+
+---
+
 ## [0.11.24] — 2026-04-20
 
 ### Added

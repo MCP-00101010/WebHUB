@@ -252,7 +252,7 @@ function handleContextMenuAction(action) {
         const essItem = state.essentials[contextTarget.slot];
         if (essItem) { essItem.faviconCache = ''; renderEssentials(); saveState(); }
       } else {
-        const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
+        const found = findBoardItemInColumns(getBoardForContext(contextTarget), contextTarget.itemId);
         if (found?.item) { found.item.faviconCache = ''; renderAll(); saveState(); }
       }
       break;
@@ -277,7 +277,7 @@ function handleContextMenuAction(action) {
           renderEssentials(); saveState();
         }
       } else {
-        const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
+        const found = findBoardItemInColumns(getBoardForContext(contextTarget), contextTarget.itemId);
         if (found?.item) {
           pushUndoSnapshot();
           const copy = { ...found.item, id: `bm-${Date.now()}`, title: found.item.title + ' (copy)', faviconCache: '' };
@@ -353,6 +353,27 @@ function handleContextMenuAction(action) {
         renderNav();
         saveState();
         openWidgetSettings(widget, () => { renderNav(); saveState(); });
+      } else if (action.startsWith('openInBoard:')) {
+        const boardId = action.slice('openInBoard:'.length);
+        state.activeBoardId = boardId;
+        elements.searchInput.value = '';
+        elements.mainPanel.classList.remove('search-active');
+        elements.searchResultsPane.classList.add('hidden');
+        renderAll();
+        saveState();
+      } else if (action.startsWith('moveToBoard:')) {
+        const targetBoardId = action.slice('moveToBoard:'.length);
+        const targetBoard = state.boards.find(b => b.id === targetBoardId);
+        if (targetBoard && contextTarget?.item) {
+          pushUndoSnapshot();
+          const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+          capturedItem.type = 'bookmark';
+          if (!capturedItem.tags) capturedItem.tags = [];
+          deleteBoardTarget(contextTarget);
+          (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(capturedItem);
+          renderAll();
+          saveState();
+        }
       }
       break;
   }
@@ -455,6 +476,44 @@ function handleBoardColumnContextMenu(event, columnId) {
   ];
   if (widgetSubmenu.length) items.push({ label: 'Add widget', submenu: widgetSubmenu });
   showContextMenu(event.clientX, event.clientY, items);
+}
+
+function handleSearchResultContextMenu(event, item, meta) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (meta.area === 'essential') {
+    handleEssentialContextMenu(event, meta.slot, item);
+    return;
+  }
+  if (meta.area === 'speed-dial-item') {
+    handleSpeedDialContextMenu(event, item);
+    return;
+  }
+  if (item.type === 'board') {
+    handleNavContextMenu(event, item, null, 0);
+    return;
+  }
+
+  contextTarget = { area: 'board-item', itemId: item.id, columnId: meta.columnId || null, parentId: null, boardId: meta.boardId, item, depth: 1 };
+
+  const options = [];
+  if (item.type === 'bookmark') {
+    options.push({ label: 'Edit bookmark',   action: 'editBookmark' });
+    options.push({ label: 'Duplicate',        action: 'duplicateBookmark' });
+    options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
+    const allBoards = state.boards.filter(b => !b.isImportManager && b.id !== meta.boardId);
+    if (allBoards.length) {
+      options.push({ label: 'Move to board', submenu: allBoards.map(b => ({ label: b.title, action: `moveToBoard:${b.id}` })) });
+    }
+    options.push({ label: 'Open in board',   action: `openInBoard:${meta.boardId}` });
+    options.push({ label: 'Delete bookmark', action: 'deleteItem' });
+  } else if (item.type === 'folder') {
+    options.push({ label: 'Edit folder',     action: 'editFolder' });
+    options.push({ label: 'Open in board',   action: `openInBoard:${meta.boardId}` });
+    options.push({ label: 'Delete folder',   action: 'deleteItem' });
+  }
+  showContextMenu(event.clientX, event.clientY, options);
 }
 
 function handleNavListContextMenu(event) {
