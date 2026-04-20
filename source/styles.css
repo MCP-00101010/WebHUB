@@ -169,10 +169,6 @@ button {
   background: var(--surface-2);
 }
 
-.essential-slot.drop-target {
-  outline: 2px dashed var(--accent);
-}
-
 .essential-slot-preview {
   position: absolute;
   inset: 0;

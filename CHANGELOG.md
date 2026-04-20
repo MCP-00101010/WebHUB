@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.17] — 2026-04-20
+
+### Changed
+
+- **Essentials DnD** — removed dashed drop-target outline from essentials slots; the favicon preview is now the sole drop indicator
+
+---
+
 ## [0.11.16] — 2026-04-20
 
 ### Fixed
