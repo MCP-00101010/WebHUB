@@ -43,19 +43,18 @@
 
 ### Context menu parity
 
-- Speed dial bookmarks: add Duplicate and Refresh favicon actions (board bookmarks have them)
-- Essentials: add Duplicate and Refresh favicon actions (currently only Edit/Delete)
-- Nav folders: add "Add bookmark" and "Open all" actions (board folders have them)
+- ✓ *Completed 2026-04-20* Speed dial bookmarks: Duplicate and Refresh favicon added — see [0.11.22]
+- ✓ *Completed 2026-04-20* Essentials: Duplicate and Refresh favicon added — see [0.11.22]
+- Nav folders: "Add bookmark" not applicable (nav folders hold boards/sub-folders, not bookmarks); "Open all" could open all boards in folder — low priority
 
 ### Edit modal unification
 
-- Route all bookmark edits through one modal regardless of source area (board, inbox, speed dial, essential currently diverge slightly)
-- Essentials and speed dial "edit" should open the same full bookmark modal as board items
+- ✓ *Completed 2026-04-20* All bookmark edit paths (board, inbox, speed dial, essential) route through the same `editBookmark` modal with `inheritedTags` — see [0.11.22]
 
 ### Bulk selection parity
 
-- Inbox panel: add checkbox + bulk toolbar (same item types as board columns but no selection mechanism)
-- Speed dial / Essentials: evaluate if bulk-select makes sense for these areas
+- ✓ *Completed 2026-04-20* Inbox panel: bulk selection already works — checkboxes are rendered by `createBoardItemElement`, toolbar is viewport-fixed, operations use `findBoardItemInColumns` which covers inbox columns; fixed incorrect depth/parentFolder args in `renderInboxPanel` — see [0.11.23]
+- Speed dial / Essentials: bulk-select not applicable — these are small curated lists, per-item actions are sufficient
 
 ---
 

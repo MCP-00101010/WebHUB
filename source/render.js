@@ -176,7 +176,7 @@ function renderInboxPanel() {
     body.appendChild(empty);
     return;
   }
-  inbox.items.forEach(item => body.appendChild(createBoardItemElement(item, inbox.id, null, 0)));
+  inbox.items.forEach(item => body.appendChild(createBoardItemElement(item, inbox.id)));
 }
 
 function renderAll() {

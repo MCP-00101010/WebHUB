@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.23] — 2026-04-20
+
+### Fixed
+
+- **Inbox rendering**: `renderInboxPanel` was passing `null`/`0` as depth/parentFolder to `createBoardItemElement`; corrected to use the function's defaults (depth=1, parentFolder=null), fixing depth-gated context menu options and drag payloads for inbox items
+
+---
+
 ## [0.11.22] — 2026-04-20
 
 ### Added
