@@ -43,24 +43,84 @@ function tagDisplayName(id) {
   return tag.name;
 }
 
+// --- Group picker (disambiguation when same name exists in multiple groups) ---
+
+let _tagGroupPicker = null;
+
+function hideTagGroupPicker() {
+  if (_tagGroupPicker) { _tagGroupPicker.remove(); _tagGroupPicker = null; }
+  document.removeEventListener('mousedown', _tagGroupPickerOutside, true);
+}
+
+function _tagGroupPickerOutside(e) {
+  if (_tagGroupPicker && !_tagGroupPicker.contains(e.target)) hideTagGroupPicker();
+}
+
+function showTagGroupPicker(matches, typedName, hiddenInput) {
+  hideTagGroupPicker();
+  const wrapper = hiddenInput.closest ? hiddenInput.closest('.chip-input-wrapper') : null;
+
+  const picker = document.createElement('div');
+  picker.className = 'context-menu';
+  picker.style.cssText = 'position:fixed;z-index:9999;';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'padding:4px 12px 2px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);pointer-events:none;';
+  header.textContent = `"${typedName}" — pick group`;
+  picker.appendChild(header);
+
+  matches.forEach(({ tag, groupName, groupColor }) => {
+    const btn = document.createElement('button');
+    btn.style.cssText = 'display:flex;align-items:center;gap:7px;';
+    if (groupColor) {
+      const dot = document.createElement('span');
+      dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${groupColor};flex-shrink:0;`;
+      btn.appendChild(dot);
+    }
+    btn.appendChild(document.createTextNode(groupName));
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      hideTagGroupPicker();
+      if (hiddenInput._addValueDirect) hiddenInput._addValueDirect(tag.id);
+    });
+    picker.appendChild(btn);
+  });
+
+  document.body.appendChild(picker);
+  _tagGroupPicker = picker;
+  picker.style.left = '0';
+  picker.style.top = '0';
+  const pw = picker.offsetWidth, ph = picker.offsetHeight;
+  let left, top;
+  if (wrapper) {
+    const rect = wrapper.getBoundingClientRect();
+    left = rect.left;
+    top = rect.bottom + 2;
+  } else {
+    left = window.innerWidth / 2 - pw / 2;
+    top = window.innerHeight / 2 - ph / 2;
+  }
+  picker.style.left = `${Math.min(left, window.innerWidth - pw - 4)}px`;
+  picker.style.top  = `${Math.min(top, window.innerHeight - ph - 4)}px`;
+  document.addEventListener('mousedown', _tagGroupPickerOutside, true);
+}
+
 function tagChipOpts() {
   return {
     displayOf: id => tagDisplayName(id),
-    resolveInput: typed => {
-      // Support "name · GroupName" qualified format for disambiguation
-      const dot = typed.indexOf(' \u00b7 ');
-      if (dot !== -1) {
-        const name = typed.slice(0, dot).trim().toLowerCase();
-        const grpName = typed.slice(dot + 3).trim().toLowerCase();
-        const match = (state.tags || []).find(t => {
-          if (t.name.toLowerCase() !== name) return false;
-          return tagGroupLabel(t)?.toLowerCase() === grpName;
-        });
-        if (match) return match.id;
-      }
+    resolveInput: (typed, textInput, hiddenInput) => {
       const lc = typed.toLowerCase();
-      const match = (state.tags || []).find(t => t.name.toLowerCase() === lc);
-      if (match) return match.id;
+      const matches = (state.tags || []).filter(t => t.name.toLowerCase() === lc);
+      if (matches.length > 1) {
+        // Ambiguous — show group picker; chip commit deferred to picker click
+        const pickerMatches = matches.map(t => {
+          const g = (state.settings.tagGroups || []).find(g => g.id === t.groupId);
+          return { tag: t, groupName: g?.name || 'Unsorted', groupColor: g?.color || null };
+        });
+        showTagGroupPicker(pickerMatches, typed, hiddenInput);
+        return null;
+      }
+      if (matches.length === 1) return matches[0].id;
       return createTag(typed).id;
     }
   };
@@ -76,13 +136,11 @@ function getTagSuggestions(partial, hiddenInput) {
   const results = [];
   for (const t of (state.tags || [])) {
     if (currentIds.has(t.id)) continue;
-    if (!t.name.toLowerCase().startsWith(lc)) continue;
-    const grp = tagGroupLabel(t);
-    const display = grp ? `${t.name} \u00b7 ${grp}` : t.name;
-    if (seen.has(display)) continue;
-    seen.add(display);
-    if (display.toLowerCase() === lc) continue; // exact match, nothing to complete
-    results.push(display);
+    const nameLc = t.name.toLowerCase();
+    if (!nameLc.startsWith(lc) || nameLc === lc) continue;
+    if (seen.has(t.name)) continue;
+    seen.add(t.name);
+    results.push(t.name);
   }
   return results;
 }

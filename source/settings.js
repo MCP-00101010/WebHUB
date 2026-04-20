@@ -573,6 +573,7 @@ function sortGroupTags(tagObjects, mode, counts) {
 
 function tagGroupChipOpts(group) {
   return {
+    noAutocomplete: true,
     displayOf: id => getTagById(id)?.name || id,
     resolveInput: typed => {
       const lc = typed.toLowerCase();

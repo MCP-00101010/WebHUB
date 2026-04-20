@@ -5,6 +5,20 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.8] — 2026-04-21
+
+### Changed
+
+- **Tag autocomplete** now suggests plain tag names (not `name · Group`); for same-name tags across multiple groups the autocomplete still completes the name, but committing (Space/Enter) shows a group-picker dropdown instead of silently picking the wrong one
+- **Tag manager group inputs** have autocomplete disabled (`noAutocomplete: true`) — users type the tag name directly; same-name handling is done via the group picker if triggered from outside
+
+### Fixed
+
+- `chip-input`: `resolveInput` now receives `(typed, textInput, hiddenInput)` so disambiguation code can show a picker and defer chip commit (return `null`) without clearing the typed text
+- `chipifyWord` only clears the text input when a chip was actually committed; text is preserved when the group picker opens
+
+---
+
 ## [0.11.7] — 2026-04-21
 
 ### Added

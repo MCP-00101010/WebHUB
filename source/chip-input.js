@@ -3,7 +3,8 @@ function initChipInput(hiddenInput, opts = {}) {
   hiddenInput._chipInputInit = true;
 
   // opts.displayOf(value) → display label for a stored value (default: identity)
-  // opts.resolveInput(typedText) → stored value to commit (default: identity; returns null to skip)
+  // opts.resolveInput(typedText, textInput, hiddenInput) → stored value to commit (default: identity; returns null to skip)
+  // opts.noAutocomplete → suppress tag autocomplete (e.g. in tag manager group inputs)
   const displayOf    = opts.displayOf    || (v => v);
   const resolveInput = opts.resolveInput || (v => v);
 
@@ -63,13 +64,23 @@ function initChipInput(hiddenInput, opts = {}) {
 
   function addChip(typed) {
     typed = typed.trim();
-    if (!typed) return;
-    const value = resolveInput(typed);
+    if (!typed) return false;
+    const value = resolveInput(typed, textInput, hiddenInput);
+    if (value == null || chips.includes(value)) return false;
+    chips.push(value);
+    renderChips();
+    syncBacking();
+    return true;
+  }
+
+  hiddenInput._addValueDirect = value => {
     if (value == null || chips.includes(value)) return;
     chips.push(value);
     renderChips();
     syncBacking();
-  }
+    textInput.value = '';
+    textInput.focus();
+  };
 
   function removeChip(value, editMode) {
     chips = chips.filter(v => v !== value);
@@ -87,7 +98,7 @@ function initChipInput(hiddenInput, opts = {}) {
 
   function chipifyWord() {
     const word = textInput.value.trim();
-    if (word) { addChip(word); textInput.value = ''; }
+    if (word && addChip(word)) textInput.value = '';
   }
 
   function setValue(raw) {
@@ -124,6 +135,6 @@ function initChipInput(hiddenInput, opts = {}) {
 
   textInput.addEventListener('blur', chipifyWord);
 
-  if (typeof attachTagAutocomplete === 'function') attachTagAutocomplete(textInput, hiddenInput);
+  if (!opts.noAutocomplete && typeof attachTagAutocomplete === 'function') attachTagAutocomplete(textInput, hiddenInput);
   if (hiddenInput.value) setValue(hiddenInput.value);
 }
