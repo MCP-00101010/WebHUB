@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.8] — 2026-04-20
+
+### Changed
+
+- **Tag section layout refined** — labels (Tags / Inherited / Shared) are right-aligned in a fixed-width column; fields stretch to fill remaining space; Inherited field styled as a non-editable input box (same border/radius/padding as editable inputs); order is Tags → Inherited → Shared → toggles; both toggles condensed into a single row
+
+---
+
 ## [0.11.7] — 2026-04-20
 
 ### Changed

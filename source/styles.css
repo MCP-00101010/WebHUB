@@ -1067,8 +1067,74 @@ button {
 }
 
 .tag-section {
-  padding: 12px 14px;
-  gap: 10px;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.tag-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-field-row > label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+  width: 62px;
+  flex-shrink: 0;
+}
+
+.tag-field-row .tags-input-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.tag-field-row .tags-input-container input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  color: var(--text);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.tag-readonly-field {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 31px;
+}
+
+.tag-toggle-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.78rem;
+}
+
+.tag-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 1;
+}
+
+.tag-toggle-item > span {
+  flex: 1;
+  color: var(--text);
 }
 
 .settings-row {
