@@ -162,7 +162,7 @@ function attachBoardSettingsListeners() {
     board.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
     renderBoard();
   });
-  initChipInput(bstgSharedTagsEl);
+  initChipInput(bstgSharedTagsEl, tagChipOpts());
 
   const bstgTagsEl = document.getElementById('bstgTags');
   bstgTagsEl.addEventListener('input', e => {
@@ -170,7 +170,7 @@ function attachBoardSettingsListeners() {
     if (!board) return;
     board.tags = e.target.value.trim().split(/\s+/).filter(Boolean);
   });
-  initChipInput(bstgTagsEl);
+  initChipInput(bstgTagsEl, tagChipOpts());
 
   document.getElementById('bstgInheritTags').addEventListener('change', e => {
     const board = getActiveBoard();
@@ -485,10 +485,12 @@ function _tagChipMenuOutside(e) {
   if (_tagChipMenu && !_tagChipMenu.contains(e.target)) hideTagChipMenu();
 }
 
-function showTagChipContextMenu(x, y, tag, sourceGroupIdx) {
+function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
   hideTagChipMenu();
+  const tag = getTagById(tagId);
+  if (!tag) return;
   const groups = state.settings.tagGroups || [];
-  const targets = groups.filter((_, i) => i !== sourceGroupIdx);
+  const targets = sourceGroupId ? groups.filter(g => g.id !== sourceGroupId) : [...groups];
 
   const menu = document.createElement('div');
   menu.className = 'context-menu';
@@ -499,9 +501,23 @@ function showTagChipContextMenu(x, y, tag, sourceGroupIdx) {
   header.textContent = 'Move to group';
   menu.appendChild(header);
 
+  if (sourceGroupId) {
+    const btn = document.createElement('button');
+    btn.textContent = '\u00a0Unsorted';
+    btn.addEventListener('click', () => {
+      hideTagChipMenu();
+      pushUndoSnapshot();
+      tag.groupId = null;
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+    });
+    menu.appendChild(btn);
+  }
+
   if (!targets.length) {
     const empty = document.createElement('button');
-    empty.textContent = 'No other groups';
+    empty.textContent = sourceGroupId ? 'No other groups' : 'No groups yet';
     empty.disabled = true;
     menu.appendChild(empty);
   } else {
@@ -519,12 +535,7 @@ function showTagChipContextMenu(x, y, tag, sourceGroupIdx) {
       btn.addEventListener('click', () => {
         hideTagChipMenu();
         pushUndoSnapshot();
-        if (sourceGroupIdx !== -1) {
-          const src = groups[sourceGroupIdx];
-          if (src) src.tags = (src.tags || []).filter(t => t !== tag);
-        }
-        if (!group.tags) group.tags = [];
-        if (!group.tags.includes(tag)) group.tags.push(tag);
+        tag.groupId = group.id;
         saveState();
         updateUndoRedoUI();
         renderTagGroups();
@@ -551,13 +562,25 @@ function buildTagCounts() {
   return counts;
 }
 
-function sortGroupTags(tags, mode, counts) {
-  if (!mode) return [...tags];
-  const list = [...tags];
-  if (mode === 'az') list.sort((a, b) => a.localeCompare(b));
-  else if (mode === 'za') list.sort((a, b) => b.localeCompare(a));
-  else if (mode === 'count') list.sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+function sortGroupTags(tagObjects, mode, counts) {
+  if (!mode) return [...tagObjects];
+  const list = [...tagObjects];
+  if (mode === 'az') list.sort((a, b) => a.name.localeCompare(b.name));
+  else if (mode === 'za') list.sort((a, b) => b.name.localeCompare(a.name));
+  else if (mode === 'count') list.sort((a, b) => (counts[b.id] || 0) - (counts[a.id] || 0));
   return list;
+}
+
+function tagGroupChipOpts(group) {
+  return {
+    displayOf: id => getTagById(id)?.name || id,
+    resolveInput: typed => {
+      const lc = typed.toLowerCase();
+      const existing = (state.tags || []).find(t => t.name.toLowerCase() === lc);
+      if (existing) return existing.id;
+      return createTag(typed, null, null).id;
+    }
+  };
 }
 
 function renderTagGroups() {
@@ -575,7 +598,7 @@ function renderTagGroups() {
     list.appendChild(empty);
   }
 
-  groups.forEach((group, idx) => {
+  groups.forEach(group => {
     const block = document.createElement('div');
     block.className = 'tag-group-block';
 
@@ -649,7 +672,7 @@ function renderTagGroups() {
     lockWrap.appendChild(lockLbl);
     lockWrap.appendChild(lockToggle);
 
-    // Delete button
+    // Delete button — moves group's tags to unsorted, then removes group
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'icon-btn tag-group-del-btn';
@@ -658,7 +681,8 @@ function renderTagGroups() {
     delBtn.disabled = !!group.locked;
     delBtn.addEventListener('click', () => {
       pushUndoSnapshot();
-      state.settings.tagGroups.splice(idx, 1);
+      (state.tags || []).filter(t => t.groupId === group.id).forEach(t => { t.groupId = null; });
+      state.settings.tagGroups = state.settings.tagGroups.filter(g => g.id !== group.id);
       saveState();
       updateUndoRedoUI();
       renderTagGroups();
@@ -670,17 +694,20 @@ function renderTagGroups() {
     header.appendChild(lockWrap);
     header.appendChild(delBtn);
 
-    // Tag chip input — display sorted, store in original order
+    // Tag chip input — IDs stored in hidden input, names displayed as chips
+    const groupTagObjs = (state.tags || []).filter(t => t.groupId === group.id);
+    const sortedTagObjs = sortGroupTags(groupTagObjs, group.tagSort, tagCounts);
+
     const hiddenInput = document.createElement('input');
     hiddenInput.type = 'text';
     hiddenInput.placeholder = 'Add tags…';
-    hiddenInput.value = sortGroupTags(group.tags || [], group.tagSort, tagCounts).join(' ');
+    hiddenInput.value = sortedTagObjs.map(t => t.id).join(' ');
 
     block.appendChild(header);
     block.appendChild(hiddenInput);
     list.appendChild(block);
 
-    initChipInput(hiddenInput);
+    initChipInput(hiddenInput, tagGroupChipOpts(group));
 
     const wrapper = block.querySelector('.chip-input-wrapper');
     if (wrapper) {
@@ -696,14 +723,14 @@ function renderTagGroups() {
       }
     }
 
-    // Attach contextmenu to chips — existing ones immediately, future via observer
+    // Context menu on chips — use chip.dataset.value (the tag ID)
     const attachChipCtx = chip => {
       if (chip.dataset.ctx) return;
       chip.dataset.ctx = '1';
       chip.addEventListener('contextmenu', e => {
         e.preventDefault();
-        const tag = chip.querySelector('span')?.textContent?.trim();
-        if (tag) showTagChipContextMenu(e.clientX, e.clientY, tag, idx);
+        const tagId = chip.dataset.value;
+        if (tagId) showTagChipContextMenu(e.clientX, e.clientY, tagId, group.id);
       });
     };
     if (wrapper) {
@@ -714,24 +741,22 @@ function renderTagGroups() {
 
     hiddenInput.addEventListener('input', () => {
       pushUndoSnapshot();
-      const newSet = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
-      // Preserve insertion order: keep existing, remove deleted, append new
-      const kept = (group.tags || []).filter(t => newSet.has(t));
-      const added = [...newSet].filter(t => !kept.includes(t));
-      group.tags = [...kept, ...added];
+      const newIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
+      // Move removed tags to unsorted
+      (state.tags || []).filter(t => t.groupId === group.id && !newIds.has(t.id))
+        .forEach(t => { t.groupId = null; });
+      // Assign all chip IDs to this group
+      newIds.forEach(id => {
+        const tag = getTagById(id);
+        if (tag) tag.groupId = group.id;
+      });
       saveState();
       updateUndoRedoUI();
     });
   });
 
   // --- Unsorted block (always shown) ---
-  const allTags = new Set();
-  const walkAll = items => { for (const item of (items || [])) { (item?.tags || []).forEach(t => allTags.add(t)); (item?.sharedTags || []).forEach(t => allTags.add(t)); if (item?.children) walkAll(item.children); } };
-  walkAll(state.essentials);
-  for (const board of state.boards) { walkAll(board.speedDial); for (const col of board.columns) walkAll(col.items); }
-
-  const groupedTags = new Set(groups.flatMap(g => g.tags || []));
-  const unsorted = [...allTags].filter(t => !groupedTags.has(t)).sort();
+  const unsorted = (state.tags || []).filter(t => !t.groupId).sort((a, b) => a.name.localeCompare(b.name));
 
   const uBlock = document.createElement('div');
   uBlock.className = 'tag-group-block tag-group-block--unsorted';
@@ -751,11 +776,12 @@ function renderTagGroups() {
     unsorted.forEach(tag => {
       const chip = document.createElement('span');
       chip.className = 'tag-chip';
-      chip.textContent = tag;
-      applyTagColor(chip, tag);
+      chip.dataset.value = tag.id;
+      chip.textContent = tag.name;
+      applyTagColor(chip, tag.id);
       chip.addEventListener('contextmenu', e => {
         e.preventDefault();
-        showTagChipContextMenu(e.clientX, e.clientY, tag, -1);
+        showTagChipContextMenu(e.clientX, e.clientY, tag.id, null);
       });
       chipRow.appendChild(chip);
     });
@@ -908,7 +934,7 @@ function attachSettingsListeners() {
   document.getElementById('stgAddGroupBtn').addEventListener('click', () => {
     if (!state.settings.tagGroups) state.settings.tagGroups = [];
     pushUndoSnapshot();
-    state.settings.tagGroups.push({ id: 'grp-' + Date.now(), name: '', color: '#6d7cff', locked: false, tags: [] });
+    state.settings.tagGroups.push({ id: 'grp-' + Date.now(), name: '', color: '#6d7cff', locked: false });
     saveState();
     updateUndoRedoUI();
     renderTagGroups();

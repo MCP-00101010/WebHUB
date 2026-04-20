@@ -37,7 +37,6 @@ const defaultSettings = {
   bookmarkTextAlign: 'left', bookmarkColor: '',
   folderTextAlign: 'left', folderColor: '',
   titleColor: '',
-  tagColors: {},
   tagGroups: [],
   activeThemeName: 'default-dark',
   customThemes: [],
@@ -51,6 +50,7 @@ const defaultState = {
   activeBoardId: 'board-1',
   hubName: 'Morpheus WebHub',
   lastExported: null,
+  tags: [],
   settings: { ...defaultSettings },
   essentials: [],
   boards: [
@@ -110,6 +110,74 @@ function migrateItems(items) {
   }
 }
 
+// --- Tag ID helpers ---
+
+function getTagById(id) {
+  return (state.tags || []).find(t => t.id === id) || null;
+}
+
+function createTag(name, groupId = null, color = null) {
+  const id = 'tag-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const tag = { id, name, groupId, color };
+  if (!state.tags) state.tags = [];
+  state.tags.push(tag);
+  return tag;
+}
+
+function deleteTag(id) {
+  if (!state.tags) return;
+  state.tags = state.tags.filter(t => t.id !== id);
+  // Strip the ID from all items that reference it
+  const strip = items => { for (const item of (items || [])) { if (item?.tags) item.tags = item.tags.filter(tid => tid !== id); if (item?.sharedTags) item.sharedTags = item.sharedTags.filter(tid => tid !== id); if (item?.children) strip(item.children); } };
+  strip(state.essentials);
+  for (const board of state.boards) { strip([board]); strip(board.speedDial); for (const col of board.columns) strip(col.items); }
+}
+
+// --- One-time migration: string-name tags → ID-based tag objects ---
+
+function migrateToIdTags(parsed) {
+  if (Array.isArray(parsed.tags)) return; // already migrated
+
+  parsed.tags = [];
+  const nameToId = new Map();
+  let seq = 0;
+  const ts = Date.now();
+
+  function findGroupId(name) {
+    for (const g of (parsed.settings?.tagGroups || [])) {
+      if ((g.tags || []).includes(name)) return g.id;
+    }
+    return null;
+  }
+
+  function getOrCreate(name) {
+    if (nameToId.has(name)) return nameToId.get(name);
+    const id = `tag-${ts}-${seq++}`;
+    const color = parsed.settings?.tagColors?.[name] || null;
+    parsed.tags.push({ id, name, groupId: findGroupId(name), color });
+    nameToId.set(name, id);
+    return id;
+  }
+
+  function migrateItemTags(item) {
+    if (!item) return;
+    if (Array.isArray(item.tags))       item.tags       = item.tags.map(t => getOrCreate(t));
+    if (Array.isArray(item.sharedTags)) item.sharedTags = item.sharedTags.map(t => getOrCreate(t));
+    if (item.children) item.children.forEach(migrateItemTags);
+  }
+
+  for (const board of (parsed.boards || [])) {
+    migrateItemTags(board);
+    (board.speedDial || []).forEach(migrateItemTags);
+    for (const col of (board.columns || [])) col.items.forEach(migrateItemTags);
+  }
+  (parsed.navItems  || []).forEach(migrateItemTags);
+  (parsed.essentials|| []).forEach(migrateItemTags);
+
+  for (const g of (parsed.settings?.tagGroups || [])) delete g.tags;
+  if (parsed.settings) delete parsed.settings.tagColors;
+}
+
 function collectReferencedBoardIds(items) {
   const ids = new Set();
   for (const item of (items || [])) {
@@ -149,7 +217,9 @@ function loadState() {
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
-    if (!parsed.settings.tagColors || typeof parsed.settings.tagColors !== 'object') parsed.settings.tagColors = {};
+    // Tag ID migration — must run before essentials migration (which also has tags)
+    migrateToIdTags(parsed);
+    parsed.tags = parsed.tags || [];
     // Migrate: strip trailing nulls from old fixed-slot saves; preserve interior gaps
     parsed.essentials = parsed.essentials || [];
     while (parsed.essentials.length > 0 && !parsed.essentials[parsed.essentials.length - 1]) parsed.essentials.pop();
@@ -559,22 +629,11 @@ function findDuplicateUrl(url) {
 }
 
 function getKnownTags() {
-  const tags = new Set();
-  const walk = (items) => {
-    for (const item of (items || [])) {
-      if (item?.tags) item.tags.forEach(t => tags.add(t));
-      if (item?.sharedTags) item.sharedTags.forEach(t => tags.add(t));
-      if (item?.children) walk(item.children);
-    }
-  };
-  walk(state.essentials);
-  for (const board of state.boards) {
-    if (board.sharedTags) board.sharedTags.forEach(t => tags.add(t));
-    if (board.tags) board.tags.forEach(t => tags.add(t));
-    walk(board.speedDial);
-    for (const col of board.columns) walk(col.items);
-  }
-  return Array.from(tags).sort();
+  return (state.tags || []).map(t => t.name).sort();
+}
+
+function getAllTagObjects() {
+  return state.tags || [];
 }
 
 function getBoardInbox(board) {

@@ -5,6 +5,23 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.6] — 2026-04-20
+
+### Changed
+
+- **Tag system refactored to ID-based** (Phases A–C): tags are now objects `{id, name, groupId, color}` stored in `state.tags`; all bookmarks/folders store tag IDs instead of name strings
+- **Migration**: existing string-name tags are automatically migrated on first load — tag colours and group memberships are preserved
+- **Tag manager** group editor now reads/writes `state.tags` directly via `groupId`; adding a tag to a group sets its `groupId`, removing moves it to Unsorted; deleting a group moves all its tags to Unsorted rather than deleting them
+- **Chip inputs** for tags (modal, folder modal, board settings, tag manager groups) now store IDs and display names via `displayOf`/`resolveInput` opts; tag autocomplete excludes already-committed chips by ID
+- **Context menu** in tag manager uses tag IDs; right-clicking an Unsorted chip now offers all groups; right-clicking a grouped chip offers "Unsorted" plus all other groups
+
+### Fixed
+
+- Tag autocomplete bug where exact-match filter was inverted (`!t.name === lc` → `t.name !== lc`)
+- Tag autocomplete now correctly excludes already-committed chips (was using text input value; now uses hidden input IDs)
+
+---
+
 ## [0.11.5] — 2026-04-21
 
 ### Added

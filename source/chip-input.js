@@ -1,6 +1,11 @@
-function initChipInput(hiddenInput) {
+function initChipInput(hiddenInput, opts = {}) {
   if (!hiddenInput || hiddenInput._chipInputInit) return;
   hiddenInput._chipInputInit = true;
+
+  // opts.displayOf(value) → display label for a stored value (default: identity)
+  // opts.resolveInput(typedText) → stored value to commit (default: identity; returns null to skip)
+  const displayOf    = opts.displayOf    || (v => v);
+  const resolveInput = opts.resolveInput || (v => v);
 
   const container = document.createElement('div');
   container.className = 'chip-input-wrapper';
@@ -33,43 +38,48 @@ function initChipInput(hiddenInput) {
 
   function renderChips() {
     container.querySelectorAll('.chip-live').forEach(el => el.remove());
-    chips.forEach(tag => {
+    chips.forEach(value => {
       const chip = document.createElement('span');
       chip.className = 'tag-chip chip-live';
-      if (typeof applyTagColor === 'function') applyTagColor(chip, tag);
+      chip.dataset.value = value;
+      if (typeof applyTagColor === 'function') applyTagColor(chip, value);
 
       const label = document.createElement('span');
-      label.textContent = tag;
+      label.textContent = displayOf(value);
       chip.appendChild(label);
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'chip-remove-btn';
       btn.textContent = '×';
-      btn.addEventListener('mousedown', e => { e.preventDefault(); removeChip(tag, false); });
+      btn.addEventListener('mousedown', e => { e.preventDefault(); removeChip(value, false); });
       chip.appendChild(btn);
 
-      chip.addEventListener('click', e => { if (e.target !== btn) removeChip(tag, true); });
+      chip.addEventListener('click', e => { if (e.target !== btn) removeChip(value, true); });
       container.insertBefore(chip, textInput);
     });
     textInput.placeholder = chips.length ? '' : placeholder;
   }
 
-  function addChip(tag) {
-    tag = tag.trim();
-    if (!tag || chips.includes(tag)) return;
-    chips.push(tag);
+  function addChip(typed) {
+    typed = typed.trim();
+    if (!typed) return;
+    const value = resolveInput(typed);
+    if (value == null || chips.includes(value)) return;
+    chips.push(value);
     renderChips();
     syncBacking();
   }
 
-  function removeChip(tag, editMode) {
-    chips = chips.filter(t => t !== tag);
+  function removeChip(value, editMode) {
+    chips = chips.filter(v => v !== value);
     renderChips();
     syncBacking();
     if (editMode) {
+      // Put the display name back in the text input so the user can re-type
+      const display = displayOf(value);
       const cur = textInput.value.trim();
-      textInput.value = cur ? cur + ' ' + tag : tag;
+      textInput.value = cur ? cur + ' ' + display : display;
       textInput.focus();
       textInput.setSelectionRange(textInput.value.length, textInput.value.length);
     }
@@ -114,6 +124,6 @@ function initChipInput(hiddenInput) {
 
   textInput.addEventListener('blur', chipifyWord);
 
-  if (typeof attachTagAutocomplete === 'function') attachTagAutocomplete(textInput);
+  if (typeof attachTagAutocomplete === 'function') attachTagAutocomplete(textInput, hiddenInput);
   if (hiddenInput.value) setValue(hiddenInput.value);
 }

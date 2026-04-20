@@ -1,43 +1,49 @@
 // --- Tag chip rendering ---
 
-function applyTagColor(chip, tag) {
-  const color = state.settings.tagColors?.[tag];
-  if (color) {
-    chip.style.background = hexToRgba(color, 0.15);
-    chip.style.color = color;
+function resolveTag(tagId) {
+  const found = (state.tags || []).find(t => t.id === tagId);
+  return found || { id: tagId, name: tagId, groupId: null, color: null };
+}
+
+function applyTagColor(chip, tagId) {
+  const tag = resolveTag(tagId);
+  if (tag.color) {
+    chip.style.background = hexToRgba(tag.color, 0.15);
+    chip.style.color = tag.color;
   }
 }
 
-function makeTagChip(tag) {
+function makeTagChip(tagId) {
   const chip = document.createElement('span');
   chip.className = 'tag-chip';
-  chip.textContent = tag;
-  applyTagColor(chip, tag);
+  const tag = resolveTag(tagId);
+  chip.textContent = tag.name;
+  applyTagColor(chip, tagId);
   return chip;
 }
 
-function renderTagsInto(container, tags) {
-  (tags || []).forEach(t => container.appendChild(makeTagChip(t)));
+function renderTagsInto(container, tagIds) {
+  (tagIds || []).forEach(id => container.appendChild(makeTagChip(id)));
 }
 
-function createTagSection(labelText, tags) {
+function createTagSection(labelText, tagIds) {
   const section = document.createElement('div');
   section.className = 'tag-section';
   const lbl = document.createElement('span');
   lbl.className = 'tag-section-label';
   lbl.textContent = labelText;
   section.appendChild(lbl);
-  tags.forEach(t => section.appendChild(makeTagChip(t)));
+  (tagIds || []).forEach(id => section.appendChild(makeTagChip(id)));
   return section;
 }
 
-function appendTagRow(grid, labelText, tags) {
+function appendTagRow(grid, labelText, tagIds) {
   const lbl = document.createElement('span');
   lbl.className = 'item-tag-label';
   lbl.textContent = labelText;
   const chips = document.createElement('div');
   chips.className = 'item-tag-chips';
-  renderTagsInto(chips, tags);
+  renderTagsInto(chips, tagIds);
   grid.appendChild(lbl);
   grid.appendChild(chips);
 }

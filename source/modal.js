@@ -25,50 +25,70 @@ function getBoardInheritedTags() {
   return navParent?.sharedTags || [];
 }
 
-// --- Tag autocomplete ---
+// --- Tag ID-mode chip input options ---
 
-function getTagSuggestions(partial, input) {
-  if (!partial) return [];
-  const known = getKnownTags();
-  const current = input.value.split(/\s+/).filter(Boolean);
-  return known.filter(t => t.startsWith(partial) && t !== partial && !current.includes(t));
+function tagChipOpts() {
+  return {
+    displayOf: id => getTagById(id)?.name || id,
+    resolveInput: typed => {
+      // Find existing tag by name (case-insensitive first-match)
+      const lc = typed.toLowerCase();
+      const match = (state.tags || []).find(t => t.name.toLowerCase() === lc);
+      if (match) return match.id;
+      // Create new ungrouped tag
+      return createTag(typed).id;
+    }
+  };
 }
 
-function renderTagSuggestions(input) {
-  const pos = input.selectionStart;
-  if (pos !== input.value.length) return;
-  const val = input.value;
+// --- Tag autocomplete ---
+
+function getTagSuggestions(partial, hiddenInput) {
+  if (!partial) return [];
+  const currentIds = new Set((hiddenInput?.value || '').split(/\s+/).filter(Boolean));
+  const currentNames = new Set([...currentIds].map(id => getTagById(id)?.name || id));
+  const lc = partial.toLowerCase();
+  const seen = new Set();
+  return (state.tags || [])
+    .filter(t => t.name.toLowerCase().startsWith(lc) && t.name.toLowerCase() !== lc && !currentNames.has(t.name))
+    .filter(t => { if (seen.has(t.name)) return false; seen.add(t.name); return true; })
+    .map(t => t.name);
+}
+
+function renderTagSuggestions(textInput, hiddenInput) {
+  const pos = textInput.selectionStart;
+  if (pos !== textInput.value.length) return;
+  const val = textInput.value;
   const partial = val.split(/\s+/).pop();
   if (!partial) return;
-  const suggestions = getTagSuggestions(partial, input);
+  const suggestions = getTagSuggestions(partial, hiddenInput);
   if (!suggestions.length) return;
   const completion = suggestions[0].slice(partial.length);
   if (!completion) return;
-  input.value = val + completion;
-  input.setSelectionRange(val.length, input.value.length);
+  textInput.value = val + completion;
+  textInput.setSelectionRange(val.length, textInput.value.length);
 }
 
-function attachTagAutocomplete(input) {
+function attachTagAutocomplete(textInput, hiddenInput) {
   let lastKey = null;
-  input.addEventListener('keydown', e => {
+  textInput.addEventListener('keydown', e => {
     lastKey = e.key;
-    const start = input.selectionStart;
-    const end = input.selectionEnd;
-    if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === input.value.length) {
+    const start = textInput.selectionStart;
+    const end = textInput.selectionEnd;
+    if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === textInput.value.length) {
       e.preventDefault();
-      const accepted = input.value.slice(0, end);
-      input.value = accepted + ' ';
-      input.setSelectionRange(accepted.length + 1, accepted.length + 1);
-    } else if (e.key === 'Backspace' && start !== end && end === input.value.length) {
-      // dismiss autocomplete suggestion without deleting typed text
+      const accepted = textInput.value.slice(0, end);
+      textInput.value = accepted + ' ';
+      textInput.setSelectionRange(accepted.length + 1, accepted.length + 1);
+    } else if (e.key === 'Backspace' && start !== end && end === textInput.value.length) {
       e.preventDefault();
-      input.value = input.value.slice(0, start);
-      input.setSelectionRange(start, start);
+      textInput.value = textInput.value.slice(0, start);
+      textInput.setSelectionRange(start, start);
     }
   });
-  input.addEventListener('input', () => {
+  textInput.addEventListener('input', () => {
     if (lastKey === 'Backspace' || lastKey === 'Delete') return;
-    renderTagSuggestions(input);
+    renderTagSuggestions(textInput, hiddenInput);
   });
 }
 
@@ -321,8 +341,8 @@ function attachFolderModalListeners() {
   document.getElementById('fmName').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleFolderModalSubmit(); }
   });
-  initChipInput(document.getElementById('fmTags'));
-  initChipInput(document.getElementById('fmSharedTags'));
+  initChipInput(document.getElementById('fmTags'), tagChipOpts());
+  initChipInput(document.getElementById('fmSharedTags'), tagChipOpts());
 }
 
 // --- External bookmark modal (called from dnd and essentials) ---

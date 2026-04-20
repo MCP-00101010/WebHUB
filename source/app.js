@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.5';
+const APP_VERSION = '0.11.6';
 
 let activeModal = null;
 let contextTarget = null;
@@ -363,7 +363,7 @@ function attachEventListeners() {
       warning.classList.add('hidden');
     }
   });
-  initChipInput(elements.modalInput3);
+  initChipInput(elements.modalInput3, tagChipOpts());
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);
   elements.navList.addEventListener('drop', handleNavListDrop);
