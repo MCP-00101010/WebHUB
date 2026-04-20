@@ -133,17 +133,11 @@
     <aside id="navSidebar" class="sidebar" aria-label="Navigation sidebar">
       <div class="sidebar-header">
         <h1 id="hubNameEl">Morpheus WebHub</h1>
-        <button id="sidebarCollapseBtn" class="icon-btn sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
-          <svg width="16" height="16" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
-        </button>
-        <button id="globalSettingsBtn" class="icon-btn" title="Global Settings" aria-label="Global Settings">
-          <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
-        </button>
       </div>
 
       <div class="sidebar-search">
         <div class="search-input-row">
-          <input id="searchInput" type="search" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false" />
+          <input id="searchInput" type="search" placeholder="Search…" autocomplete="off" spellcheck="false" />
           <button id="searchFilterBtn" class="search-filter-btn" title="Filter search results" aria-label="Toggle search filters">
             <svg width="13" height="13" aria-hidden="true"><use href="#icon-filter"/></svg>
           </button>
@@ -176,7 +170,13 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
+        <button id="globalSettingsBtn" class="icon-btn" title="Global Settings" aria-label="Global Settings">
+          <svg width="16" height="16" aria-hidden="true"><use href="#icon-settings"/></svg>
+        </button>
         <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.28</button>
+        <button id="sidebarCollapseBtn" class="icon-btn sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
+          <svg width="16" height="16" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
+        </button>
       </div>
     </aside>
 
@@ -231,7 +231,7 @@
             <div class="tag-field-row">
               <label for="modalInput3">Tags</label>
               <div class="tags-input-container">
-                <input id="modalInput3" type="text" placeholder="work tools productivity" form="modalForm" />
+                <input id="modalInput3" type="text" placeholder="tag1 tag2" form="modalForm" />
                 <div id="tagSuggestions" class="tag-suggestions hidden"></div>
               </div>
             </div>
@@ -287,7 +287,7 @@
             <div class="tag-field-row">
               <label for="bstgTags">Tags</label>
               <div class="tags-input-container">
-                <input id="bstgTags" type="text" placeholder="for-later urgent" />
+                <input id="bstgTags" type="text" placeholder="tag1 tag2" />
               </div>
             </div>
             <div class="tag-field-row hidden" id="bstgInheritedTagsRow">
@@ -299,7 +299,7 @@
             <div class="tag-field-row">
               <label for="bstgSharedTags">Shared</label>
               <div class="tags-input-container">
-                <input id="bstgSharedTags" type="text" placeholder="topic category" />
+                <input id="bstgSharedTags" type="text" placeholder="tag1 tag2" />
               </div>
             </div>
             <div class="tag-toggle-row">

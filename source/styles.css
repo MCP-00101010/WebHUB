@@ -91,9 +91,7 @@ button {
 
 .sidebar-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
 }
 
 .sidebar-header h1 {
@@ -1754,18 +1752,19 @@ button {
   gap: 0;
 }
 
-.sidebar.collapsed > *:not(.sidebar-header) {
+.sidebar.collapsed > *:not(.sidebar-footer) {
   display: none;
 }
 
-.sidebar.collapsed .sidebar-header {
-  flex-direction: column;
-  gap: 8px;
-  justify-content: flex-start;
+.sidebar.collapsed .sidebar-footer {
+  border-top: none;
+  padding-top: 0;
+  justify-content: center;
 }
 
-.sidebar.collapsed .sidebar-header h1 { display: none; }
-.sidebar.collapsed .sidebar-header #globalSettingsBtn { display: none; }
+.sidebar.collapsed .sidebar-footer > *:not(#sidebarCollapseBtn) {
+  display: none;
+}
 
 .sidebar-collapse-btn svg {
   transition: transform 0.25s ease;
@@ -1783,8 +1782,8 @@ button {
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 2px;
 }
 
 .sidebar-version-btn {
