@@ -38,6 +38,7 @@ function attachInboxListeners() {
   const body = document.getElementById('inboxPanelBody');
   body.addEventListener('dragover', e => {
     if (!dragPayload || dragPayload.area !== 'board') return;
+    if (getActiveBoard()?.locked) return;
     e.preventDefault();
     body.classList.add('drag-over');
   });
@@ -48,6 +49,7 @@ function attachInboxListeners() {
     e.preventDefault();
     body.classList.remove('drag-over');
     if (!dragPayload || dragPayload.area !== 'board') return;
+    if (getActiveBoard()?.locked) { dragPayload = null; return; }
     pushUndoSnapshot();
     const inbox = getBoardInbox(getActiveBoard());
     if (!inbox) return;

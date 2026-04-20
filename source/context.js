@@ -293,10 +293,10 @@ function handleContextMenuAction(action) {
       // Speed dial and essentials are not board-scoped, so offer all boards.
       // Board items exclude the current board (already there); import manager gets all regular boards.
       const boards = (area === 'speed-dial-item' || area === 'essential')
-        ? state.boards.filter(b => !b.isImportManager)
+        ? state.boards.filter(b => !b.isImportManager && !b.locked)
         : cab?.isImportManager
-          ? state.boards.filter(b => !b.isImportManager)
-          : state.boards.filter(b => !b.isImportManager && b.id !== cab?.id);
+          ? state.boards.filter(b => !b.isImportManager && !b.locked)
+          : state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== cab?.id);
       showModal('moveToBoard', {
         title: 'Move to Board',
         showName: false,
@@ -334,6 +334,32 @@ function handleContextMenuAction(action) {
     case 'editWidget':
       openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); });
       break;
+    case 'lockItem':
+      if (contextTarget.item) {
+        pushUndoSnapshot();
+        contextTarget.item.locked = true;
+        renderAll();
+        saveState();
+      }
+      break;
+    case 'unlockItem':
+      if (contextTarget.item) {
+        pushUndoSnapshot();
+        contextTarget.item.locked = false;
+        renderAll();
+        saveState();
+      }
+      break;
+    case 'lockBoard': {
+      const lb = state.boards.find(b => b.id === contextTarget.item?.boardId);
+      if (lb) { pushUndoSnapshot(); lb.locked = true; renderAll(); saveState(); }
+      break;
+    }
+    case 'unlockBoard': {
+      const ub = state.boards.find(b => b.id === contextTarget.item?.boardId);
+      if (ub) { pushUndoSnapshot(); ub.locked = false; renderAll(); saveState(); }
+      break;
+    }
     default:
       if (action.startsWith('addWidget:')) {
         const type = action.slice('addWidget:'.length);
@@ -377,7 +403,7 @@ function handleContextMenuAction(action) {
       } else if (action.startsWith('moveToBoard:')) {
         const targetBoardId = action.slice('moveToBoard:'.length);
         const targetBoard = state.boards.find(b => b.id === targetBoardId);
-        if (targetBoard && contextTarget?.item) {
+        if (targetBoard && !targetBoard.locked && contextTarget?.item) {
           pushUndoSnapshot();
           const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
           capturedItem.type = 'bookmark';
@@ -392,16 +418,26 @@ function handleContextMenuAction(action) {
   }
 }
 
-function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
+function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effectiveLocked = false, inheritedLock = false) {
+  if (getActiveBoard()?.locked) return;
   contextTarget = { area: 'board-item', itemId: item.id, columnId, parentId: parentFolder ? parentFolder.id : null, item, depth };
 
+  const options = [];
+
+  if (effectiveLocked) {
+    if (!inheritedLock) {
+      options.push({ label: 'Unlock item', action: 'unlockItem' });
+    }
+    showContextMenu(event.clientX, event.clientY, options);
+    return;
+  }
+
   const activeBoard = getActiveBoard();
-  const regularBoards = state.boards.filter(b => !b.isImportManager);
+  const regularBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
   const canMoveToBoard = activeBoard?.isImportManager
     ? regularBoards.length > 0
     : regularBoards.filter(b => b.id !== activeBoard?.id).length > 0;
 
-  const options = [];
   if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
     options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
@@ -420,6 +456,10 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
     options.push({ label: 'Delete', action: 'deleteItem' });
   }
 
+  if (item.type === 'folder' || item.type === 'bookmark') {
+    options.push({ label: 'Lock item', action: 'lockItem' });
+  }
+
   showContextMenu(event.clientX, event.clientY, options);
 }
 
@@ -428,8 +468,14 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
 
   const options = [];
   if (item.type === 'board') {
-    options.push({ label: 'Edit board', action: 'editBoard' });
-    options.push({ label: 'Delete board', action: 'deleteNavItem' });
+    const board = state.boards.find(b => b.id === item.boardId);
+    if (board?.locked) {
+      options.push({ label: 'Unlock board', action: 'unlockBoard' });
+    } else {
+      options.push({ label: 'Edit board', action: 'editBoard' });
+      options.push({ label: 'Delete board', action: 'deleteNavItem' });
+      options.push({ label: 'Lock board', action: 'lockBoard' });
+    }
   } else if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addNavSubfolder' });
@@ -460,9 +506,10 @@ function handleEssentialContextMenu(event, slot, item) {
 }
 
 function handleSpeedDialContextMenu(event, item) {
+  if (getActiveBoard()?.locked) return;
   contextTarget = { area: 'speed-dial-item', itemId: item.id, item };
   const cab = getActiveBoard();
-  const boards = state.boards.filter(b => !b.isImportManager);
+  const boards = state.boards.filter(b => !b.isImportManager && !b.locked);
   const canMove = boards.length > 0;
   const options = [
     { label: 'Edit bookmark',   action: 'editSpeedDial' },
@@ -475,6 +522,7 @@ function handleSpeedDialContextMenu(event, item) {
 }
 
 function handleBoardColumnContextMenu(event, columnId) {
+  if (getActiveBoard()?.locked) return;
   event.preventDefault();
   lastActiveColumnId = columnId;
   contextTarget = { area: 'board-empty', columnId };
@@ -515,7 +563,7 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Edit bookmark',   action: 'editBookmark' });
     options.push({ label: 'Duplicate',        action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
-    const allBoards = state.boards.filter(b => !b.isImportManager && b.id !== meta.boardId);
+    const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== meta.boardId);
     if (allBoards.length) {
       options.push({ label: 'Move to board', submenu: allBoards.map(b => ({ label: b.title, action: `moveToBoard:${b.id}` })) });
     }

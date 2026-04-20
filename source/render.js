@@ -4,6 +4,7 @@ const elements = {
   hubNameEl: document.getElementById('hubNameEl'),
   boardTitle: document.getElementById('boardTitle'),
   boardSettingsBtn: document.getElementById('boardSettingsBtn'),
+  inboxBtn: document.getElementById('inboxBtn'),
   mainPanel: document.getElementById('mainPanel'),
   bookmarkColumns: document.getElementById('bookmarkColumns'),
   speedDial: document.getElementById('speedDial'),
@@ -645,6 +646,18 @@ function createNavItem(item, depth = 0, parent = null) {
       flBadge.textContent = ifl;
       el.appendChild(flBadge);
     }
+    if (board?.locked) el.classList.add('board-locked');
+    const lockBtn = document.createElement('button');
+    lockBtn.type = 'button';
+    lockBtn.className = 'item-lock-btn' + (board?.locked ? ' is-locked' : '');
+    lockBtn.title = board?.locked ? 'Unlock board' : 'Lock board';
+    lockBtn.appendChild(icon(board?.locked ? 'icon-lock-closed' : 'icon-lock-open'));
+    lockBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (board) { board.locked = !board.locked; saveState(); renderNav(); if (state.activeBoardId === board.id) renderBoard(); }
+    });
+    el.appendChild(lockBtn);
     el.addEventListener('click', () => {
       if (item.boardId) {
         state.activeBoardId = item.boardId;
@@ -736,6 +749,9 @@ function renderBoard() {
   elements.boardTitle.textContent = board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
   applyBoardBackground(board);
+  elements.boardSettingsBtn.disabled = !!board.locked;
+  elements.inboxBtn.disabled = !!board.locked;
+  if (board.locked && typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
 
   const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
   if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
@@ -770,6 +786,7 @@ function renderSpeedDial(board) {
     }
 
     link.addEventListener('dragstart', event => {
+      if (board.locked) { event.preventDefault(); return; }
       event.stopPropagation();
       dragPayload = { area: 'speed-dial', itemId: item.id };
       event.dataTransfer.setData('text/plain', item.id);
@@ -783,7 +800,7 @@ function renderSpeedDial(board) {
     link.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();
-      handleSpeedDialContextMenu(event, item);
+      if (!getActiveBoard()?.locked) handleSpeedDialContextMenu(event, item);
     });
     link.addEventListener('dragover', event => handleSpeedDialItemDragOver(event, item));
     link.addEventListener('dragleave', event => {

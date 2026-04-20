@@ -2308,6 +2308,66 @@ button {
   border-color: var(--accent-selected-border) !important;
 }
 
+/* Lock button — hover-reveal when unlocked, always visible when locked */
+.item-lock-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.item-lock-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.board-column-item:hover .item-lock-btn,
+.board-column-item.selected .item-lock-btn {
+  opacity: 1;
+}
+
+.item-lock-btn.is-locked {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.item-lock-btn.is-inherited {
+  opacity: 1;
+  cursor: default;
+}
+
+.board-column-item.is-locked {
+  cursor: default;
+}
+
+.nav-item[data-type="board"].board-locked {
+  cursor: default;
+}
+
+.nav-item[data-type="board"] .item-lock-btn {
+  flex-shrink: 0;
+}
+
+.nav-item[data-type="board"]:hover .item-lock-btn,
+.nav-item[data-type="board"].board-locked .item-lock-btn {
+  opacity: 1;
+}
+
+.board-column-item.is-locked .item-checkbox {
+  pointer-events: none;
+  opacity: 0 !important;
+}
+
 /* Import HTML file label button */
 .stg-file-label {
   cursor: pointer;

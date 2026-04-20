@@ -44,15 +44,18 @@ function appendTagRow(grid, labelText, tags) {
 
 // --- Board item element ---
 
-function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) {
+function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, inheritedLock = false) {
   if (item.type === 'widget') return createWidgetElement(item, columnId) || document.createElement('div');
+
+  const effectiveLocked = inheritedLock || !!item.locked;
 
   const itemEl = document.createElement('div');
   itemEl.className = 'board-column-item';
   itemEl.dataset.itemId = item.id;
   itemEl.dataset.columnId = columnId;
   itemEl.dataset.itemType = item.type;
-  itemEl.draggable = true;
+  itemEl.draggable = !effectiveLocked;
+  if (effectiveLocked) itemEl.classList.add('is-locked');
 
   if (item.type === 'folder' || item.type === 'bookmark') {
     if (item.type === 'folder') itemEl.classList.add('folder-card');
@@ -65,7 +68,9 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
 
     const checkbox = document.createElement('div');
     checkbox.className = 'item-checkbox';
-    checkbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+    if (!effectiveLocked) {
+      checkbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+    }
     header.appendChild(checkbox);
 
     if (item.type === 'folder') {
@@ -100,6 +105,24 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     name.className = item.type === 'folder' ? 'folder-title' : 'bookmark-label';
     name.textContent = item.type === 'folder' ? item.title : (item.title || item.url || 'Untitled Bookmark');
     header.appendChild(name);
+
+    const lockBtn = document.createElement('button');
+    lockBtn.type = 'button';
+    lockBtn.className = 'item-lock-btn';
+    if (effectiveLocked) lockBtn.classList.add('is-locked');
+    if (inheritedLock) lockBtn.classList.add('is-inherited');
+    lockBtn.title = item.locked ? 'Unlock item' : (inheritedLock ? 'Locked by parent' : 'Lock item');
+    lockBtn.appendChild(icon(effectiveLocked ? 'icon-lock-closed' : 'icon-lock-open'));
+    lockBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (inheritedLock) return;
+      item.locked = !item.locked;
+      saveState();
+      const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
+      if (inInbox) renderInboxPanel(); else renderBoard();
+    });
+    header.appendChild(lockBtn);
 
     itemEl.appendChild(header);
 
@@ -169,7 +192,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
         });
         itemEl.appendChild(childrenContainer);
         if (Array.isArray(item.children)) {
-          item.children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item)));
+          item.children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item, effectiveLocked)));
         }
       }
     }
@@ -187,10 +210,11 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
   itemEl.addEventListener('contextmenu', event => {
     event.preventDefault();
     event.stopPropagation();
-    handleBoardContextMenu(event, item, columnId, parentFolder, depth);
+    handleBoardContextMenu(event, item, columnId, parentFolder, depth, effectiveLocked, inheritedLock);
   });
 
   itemEl.addEventListener('dragstart', event => {
+    if (effectiveLocked) { event.preventDefault(); return; }
     event.stopPropagation();
     dragPayload = { area: 'board', itemId: item.id, itemType: item.type, sourceColumnId: columnId, sourceParentId: parentFolder ? parentFolder.id : null };
     event.dataTransfer.setData('text/plain', item.id);

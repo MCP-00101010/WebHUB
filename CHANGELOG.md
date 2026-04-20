@@ -5,6 +5,24 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.4] — 2026-04-20
+
+### Added
+
+- **Item lock feature**: lock icon on every board bookmark/folder item; hover-only when unlocked, permanently visible in accent colour when locked; toggled via lock icon click or context menu ("Lock item" / "Unlock item")
+- **Inherited lock**: locking a folder locks all children recursively — child lock icons show in accent colour with "Locked by parent" tooltip and cannot be unlocked directly
+- **Board-level locking**: lock icon on board nav items (hover-reveal when unlocked, accent-coloured when locked); toggled via lock button or nav context menu ("Lock board" / "Unlock board")
+- **Locked board enforcement**: locked boards are fully read-only — all DnD blocked (column drops, item reordering, speed dial, inbox); context menus suppressed on items, speed dial (links and empty space), and columns; board settings and inbox buttons disabled; inbox panel closes and cannot be re-opened; board edit/delete removed from nav context menu while locked; locked boards excluded from all "Move to board" target lists
+
+### Fixed
+
+- **DnD preview in locked folders**: drag preview clone no longer appears inside locked folders (direct or inherited lock)
+- **DnD drop into locked folders**: items can no longer be dropped into locked folders via any path (folder header, children container, or item-level reordering)
+- **Folder reposition on failed nesting**: dragging a folder into a too-deep target no longer moves it to the bottom; validation runs before extraction
+- **Themed error dialogs**: nesting/descendant error messages now use the app's modal style instead of the native browser `alert()`
+
+---
+
 ## [0.11.29] — 2026-04-20
 
 ### Added

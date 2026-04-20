@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.29';
+const APP_VERSION = '0.11.4';
 
 let activeModal = null;
 let contextTarget = null;
@@ -132,6 +132,15 @@ function hideConfirmDialog() {
   confirmCallback = null;
   document.getElementById('confirmOverlay').classList.add('hidden');
   document.getElementById('confirmOkBtn').textContent = 'Delete';
+}
+
+function showNotice(message) {
+  document.getElementById('noticeMessage').textContent = message;
+  document.getElementById('noticeOverlay').classList.remove('hidden');
+}
+
+function hideNotice() {
+  document.getElementById('noticeOverlay').classList.add('hidden');
 }
 
 
@@ -361,6 +370,7 @@ function attachEventListeners() {
   elements.speedDial.addEventListener('contextmenu', event => {
     if (event.target.closest('.speed-link')) return;
     event.preventDefault();
+    if (getActiveBoard()?.locked) return;
     contextTarget = { area: 'speed-dial' };
     showContextMenu(event.clientX, event.clientY, [
       { label: 'Add bookmark', action: 'addSpeedDialBookmark' }
@@ -376,6 +386,11 @@ function attachEventListeners() {
   document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmDialog);
   document.getElementById('confirmOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('confirmOverlay')) hideConfirmDialog();
+  });
+
+  document.getElementById('noticeOkBtn').addEventListener('click', hideNotice);
+  document.getElementById('noticeOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('noticeOverlay')) hideNotice();
   });
 
   document.addEventListener('click', event => {
@@ -467,6 +482,7 @@ function attachEventListeners() {
     }
 
     if (event.key !== 'Escape') return;
+    if (!document.getElementById('noticeOverlay').classList.contains('hidden')) { hideNotice(); return; }
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog(); return; }
     if (elements.searchInput.value) {
       elements.searchInput.value = '';
@@ -495,7 +511,7 @@ function attachEventListeners() {
   window.addEventListener('morpheus:receive-tab', e => {
     const { url, title } = e.detail;
     const board = getActiveBoard();
-    if (!board) return;
+    if (!board || board.locked) return;
     const inbox = getBoardInbox(board);
     if (!inbox) return;
     pushUndoSnapshot();
