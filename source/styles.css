@@ -510,9 +510,9 @@ button {
   padding: 8px 10px;
   font-size: 0.8rem;
   color: var(--text-muted);
-  white-space: pre;
-  max-width: 300px;
-  word-break: break-all;
+  white-space: normal;
+  max-width: 280px;
+  word-break: normal;
   pointer-events: none;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   line-height: 1.5;
@@ -785,11 +785,34 @@ button {
   border: 1px solid var(--surface-2);
   border-radius: 22px;
   box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.modal-card h3 {
-  margin: 0 0 18px;
-  color: var(--text);
+.modal-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+
+.modal-card-header:active { cursor: grabbing; }
+
+.modal-card-header .bstg-title-input {
+  user-select: text;
+  cursor: text;
+}
+
+.modal-card-subtitle {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .modal-form {

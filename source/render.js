@@ -11,8 +11,6 @@ const elements = {
   modalOverlay: document.getElementById('modalOverlay'),
   modalTitle: document.getElementById('modalTitle'),
   modalForm: document.getElementById('modalForm'),
-  modalNameRow: document.getElementById('modalNameRow'),
-  modalLabel1: document.getElementById('modalLabel1'),
   modalInput1: document.getElementById('modalInput1'),
   modalInput2: document.getElementById('modalInput2'),
   modalUrlRow: document.getElementById('modalUrlRow'),

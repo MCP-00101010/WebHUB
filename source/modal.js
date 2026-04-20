@@ -70,12 +70,11 @@ function showModal(type, options = {}) {
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   elements.modalTitle.textContent = options.title || 'Action';
-  elements.modalLabel1.textContent = options.label1 || 'Name';
   elements.modalInput1.value = options.value1 || '';
   elements.modalInput2.value = options.value2 || '';
   elements.modalInput3.value = options.value3 || '';
   const showName = options.showName !== false;
-  elements.modalNameRow.classList.toggle('hidden', !showName);
+  elements.modalInput1.classList.toggle('hidden', !showName);
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);

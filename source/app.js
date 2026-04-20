@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.4';
+const APP_VERSION = '0.11.5';
 
 let activeModal = null;
 let contextTarget = null;
@@ -339,6 +339,7 @@ function attachEventListeners() {
   });
 
   elements.boardSettingsBtn.addEventListener('click', () => showBoardSettingsPanel());
+  makeDraggable(document.getElementById('modalCard'), document.getElementById('modalCardHeader'));
   elements.modalCancelBtn.addEventListener('click', hideModal);
   elements.modalOverlay.addEventListener('click', event => {
     if (event.target !== elements.modalOverlay) return;

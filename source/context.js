@@ -70,6 +70,16 @@ function handleContextMenuAction(action) {
         value1: contextTarget.item?.title || contextTarget.item?.text || ''
       });
       break;
+    case 'editBoard': {
+      const boardId = contextTarget.item?.boardId;
+      if (boardId) {
+        state.activeBoardId = boardId;
+        renderAll();
+        saveState();
+        showBoardSettingsPanel();
+      }
+      break;
+    }
     case 'editSpeedDial':
     case 'editBookmark':
       showModal('editBookmark', {
@@ -338,7 +348,7 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
 
   const options = [];
   if (item.type === 'board') {
-    options.push({ label: 'Rename board', action: 'renameItem' });
+    options.push({ label: 'Edit board', action: 'editBoard' });
     options.push({ label: 'Delete board', action: 'deleteNavItem' });
   } else if (item.type === 'folder') {
     options.push({ label: 'Rename folder', action: 'renameItem' });

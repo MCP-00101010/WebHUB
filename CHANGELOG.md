@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.5] — 2026-04-20
+
+### Added
+
+- **Nav context menu: Edit board** — right-clicking a board in the nav pane now shows "Edit board" which opens the full board settings panel (same as clicking the gear on an active board), replacing the old rename-only modal
+
+### Changed
+
+- **Modals: name field moved to header** — all create/edit modals using `#modalCard` now have the name input in a styled draggable header at the top, matching the folder and board settings panel layout; the modal card is now draggable by its header
+- **Tooltip fix** — tooltip text now wraps correctly within its bounding box; removed `white-space: pre` which was causing text to overflow the container
+
+---
+
 ## [0.11.4] — 2026-04-20
 
 ### Added
