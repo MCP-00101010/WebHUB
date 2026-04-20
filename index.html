@@ -170,14 +170,11 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button id="globalSettingsBtn" class="icon-btn" title="Global Settings" aria-label="Global Settings">
-          <svg width="16" height="16" aria-hidden="true"><use href="#icon-settings"/></svg>
-        </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.28</button>
-        <button id="sidebarCollapseBtn" class="icon-btn sidebar-collapse-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
-          <svg width="16" height="16" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
-        </button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.29</button>
       </div>
+      <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
+        <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
+      </button>
     </aside>
 
     <main id="mainPanel" class="main-panel">
@@ -354,6 +351,7 @@
       <div class="settings-header" id="stgDragHandle">
         <input id="stgHubName" class="settings-hub-name-input" type="text" placeholder="My WebHub" />
         <div class="settings-tabs">
+          <button type="button" class="settings-tab" data-tab="about">About</button>
           <button type="button" class="settings-tab active" data-tab="general">General</button>
           <button type="button" class="settings-tab" data-tab="tag-manager">Tag Manager</button>
           <button type="button" class="settings-tab" data-tab="theme">Theme</button>
@@ -719,22 +717,15 @@
           </div>
         </div>
 
+        <div class="settings-section span-full" data-tab="about">
+          <div class="about-version" id="aboutVersionLine">Version 0.11.29</div>
+          <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
+          <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
+        </div>
+
       </div>
       <div class="form-actions">
         <button type="button" id="settingsDoneBtn" class="primary-btn">Done</button>
-      </div>
-    </div>
-    <div id="aboutPanel" class="settings-panel about-panel hidden">
-      <div class="settings-header" id="aboutDragHandle">
-        <h3>About Morpheus WebHub</h3>
-      </div>
-      <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.11.28</div>
-        <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
-        <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
-      </div>
-      <div class="form-actions">
-        <button type="button" id="aboutCloseBtn" class="primary-btn">Close</button>
       </div>
     </div>
 

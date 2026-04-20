@@ -308,13 +308,19 @@ function updateLastExportedLabel() {
   el.textContent = `Last exported: ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-function showSettingsPanel() {
+function showSettingsPanel(tab = 'general') {
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('settingsPanel');
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('stgDragHandle'));
+  const targetTab = panel.querySelector(`.settings-tab[data-tab="${tab}"]`);
+  if (targetTab) {
+    panel.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t === targetTab));
+    const body = panel.querySelector('.settings-body[data-active-tab]');
+    if (body) body.dataset.activeTab = tab;
+  }
   const s = state.settings;
   document.getElementById('stgHubName').value = state.hubName || '';
   document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;

@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.29] — 2026-04-20
+
+### Added
+
+- **Sidebar collapse edge tab**: thin tab anchored to the right border of the sidebar at mid-height; replaces the collapse button in the header/footer; chevron rotates 180° in collapsed state
+- **About tab in Settings**: settings panel now has an About tab (first in the tab list) containing the version number and app description
+
+### Changed
+
+- **Version number opens Settings at About tab**: clicking the version badge in the sidebar footer now opens the settings panel defaulted to the About tab
+- **Standalone About dialog removed**: merged into the Settings panel; footer is now just trash + version — clean and uncluttered
+- **Settings panel no longer in footer**: global settings accessible via version number (About tab) or any other tab via settings panel; `showSettingsPanel(tab)` now accepts an optional tab name
+
+---
+
 ## [0.11.28] — 2026-04-20
 
 ### Added

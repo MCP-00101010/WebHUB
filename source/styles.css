@@ -87,6 +87,37 @@ button {
   flex-direction: column;
   gap: 10px;
   transition: width 0.25s ease, transform 0.25s ease;
+  position: relative;
+}
+
+.sidebar-edge-tab {
+  position: absolute;
+  right: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 11px;
+  height: 44px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  z-index: 10;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-edge-tab:hover {
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.sidebar.collapsed .sidebar-edge-tab svg {
+  transform: rotate(180deg);
 }
 
 .sidebar-header {
@@ -1752,17 +1783,7 @@ button {
   gap: 0;
 }
 
-.sidebar.collapsed > *:not(.sidebar-footer) {
-  display: none;
-}
-
-.sidebar.collapsed .sidebar-footer {
-  border-top: none;
-  padding-top: 0;
-  justify-content: center;
-}
-
-.sidebar.collapsed .sidebar-footer > *:not(#sidebarCollapseBtn) {
+.sidebar.collapsed > *:not(.sidebar-edge-tab) {
   display: none;
 }
 
@@ -1986,10 +2007,12 @@ button {
   color: #fff;
 }
 
+.settings-body[data-active-tab="about"]       .settings-section:not([data-tab="about"])       { display: none; }
 .settings-body[data-active-tab="general"]     .settings-section:not([data-tab="general"])     { display: none; }
 .settings-body[data-active-tab="tag-manager"] .settings-section:not([data-tab="tag-manager"]) { display: none; }
 .settings-body[data-active-tab="theme"]       .settings-section:not([data-tab="theme"])       { display: none; }
 .settings-body[data-active-tab="style"]       .settings-section:not([data-tab="style"])       { display: none; }
+.settings-body[data-active-tab="about"]       { grid-template-columns: 1fr; }
 .settings-body[data-active-tab="general"]     { grid-template-columns: repeat(2, 1fr); }
 .settings-body[data-active-tab="tag-manager"] { grid-template-columns: 1fr; }
 .settings-body[data-active-tab="theme"]       { grid-template-columns: 1fr; }
@@ -2081,26 +2104,16 @@ button {
   animation: board-fade-in 0.2s ease;
 }
 
-/* --- About panel --- */
-
-.about-panel {
-  width: min(480px, calc(100vw - 40px));
-}
-
-.about-body {
-  padding: 12px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* --- About tab --- */
 
 .about-version {
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text);
+  padding-top: 4px;
 }
 
-.about-body p {
+[data-tab="about"] p {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.88rem;

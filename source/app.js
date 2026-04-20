@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.28';
+const APP_VERSION = '0.11.29';
 
 let activeModal = null;
 let contextTarget = null;
@@ -134,20 +134,6 @@ function hideConfirmDialog() {
   document.getElementById('confirmOkBtn').textContent = 'Delete';
 }
 
-function showAboutPanel() {
-  document.getElementById('modalCard').classList.add('hidden');
-  const panel = document.getElementById('aboutPanel');
-  panel.classList.remove('hidden');
-  elements.modalOverlay.classList.remove('hidden');
-  centerPanel(panel);
-  makeDraggable(panel, document.getElementById('aboutDragHandle'));
-}
-
-function hideAboutPanel() {
-  document.getElementById('aboutPanel').classList.add('hidden');
-  document.getElementById('modalCard').classList.remove('hidden');
-  elements.modalOverlay.classList.add('hidden');
-}
 
 // --- Trash panel ---
 
@@ -265,9 +251,7 @@ function centerPanel(panel) {
 // --- Init ---
 
 function attachEventListeners() {
-  elements.globalSettingsBtn.addEventListener('click', showSettingsPanel);
-  document.getElementById('aboutBtn').addEventListener('click', showAboutPanel);
-  document.getElementById('aboutCloseBtn').addEventListener('click', hideAboutPanel);
+  document.getElementById('aboutBtn').addEventListener('click', () => showSettingsPanel('about'));
   document.getElementById('trashBtn').addEventListener('click', showTrashPanel);
   document.getElementById('trashCloseBtn').addEventListener('click', hideTrashPanel);
   document.getElementById('trashClearAllBtn').addEventListener('click', () => {
@@ -347,8 +331,6 @@ function attachEventListeners() {
       hideSettingsPanel();
     } else if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) {
       cancelBoardSettingsPanel();
-    } else if (!document.getElementById('aboutPanel').classList.contains('hidden')) {
-      hideAboutPanel();
     } else if (!document.getElementById('trashPanel').classList.contains('hidden')) {
       hideTrashPanel();
     } else {
@@ -493,7 +475,6 @@ function attachEventListeners() {
       return;
     }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
-    if (!document.getElementById('aboutPanel').classList.contains('hidden')) { hideAboutPanel(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }
     if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) { cancelBoardSettingsPanel(); return; }

@@ -4,7 +4,6 @@ const elements = {
   hubNameEl: document.getElementById('hubNameEl'),
   boardTitle: document.getElementById('boardTitle'),
   boardSettingsBtn: document.getElementById('boardSettingsBtn'),
-  globalSettingsBtn: document.getElementById('globalSettingsBtn'),
   mainPanel: document.getElementById('mainPanel'),
   bookmarkColumns: document.getElementById('bookmarkColumns'),
   speedDial: document.getElementById('speedDial'),
