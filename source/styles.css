@@ -1772,13 +1772,13 @@ button {
 /* --- Sidebar collapse --- */
 
 .app-shell.sidebar-collapsed {
-  grid-template-columns: 42px 1fr;
+  grid-template-columns: 10px 1fr;
 }
 
 .sidebar.collapsed {
-  width: 42px;
-  min-width: 42px;
-  padding: 10px 6px;
+  width: 10px;
+  min-width: 10px;
+  padding: 0;
   gap: 0;
 }
 
@@ -1958,6 +1958,28 @@ button {
 .settings-panel h3 {
   margin: 0;
   color: var(--text);
+}
+
+.panel-drag-strip {
+  height: 6px;
+  margin: -10px -10px 6px;
+  border-radius: 22px 22px 0 0;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-drag-strip::after {
+  content: '';
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.panel-drag-strip:hover::after {
+  background: var(--text-muted);
 }
 
 .settings-header {
