@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.24] — 2026-04-20
+
+### Added
+
+- **"Move to board" for speed dial and essentials**: both areas now have a Move to board context menu option; removes the item from its source and delivers it to the target board's inbox
+- **Search results use unified item layout**: bookmark, folder, and board results now use the same `item-header` structure as board column items (favicon + name row, tag chips below) instead of the old `bookmark-body` layout; folder results use SVG folder icon; board results use the board icon
+
+### Fixed
+
+- **`moveToBoard` modal handler**: now correctly removes speed dial / essential items from their source before inserting into the target board's inbox (previously `deleteBoardTarget` was a no-op for non-board areas)
+
+---
+
 ## [0.11.23] — 2026-04-20
 
 ### Fixed

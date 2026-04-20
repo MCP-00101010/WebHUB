@@ -272,6 +272,8 @@ function createSearchResultItem(item) {
   el.target = '_blank';
   el.rel = 'noreferrer noopener';
 
+  const header = document.createElement('div');
+  header.className = 'item-header';
   const favicon = document.createElement('span');
   favicon.className = 'bookmark-favicon';
   if (item.url) {
@@ -281,56 +283,48 @@ function createSearchResultItem(item) {
     img.draggable = false;
     favicon.appendChild(img);
   }
-  el.appendChild(favicon);
+  header.appendChild(favicon);
+  const name = document.createElement('span');
+  name.className = 'bookmark-label';
+  name.textContent = item.title || item.url || 'Untitled';
+  header.appendChild(name);
+  el.appendChild(header);
 
-  const body = document.createElement('div');
-  body.className = 'bookmark-body';
-  const label = document.createElement('span');
-  label.className = 'bookmark-label';
-  label.textContent = item.title || item.url || 'Untitled';
-  body.appendChild(label);
   if (item.url) {
     const urlEl = document.createElement('span');
     urlEl.className = 'search-result-url';
     urlEl.textContent = item.url;
-    body.appendChild(urlEl);
+    el.appendChild(urlEl);
   }
   if (item.tags && item.tags.length > 0) {
     const tagsEl = document.createElement('div');
-    tagsEl.className = 'bookmark-tags';
+    tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, item.tags);
-    body.appendChild(tagsEl);
+    el.appendChild(tagsEl);
   }
-  el.appendChild(body);
   return el;
 }
 
 function createFolderSearchResultItem(item) {
   const el = document.createElement('div');
-  el.className = 'board-column-item bookmark-item';
+  el.className = 'board-column-item folder-card';
 
-  const icon = document.createElement('span');
-  icon.className = 'bookmark-favicon';
-  icon.style.cssText = 'font-size:1rem;display:grid;place-items:center;';
-  icon.textContent = '📁';
-  el.appendChild(icon);
-
-  const body = document.createElement('div');
-  body.className = 'bookmark-body';
-  const label = document.createElement('span');
-  label.className = 'bookmark-label';
-  label.textContent = item.title || 'Untitled Folder';
-  body.appendChild(label);
+  const header = document.createElement('div');
+  header.className = 'item-header';
+  header.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
+  const name = document.createElement('span');
+  name.className = 'folder-title';
+  name.textContent = item.title || 'Untitled Folder';
+  header.appendChild(name);
+  el.appendChild(header);
 
   const allTags = [...(item.sharedTags || []), ...(item.tags || [])];
   if (allTags.length) {
     const tagsEl = document.createElement('div');
-    tagsEl.className = 'bookmark-tags';
+    tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, allTags);
-    body.appendChild(tagsEl);
+    el.appendChild(tagsEl);
   }
-
-  el.appendChild(body);
   return el;
 }
 
@@ -347,23 +341,22 @@ function createBoardSearchResultItem(item) {
     saveState();
   });
 
-  const icon = document.createElement('span');
-  icon.className = 'bookmark-favicon';
-  icon.style.cssText = 'font-size:1rem;display:grid;place-items:center;';
-  icon.textContent = '🗂️';
-  el.appendChild(icon);
-
-  const body = document.createElement('div');
-  body.className = 'bookmark-body';
-  const label = document.createElement('span');
-  label.className = 'bookmark-label';
-  label.textContent = item.title || 'Untitled Board';
-  body.appendChild(label);
+  const header = document.createElement('div');
+  header.className = 'item-header';
+  const boardIcon = document.createElement('span');
+  boardIcon.className = 'bookmark-favicon';
+  boardIcon.appendChild(icon('icon-board-add'));
+  header.appendChild(boardIcon);
+  const name = document.createElement('span');
+  name.className = 'bookmark-label';
+  name.textContent = item.title || 'Untitled Board';
+  header.appendChild(name);
+  el.appendChild(header);
 
   const allTags = [...(item.sharedTags || []), ...(item.tags || [])];
   if (allTags.length) {
     const tagsEl = document.createElement('div');
-    tagsEl.className = 'bookmark-tags';
+    tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, allTags);
     body.appendChild(tagsEl);
   }

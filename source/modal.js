@@ -181,8 +181,19 @@ function handleModalSubmit(event) {
     case 'moveToBoard': {
       const targetBoard = state.boards.find(b => b.id === elements.modalSelect.value);
       if (!targetBoard || !contextTarget?.item) break;
+      const area = contextTarget.area;
       const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
-      deleteBoardTarget(contextTarget);
+      capturedItem.type = 'bookmark';
+      if (!capturedItem.tags) capturedItem.tags = [];
+      if (area === 'speed-dial-item') {
+        const board = getActiveBoard();
+        board.speedDial = board.speedDial.filter(i => i.id !== contextTarget.itemId);
+      } else if (area === 'essential') {
+        removeEssential(contextTarget.slot);
+        trimEssentialsTail();
+      } else {
+        deleteBoardTarget(contextTarget);
+      }
       (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(capturedItem);
       break;
     }

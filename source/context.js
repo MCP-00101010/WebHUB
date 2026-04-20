@@ -289,9 +289,14 @@ function handleContextMenuAction(action) {
     }
     case 'moveToBoard': {
       const cab = getActiveBoard();
-      const boards = cab?.isImportManager
+      const area = contextTarget.area;
+      // Speed dial and essentials are not board-scoped, so offer all boards.
+      // Board items exclude the current board (already there); import manager gets all regular boards.
+      const boards = (area === 'speed-dial-item' || area === 'essential')
         ? state.boards.filter(b => !b.isImportManager)
-        : state.boards.filter(b => !b.isImportManager && b.id !== cab?.id);
+        : cab?.isImportManager
+          ? state.boards.filter(b => !b.isImportManager)
+          : state.boards.filter(b => !b.isImportManager && b.id !== cab?.id);
       showModal('moveToBoard', {
         title: 'Move to Board',
         showName: false,
@@ -413,6 +418,7 @@ function handleEssentialContextMenu(event, slot, item) {
         { label: 'Edit bookmark',    action: 'editEssential' },
         { label: 'Duplicate',        action: 'duplicateBookmark' },
         { label: 'Refresh favicon',  action: 'refreshFavicon' },
+        { label: 'Move to board',    action: 'moveToBoard' },
         { label: 'Delete bookmark',  action: 'deleteEssential' }
       ]
     : [{ label: 'Add bookmark', action: 'addEssential' }];
@@ -421,12 +427,17 @@ function handleEssentialContextMenu(event, slot, item) {
 
 function handleSpeedDialContextMenu(event, item) {
   contextTarget = { area: 'speed-dial-item', itemId: item.id, item };
-  showContextMenu(event.clientX, event.clientY, [
+  const cab = getActiveBoard();
+  const boards = state.boards.filter(b => !b.isImportManager);
+  const canMove = boards.length > 0;
+  const options = [
     { label: 'Edit bookmark',   action: 'editSpeedDial' },
     { label: 'Duplicate',       action: 'duplicateBookmark' },
     { label: 'Refresh favicon', action: 'refreshFavicon' },
-    { label: 'Delete bookmark', action: 'deleteSpeedDial' }
-  ]);
+  ];
+  if (canMove) options.push({ label: 'Move to board', action: 'moveToBoard' });
+  options.push({ label: 'Delete bookmark', action: 'deleteSpeedDial' });
+  showContextMenu(event.clientX, event.clientY, options);
 }
 
 function handleBoardColumnContextMenu(event, columnId) {
