@@ -6,10 +6,8 @@
 
 ## UI
 
-- bug: when bulk-deleting items in an folder-inbox, the confirmation dialogue is rendered underneath the column.
-
-- board tab bar as alternative navigation style (tabs across the top instead of sidebar list) — select a board folder in the navpane and the boards in that folder populate the tab bar
-- tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
+- New Feature: board tab bar as alternative navigation style (tabs across the top instead of sidebar list) — select a board folder in the navpane and the boards in that folder populate the tab bar
+- New Feature: tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
 
 ## Customization
 
@@ -22,8 +20,9 @@
 
 ## Drag and Drop
 
-- Visual: when dragging a bookmark from a column into speed dial / essentials no preview clone gets rendered.
+- Visual: when dragging a bookmark into speed dial/essentials no preview clone gets rendered. if the source is in a column, the preview clone sometimes gets stuck on top of the column rather than moving into speed dial or essentials.
 - Visual: when dragging a bookmark directly from firefox/zen into the hub, no preview clone gets rendered - only a blue outline were the bookmark will show up (if in a column) or no preview clone at all (in speed dial / essentials)
+- Logic: when dragging a folder with bookmarks directly from firefox/zen into the Hub, it does not import the folder but the first bookmark in the folder. Is importing folders in this way possible? does it work across all browsers?
 
 ## Firefox Extension — Remaining
 
@@ -120,7 +119,13 @@ Remaining widgets (not yet built):
 
 ---
 
-### Phase 9 — Advanced navigation & DnD *(in progress)*
+### Phase 9 — UI polish & modal standardization ✓ *Completed 2026-04-20*
+
+See [0.11.3] and [0.11.4] in CHANGELOG.
+
+---
+
+### Phase 10 — Advanced navigation *(in progress)*
 
 - Board tab bar (folder-selected boards populate the tab strip)
 - DnD live previews — ✓ done in [0.11.2]

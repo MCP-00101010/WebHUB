@@ -80,7 +80,8 @@ function handleContextMenuAction(action) {
         placeholder2: 'Bookmark URL',
         value2: contextTarget.item.url || '',
         showTags: true,
-        value3: (contextTarget.item.tags || []).join(' ')
+        value3: (contextTarget.item.tags || []).join(' '),
+        inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'deleteItem': {
@@ -140,10 +141,10 @@ function handleContextMenuAction(action) {
       showBoardSettingsPanel(true);
       break;
     case 'addNavFolder':
-      showModal('addFolder', { title: 'Add Navigation Folder', placeholder1: 'Folder title' });
+      showModal('addFolder', { title: 'Add Navigation Folder', placeholder1: 'New Folder' });
       break;
     case 'addNavTitle':
-      showModal('addTitle', { title: 'Add Navigation Title', placeholder1: 'Title text' });
+      showModal('addTitle', { title: 'Add Navigation Title', placeholder1: 'New Title' });
       break;
     case 'addNavDivider':
       pushUndoSnapshot();
@@ -156,13 +157,14 @@ function handleContextMenuAction(action) {
       break;
     case 'addBookmark':
       showModal('addBookmark', {
-        title: 'Add Bookmark', placeholder1: 'Bookmark title',
+        title: 'Add Bookmark', placeholder1: 'New Bookmark',
         showUrl: true, placeholder2: 'Bookmark URL',
-        showTags: true, contextTarget
+        showTags: true, contextTarget,
+        inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'addTitle':
-      showModal('addTitle', { title: 'Add Title', placeholder1: 'Title text', contextTarget });
+      showModal('addTitle', { title: 'Add Title', placeholder1: 'New Title', contextTarget });
       break;
     case 'addDivider':
       pushUndoSnapshot();
@@ -191,11 +193,11 @@ function handleContextMenuAction(action) {
       break;
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
-      showModal('addFolder', { title: 'Create Subfolder', placeholder1: 'Folder name' });
+      showModal('addFolder', { title: 'Create Subfolder', placeholder1: 'New Folder' });
       break;
     case 'addEssential':
       showModal('addBookmark', {
-        title: 'Add Bookmark', placeholder1: 'Bookmark title',
+        title: 'Add Bookmark', placeholder1: 'New Bookmark',
         showUrl: true, placeholder2: 'Bookmark URL', showTags: true
       });
       break;
@@ -266,8 +268,9 @@ function handleContextMenuAction(action) {
     }
     case 'addSpeedDialBookmark':
       showModal('addBookmark', {
-        title: 'Add Speed Dial Bookmark', placeholder1: 'Bookmark title',
-        showUrl: true, placeholder2: 'Bookmark URL', showTags: true, contextTarget
+        title: 'Add Speed Dial Bookmark', placeholder1: 'New Bookmark',
+        showUrl: true, placeholder2: 'Bookmark URL', showTags: true, contextTarget,
+        inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'editFolder':

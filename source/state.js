@@ -236,6 +236,25 @@ function findNavBoardItem(boardId, list = state.navItems) {
   return null;
 }
 
+function findNavParentFolder(boardId, list = state.navItems, parent = null) {
+  for (const item of list) {
+    if (item.type === 'board' && item.boardId === boardId) return parent;
+    if (item.type === 'folder' && Array.isArray(item.children)) {
+      const found = findNavParentFolder(boardId, item.children, item);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function collectFolderAncestorTags(board, folderId) {
+  if (!folderId || !board) return [];
+  const found = findBoardItemInColumns(board, folderId);
+  if (!found?.item) return [];
+  const parentTags = found.parent ? collectFolderAncestorTags(board, found.parent.id) : [];
+  return [...parentTags, ...(found.item.sharedTags || [])];
+}
+
 function findNextNavBoard(list) {
   for (const item of list) {
     if (item.type === 'board' && item.boardId) return item;

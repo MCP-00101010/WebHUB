@@ -1,3 +1,30 @@
+// --- Inherited tag helpers ---
+
+function getContextInheritedTags(contextTarget) {
+  const board = getActiveBoard();
+  if (!board) return [];
+  const area = contextTarget?.area;
+  if (area === 'speed-dial' || area === 'speed-dial-item') {
+    return [...(board.sharedTags || [])];
+  }
+  if (area === 'board-item' || area === 'board-empty' || area === 'board-subfolder') {
+    const boardTags = board.sharedTags || [];
+    let parentFolderId = null;
+    if (area === 'board-subfolder') parentFolderId = contextTarget.item?.id;
+    else if (contextTarget.parentId) parentFolderId = contextTarget.parentId;
+    const folderTags = parentFolderId ? collectFolderAncestorTags(board, parentFolderId) : [];
+    return [...new Set([...boardTags, ...folderTags])];
+  }
+  return [];
+}
+
+function getBoardInheritedTags() {
+  const board = getActiveBoard();
+  if (!board) return [];
+  const navParent = findNavParentFolder(board.id);
+  return navParent?.sharedTags || [];
+}
+
 // --- Tag autocomplete ---
 
 function getTagSuggestions(partial, input) {
@@ -64,6 +91,13 @@ function showModal(type, options = {}) {
     elements.modalSelect.value = options.selectValue || '';
   }
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
+  const inherited = options.inheritedTags || [];
+  const inheritedRow = document.getElementById('modalInheritedTagsRow');
+  const inheritedSpan = document.getElementById('modalInheritedTags');
+  if (inheritedRow && inheritedSpan) {
+    inheritedSpan.textContent = inherited.join(' ');
+    inheritedRow.classList.toggle('hidden', inherited.length === 0);
+  }
   if (showName) elements.modalInput1.focus();
   else if (options.showTags) elements.modalInput3.focus();
   else if (options.showSelect) elements.modalSelect.focus();
@@ -71,9 +105,11 @@ function showModal(type, options = {}) {
 
 function hideModal() {
   activeModal = null;
+  document.getElementById('modalCard').classList.add('hidden');
   elements.modalOverlay.classList.add('hidden');
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
+  document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
 function handleModalSubmit(event) {
@@ -206,6 +242,13 @@ function showFolderModal(mode, ct) {
   }
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('folderModalHeader'));
+  const inherited = getContextInheritedTags(contextTarget);
+  const fmInheritedRow = document.getElementById('fmInheritedTagsRow');
+  const fmInheritedSpan = document.getElementById('fmInheritedTags');
+  if (fmInheritedRow && fmInheritedSpan) {
+    fmInheritedSpan.textContent = inherited.join(' ');
+    fmInheritedRow.classList.toggle('hidden', inherited.length === 0);
+  }
   document.getElementById('fmName').focus();
 }
 
@@ -259,7 +302,7 @@ function openExternalBookmarkModal(url, title, target) {
   contextTarget = target;
   showModal('addBookmark', {
     title: 'Add Bookmark',
-    placeholder1: 'Bookmark title',
+    placeholder1: 'New Bookmark',
     value1: title,
     showUrl: true,
     placeholder2: 'Bookmark URL',

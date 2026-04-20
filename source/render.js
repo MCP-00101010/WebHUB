@@ -566,7 +566,7 @@ function createNavItem(item, depth = 0, parent = null) {
     collapseBtn.className = 'collapse-btn';
     collapseBtn.title = item.collapsed ? 'Expand' : 'Collapse';
     collapseBtn.setAttribute('aria-label', item.collapsed ? 'Expand folder' : 'Collapse folder');
-    collapseBtn.appendChild(icon(item.collapsed ? 'icon-chevron-right' : 'icon-chevron-down'));
+    collapseBtn.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
     collapseBtn.addEventListener('click', event => {
       event.stopPropagation();
       item.collapsed = !item.collapsed;

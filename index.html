@@ -75,6 +75,17 @@
         <polyline points="9 6 15 12 9 18"/>
       </symbol>
 
+      <!-- Closed folder (collapsed state) -->
+      <symbol id="icon-folder-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </symbol>
+
+      <!-- Open folder (expanded state): back panel with tab + open front panel -->
+      <symbol id="icon-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 6a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v1H2z"/>
+        <path d="M2 10h20v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9z"/>
+      </symbol>
+
       <!-- Chevron left (collapse sidebar) -->
       <symbol id="icon-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="15 18 9 12 15 6"/>
@@ -143,7 +154,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.3</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.4</button>
       </div>
     </aside>
 
@@ -200,6 +211,10 @@
             <div id="tagSuggestions" class="tag-suggestions hidden"></div>
           </div>
         </div>
+        <div class="form-row hidden" id="modalInheritedTagsRow">
+          <label>Inherited</label>
+          <span id="modalInheritedTags" class="modal-inherited-tags"></span>
+        </div>
         <div class="form-row hidden" id="modalSelectRow">
           <label id="modalSelectLabel" for="modalSelect">Select</label>
           <select id="modalSelect"></select>
@@ -240,18 +255,29 @@
 
         <div class="settings-section">
           <div class="settings-section-label">Tags</div>
-          <div class="settings-row">
-            <span>Shared tags</span>
-            <input id="bstgSharedTags" type="text" class="settings-text-input" placeholder="topic category" />
+          <div class="settings-row hidden" id="bstgInheritedTagsRow">
+            <span>Inherited</span>
+            <span id="bstgInheritedTags" class="modal-inherited-tags"></span>
           </div>
           <div class="settings-row">
             <span>Tags</span>
             <input id="bstgTags" type="text" class="settings-text-input" placeholder="for-later urgent" />
           </div>
           <div class="settings-row">
-            <span>Pass tags to children</span>
+            <span>Shared tags</span>
+            <input id="bstgSharedTags" type="text" class="settings-text-input" placeholder="topic category" />
+          </div>
+          <div class="settings-row">
+            <span>Pass to items <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are added to all items it contains. Items created or moved here receive these tags automatically.">?</span></span>
             <label class="settings-toggle">
               <input id="bstgInheritTags" type="checkbox" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are removed from items moved out of this board.">?</span></span>
+            <label class="settings-toggle">
+              <input id="bstgAutoRemove" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
@@ -288,15 +314,17 @@
 
     <div id="settingsPanel" class="settings-panel hidden">
       <div class="settings-header" id="stgDragHandle">
-        <h3>Global Settings</h3>
+        <input id="stgHubName" class="settings-hub-name-input" type="text" placeholder="My WebHub" />
         <div class="settings-tabs">
-          <button type="button" class="settings-tab active" data-tab="style">Style</button>
-          <button type="button" class="settings-tab" data-tab="behavior">Behavior</button>
+          <button type="button" class="settings-tab active" data-tab="general">General</button>
+          <button type="button" class="settings-tab" data-tab="tag-manager">Tag Manager</button>
+          <button type="button" class="settings-tab" data-tab="theme">Theme</button>
+          <button type="button" class="settings-tab" data-tab="style">Style</button>
         </div>
       </div>
-      <div class="settings-body" data-active-tab="style">
+      <div class="settings-body" data-active-tab="general">
 
-        <div class="settings-section span-full" data-tab="style">
+        <div class="settings-section span-full" data-tab="theme">
           <div class="settings-section-label">Theme</div>
           <div id="stgThemePicker" class="theme-picker"></div>
           <div class="theme-picker-actions">
@@ -307,10 +335,6 @@
 
         <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Hub</div>
-          <div class="settings-row">
-            <span>Hub Name</span>
-            <input id="stgHubName" type="text" class="settings-text-input" placeholder="My WebHub" />
-          </div>
           <div class="settings-row">
             <span>Font size</span>
             <div class="settings-number-group">
@@ -560,7 +584,7 @@
           </div>
         </div>
 
-        <div class="settings-section" data-tab="behavior">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Icon Sizes</div>
           <div class="settings-row">
             <span>Speed Dial</span>
@@ -580,7 +604,7 @@
           </div>
         </div>
 
-        <div class="settings-section" data-tab="behavior">
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Essentials</div>
           <div class="settings-row">
             <span>Show Essentials</span>
@@ -600,8 +624,8 @@
           <div id="stgEssHiddenWarning" class="settings-warning hidden">Some stored essentials are hidden — their slot index exceeds the current display count.</div>
         </div>
 
-        <div class="settings-section span-full" data-tab="behavior">
-          <div class="settings-section-label">Behaviour</div>
+        <div class="settings-section span-full" data-tab="general">
+          <div class="settings-section-label">General</div>
           <div class="settings-row">
             <span>Warn on close if unsaved</span>
             <label class="settings-toggle">
@@ -632,12 +656,12 @@
           </div>
         </div>
 
-        <div class="settings-section span-full" data-tab="style">
-          <div class="settings-section-label">Tag Colors</div>
-          <div id="stgTagColors" class="tag-colors-list"></div>
+        <div class="settings-section span-full" data-tab="tag-manager">
+          <div class="settings-section-label">Tag Manager</div>
+          <p class="settings-muted" style="padding:8px 0;">Coming soon.</p>
         </div>
 
-        <div class="settings-section span-full" data-tab="behavior">
+        <div class="settings-section span-full" data-tab="general">
           <div class="settings-section-label">Data</div>
           <div class="settings-row">
             <span>Export data</span>
@@ -667,7 +691,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.11.3</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.11.4</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -678,26 +702,30 @@
 
     <div id="folderModal" class="settings-panel hidden">
       <div id="folderModalHeader" class="settings-header folder-modal-header">
-        <input id="fmName" type="text" class="bstg-title-input" placeholder="Folder name" />
+        <input id="fmName" type="text" class="bstg-title-input" placeholder="New Folder" />
       </div>
       <div class="folder-modal-body">
+        <div class="settings-row hidden" id="fmInheritedTagsRow">
+          <span>Inherited</span>
+          <span id="fmInheritedTags" class="modal-inherited-tags"></span>
+        </div>
         <div class="settings-row">
           <span>Tags</span>
           <input id="fmTags" type="text" class="settings-text-input" placeholder="tag1 tag2" />
         </div>
         <div class="settings-row">
-          <span>Shared Tags</span>
+          <span>Shared tags</span>
           <input id="fmSharedTags" type="text" class="settings-text-input" placeholder="tag1 tag2" />
         </div>
         <div class="settings-row">
-          <span>Pass shared tags to children</span>
+          <span>Pass to children <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are added to all items inside it. Items created or moved here receive these tags automatically.">?</span></span>
           <label class="settings-toggle">
             <input id="fmInheritTags" type="checkbox" checked />
             <span class="toggle-track"></span>
           </label>
         </div>
         <div class="settings-row">
-          <span>Strip shared tags on move out</span>
+          <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are removed from items moved out of this folder.">?</span></span>
           <label class="settings-toggle">
             <input id="fmAutoRemove" type="checkbox" />
             <span class="toggle-track"></span>

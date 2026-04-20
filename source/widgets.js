@@ -132,6 +132,7 @@ function openWidgetSettings(widget, onRefresh) {
   body.innerHTML   = '';
   def.renderSettings(widget, body);
 
+  document.getElementById('modalCard').classList.add('hidden');
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
@@ -199,6 +200,7 @@ function openWidgetPicker(context, onSelect) {
     list.appendChild(btn);
   });
 
+  document.getElementById('modalCard').classList.add('hidden');
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);

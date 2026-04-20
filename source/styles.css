@@ -638,6 +638,8 @@ button {
   text-align: center;
 }
 
+#confirmOverlay { z-index: 250; }
+
 .confirm-card p {
   margin: 0 0 20px;
   line-height: 1.5;
@@ -922,6 +924,8 @@ button {
 
 .collapse-btn svg {
   pointer-events: none;
+  width: 16px;
+  height: 16px;
 }
 
 .nav-item[data-type="board"] {
@@ -1649,6 +1653,10 @@ button {
   cursor: grab;
   user-select: none;
 }
+.settings-header .settings-hub-name-input {
+  user-select: text;
+  cursor: text;
+}
 
 .settings-header:active {
   cursor: grabbing;
@@ -1681,9 +1689,31 @@ button {
   color: #fff;
 }
 
-.settings-body[data-active-tab="style"] .settings-section[data-tab="behavior"] { display: none; }
-.settings-body[data-active-tab="behavior"] .settings-section[data-tab="style"] { display: none; }
-.settings-body[data-active-tab="behavior"] { grid-template-columns: repeat(2, 1fr); }
+.settings-body[data-active-tab="general"]     .settings-section:not([data-tab="general"])     { display: none; }
+.settings-body[data-active-tab="tag-manager"] .settings-section:not([data-tab="tag-manager"]) { display: none; }
+.settings-body[data-active-tab="theme"]       .settings-section:not([data-tab="theme"])       { display: none; }
+.settings-body[data-active-tab="style"]       .settings-section:not([data-tab="style"])       { display: none; }
+.settings-body[data-active-tab="general"]     { grid-template-columns: repeat(2, 1fr); }
+.settings-body[data-active-tab="tag-manager"] { grid-template-columns: 1fr; }
+.settings-body[data-active-tab="theme"]       { grid-template-columns: 1fr; }
+
+.settings-hub-name-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  min-width: 0;
+  flex: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: text;
+}
+.settings-hub-name-input:focus {
+  background: var(--panel-strong);
+  outline: 1px solid var(--accent);
+}
 
 /* --- Icon size radio buttons --- */
 
@@ -1779,6 +1809,34 @@ button {
 }
 
 /* --- Phase 3: Bookmark management --- */
+
+/* Inherited tags read-only display */
+.modal-inherited-tags {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* Tooltip trigger icon in modal labels */
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-style: normal;
+  cursor: default;
+  vertical-align: middle;
+  margin-left: 3px;
+  flex-shrink: 0;
+}
 
 /* Duplicate URL warning in modal */
 .modal-duplicate-warning {

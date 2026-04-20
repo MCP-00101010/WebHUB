@@ -22,9 +22,17 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
-  document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
   document.getElementById('bstgTags').value = (board.tags || []).join(' ');
+  document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
   document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
+  document.getElementById('bstgAutoRemove').checked = board.autoRemoveTags === true;
+  const bstgInherited = getBoardInheritedTags();
+  const bstgInheritedRow = document.getElementById('bstgInheritedTagsRow');
+  const bstgInheritedSpan = document.getElementById('bstgInheritedTags');
+  if (bstgInheritedRow && bstgInheritedSpan) {
+    bstgInheritedSpan.textContent = bstgInherited.join(' ');
+    bstgInheritedRow.classList.toggle('hidden', bstgInherited.length === 0);
+  }
 }
 
 function hideBoardSettingsPanel() {
@@ -168,6 +176,12 @@ function attachBoardSettingsListeners() {
     if (!board) return;
     board.inheritTags = e.target.checked;
     renderBoard();
+  });
+
+  document.getElementById('bstgAutoRemove').addEventListener('change', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    board.autoRemoveTags = e.target.checked;
   });
 
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
@@ -334,7 +348,6 @@ function showSettingsPanel() {
   if (essSizeRadio) essSizeRadio.checked = true;
   document.getElementById('stgShowEssentials').checked = s.showEssentials !== false;
   document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
-  populateTagColors();
   updateLastExportedLabel();
   updateEssentialsWarning();
   renderThemePicker();

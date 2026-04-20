@@ -5,6 +5,23 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.4] — 2026-04-20
+
+### Added
+
+- **Settings: Global Settings restructure** — tabs reorganised to General / Tag Manager / Theme / Style; hub name is now an editable field in the panel header; Icon Sizes and Essentials moved to Style tab; Tag Colors section removed (placeholder reserved for future Tag Manager feature)
+- **Settings: Board settings — autoRemoveTags toggle** — boards now expose a "Strip on move out" toggle matching the existing folder behaviour
+- **Settings: Board settings — inherited tags display** — boards inside a nav folder now show the folder's shared tags as a read-only "Inherited" row
+- **Modals: inherited tags display** — bookmark, folder, and board create/edit modals now show a read-only "Inherited" row listing tags the item will receive from its parent folder or board
+- **Modals: tooltip icons** — "Pass to children/items" and "Strip on move out" toggles in folder and board modals now carry `?` tooltip icons explaining the mechanics
+- **Folder icons** — folder expand/collapse indicators replaced with distinct open/closed folder SVG icons instead of generic chevrons
+
+### Changed
+
+- **Modals: create placeholders** — all create modals now use "New \<type>" placeholder text (New Bookmark, New Folder, New Title) instead of generic labels
+- **Bugs fixed: confirm dialog z-index** — confirmation dialog now renders above the inbox panel (z-index 250 vs. 200)
+- **Bugs fixed: cancelled modal ghost** — `hideModal()` now explicitly hides `#modalCard`; widget panels hide it before showing, preventing stale modal content appearing behind a new panel
+
 ## [0.11.3] — 2026-04-19
 
 ### Fixed
