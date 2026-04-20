@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.14] — 2026-04-20
+
+### Fixed
+
+- **Tag input backspace** — autocomplete suggestions are now dismissed (not deleted) when backspace is pressed; subsequent backspace strokes correctly erase typed characters; backspace on an empty chip input still pops the last chip back to editable text and further backspacing works normally
+
+---
+
 ## [0.11.13] — 2026-04-20
 
 ### Changed

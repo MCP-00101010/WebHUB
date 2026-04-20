@@ -49,8 +49,9 @@ function renderTagSuggestions(input) {
 }
 
 function attachTagAutocomplete(input) {
-  input.addEventListener('input', () => renderTagSuggestions(input));
+  let lastKey = null;
   input.addEventListener('keydown', e => {
+    lastKey = e.key;
     const start = input.selectionStart;
     const end = input.selectionEnd;
     if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === input.value.length) {
@@ -58,7 +59,16 @@ function attachTagAutocomplete(input) {
       const accepted = input.value.slice(0, end);
       input.value = accepted + ' ';
       input.setSelectionRange(accepted.length + 1, accepted.length + 1);
+    } else if (e.key === 'Backspace' && start !== end && end === input.value.length) {
+      // dismiss autocomplete suggestion without deleting typed text
+      e.preventDefault();
+      input.value = input.value.slice(0, start);
+      input.setSelectionRange(start, start);
     }
+  });
+  input.addEventListener('input', () => {
+    if (lastKey === 'Backspace' || lastKey === 'Delete') return;
+    renderTagSuggestions(input);
   });
 }
 
