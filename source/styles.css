@@ -1067,15 +1067,16 @@ button {
 }
 
 .tag-section {
-  padding: 10px 12px;
+  padding: 8px;
   gap: 8px;
 }
 
 .tag-section-fields {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 6px 8px;
+  grid-template-columns: min-content 1fr;
+  gap: 6px 4px;
   align-items: center;
+  width: 100%;
 }
 
 .tag-field-row {
@@ -1083,11 +1084,10 @@ button {
 }
 
 .tag-field-row > label {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   text-align: right;
   white-space: nowrap;
-  padding-right: 2px;
 }
 
 .tag-field-row .tags-input-container {

@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.10] — 2026-04-20
+
+### Changed
+
+- **Tag section field width** — reduced section padding and column gap so entry fields use ~90% of the box width; label font tightened to minimise column footprint
+
+---
+
 ## [0.11.9] — 2026-04-20
 
 ### Changed
