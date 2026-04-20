@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.15] — 2026-04-20
+
+### Fixed
+
+- **DnD stuck preview** — dragging a board item into an empty speed-dial no longer leaves the column preview clone behind; `handleSpeedDialContainerDragOver` now inserts a placeholder and clears prior previews instead of returning early when speed-dial has no items
+- **DnD stuck preview (essentials)** — entering an essentials slot now calls `removeDragPlaceholders()` on first entry so any column preview is cleared before the slot highlight appears
+
+---
+
 ## [0.11.14] — 2026-04-20
 
 ### Fixed

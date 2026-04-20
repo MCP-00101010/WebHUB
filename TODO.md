@@ -20,9 +20,9 @@
 
 ## Drag and Drop
 
-- Visual: when dragging a bookmark into speed dial/essentials no preview clone gets rendered. if the source is in a column, the preview clone sometimes gets stuck on top of the column rather than moving into speed dial or essentials.
-- Visual: when dragging a bookmark directly from firefox/zen into the hub, no preview clone gets rendered - only a blue outline were the bookmark will show up (if in a column) or no preview clone at all (in speed dial / essentials)
-- Logic: when dragging a folder with bookmarks directly from firefox/zen into the Hub, it does not import the folder but the first bookmark in the folder. Is importing folders in this way possible? does it work across all browsers?
+- ✓ *Fixed 2026-04-20* — Visual: column preview clone stuck when dragging to empty speed-dial or essentials. Fixed by handling the empty speed-dial case in `handleSpeedDialContainerDragOver` and calling `removeDragPlaceholders()` on first entry into an essentials cell.
+- Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover` — only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
+- Known limitation: dragging a bookmark folder from Firefox/Zen only imports the first bookmark, not the folder structure. The HTML DnD API only exposes `text/x-moz-url` / `text/uri-list` (single URL) for browser bookmark drags — folder structure is not accessible. Full folder import would require the Firefox extension to intercept the drag and relay the bookmark tree.
 
 ## Firefox Extension — Remaining
 

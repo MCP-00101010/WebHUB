@@ -436,6 +436,7 @@ function renderEssentials() {
       if (dragPayload?.area === 'nav') return;
       event.preventDefault();
       event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
+      if (!cell.classList.contains('drop-target')) removeDragPlaceholders();
       cell.classList.add('drop-target');
     });
     cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));

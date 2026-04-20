@@ -664,7 +664,14 @@ function handleSpeedDialContainerDragOver(event) {
   event.dataTransfer.dropEffect = 'move';
 
   const linkEls = Array.from(elements.speedDial.querySelectorAll('.speed-link:not(.drag-preview)'));
-  if (linkEls.length === 0) return;
+  if (linkEls.length === 0) {
+    if (_dropTarget === elements.speedDial && _dropPos === 'end') return;
+    removeDragPlaceholders();
+    _dropTarget = elements.speedDial;
+    _dropPos = 'end';
+    _insertDragPreview(createDragPlaceholder('speed-dial'), elements.speedDial, null);
+    return;
+  }
 
   let nearestEl = linkEls[linkEls.length - 1];
   let nearestPos = 'after';
