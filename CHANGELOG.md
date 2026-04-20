@@ -5,6 +5,24 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.5] — 2026-04-21
+
+### Added
+
+- **Tag Manager panel** in Settings → Tag Manager tab: replaces "Coming soon" placeholder
+- **Tag groups**: create named groups with a colour swatch, lock toggle, and × delete button; each group has a chip input for adding tags (chips render in group colour)
+- **Unsorted category**: always-visible read-only section at the bottom showing all tags not assigned to any group; shows "All tags are grouped." when empty
+- **Tag sort per group**: sort icon button on each group header opens a dropdown — A→Z, Z→A, Most used (by bookmark count); active sort shown with accent checkmark in dropdown
+- **Tag chip context menu**: right-click any chip in the tag manager to get a "Move to group" menu listing all other groups with colour dots
+- **Undo/redo in tag manager**: undo/redo buttons in the Tag Groups header row; all mutations push undo snapshots; synced with global undo stack
+- **Settings panel fixed height**: 720 px tall regardless of active tab
+
+### Changed
+
+- `updateUndoRedoUI` now syncs `#stgUndoBtn` / `#stgRedoBtn` in addition to the main toolbar buttons
+
+---
+
 ## [0.11.4] — 2026-04-20
 
 ### Added

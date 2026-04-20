@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.4';
+const APP_VERSION = '0.11.5';
 
 let activeModal = null;
 let contextTarget = null;
@@ -68,10 +68,10 @@ function redo() {
 }
 
 function updateUndoRedoUI() {
-  const undoBtn = document.getElementById('undoBtn');
-  const redoBtn = document.getElementById('redoBtn');
-  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
-  if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  const canUndo = undoStack.length === 0;
+  const canRedo = redoStack.length === 0;
+  ['undoBtn', 'stgUndoBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = canUndo; });
+  ['redoBtn', 'stgRedoBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = canRedo; });
   updateTrashBadge();
 }
 

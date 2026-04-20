@@ -126,6 +126,12 @@
         <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
       </symbol>
 
+      <symbol id="icon-sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="14" y2="12"/>
+        <line x1="4" y1="18" x2="9" y2="18"/>
+      </symbol>
+
       <symbol id="icon-lock-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
         <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -180,7 +186,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.4</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.5</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -704,8 +710,19 @@
         </div>
 
         <div class="settings-section span-full" data-tab="tag-manager">
-          <div class="settings-section-label">Tag Manager</div>
-          <p class="settings-muted" style="padding:8px 0;">Coming soon.</p>
+          <div class="settings-section-label settings-section-label--row">
+            Tag Groups
+            <button type="button" id="stgAddGroupBtn" class="secondary-btn" style="font-size:0.78rem;padding:3px 10px;">+ Add Group</button>
+            <span class="stg-tag-actions">
+              <button type="button" id="stgUndoBtn" class="icon-btn" title="Undo" disabled>
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-undo"/></svg>
+              </button>
+              <button type="button" id="stgRedoBtn" class="icon-btn" title="Redo" disabled>
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-redo"/></svg>
+              </button>
+            </span>
+          </div>
+          <div id="tagGroupList"></div>
         </div>
 
         <div class="settings-section span-full" data-tab="general">
@@ -729,7 +746,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.4</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.5</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
         </div>

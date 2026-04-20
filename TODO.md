@@ -65,9 +65,38 @@
 
 ## Tag Manager
 
+### Core panel
+
 - Tag Manager panel: list all known tags; click a tag to see which items carry it; rename/delete globally; assign to groups; drag tags between groups
-- Tag categories & colours: predefined tag groups (science, ratings, fiction-genres, etc.) each with an assigned colour; tags inherit group colour; tag category editor in settings
+- Tag categories & colors: predefined tag groups (science, ratings, fiction-genres, etc.) each with an assigned color; tags inherit group color; tag category editor in settings
 - Per-item "ignore inheritance" toggle (deferred — implement once core inherit/auto-remove has been stable; edge case for children of an ignoring folder needs design)
+
+### Filtering & discovery
+
+- Sort tags by usage count (most-used first), name, or group
+- Search/filter the tag list as you type
+- Orphan tag detection — highlight tags with zero items; bulk-clean option to remove them all
+
+### Bulk operations
+
+- Merge tags — combine two tags into one, rewriting all affected items
+- Replace — swap one tag for another across all items
+- Multi-select tags → batch delete or batch group-assign
+
+### Tag detail view
+
+- Click a tag → slide-in panel listing every item that carries it
+- From that panel: remove the tag from individual items, or navigate directly to the board the item lives in
+
+### Groups / categories
+
+- Collapse/expand groups in the tag list
+- Ungrouped bucket at the bottom for loose tags
+- Group color picker — items display a color dot matching their tag's group
+
+### Smart suggestions
+
+- When tagging a bookmark, suggest tags already common on other items in the same board
 
 ---
 

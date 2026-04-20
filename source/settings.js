@@ -358,6 +358,7 @@ function showSettingsPanel(tab = 'general') {
   updateLastExportedLabel();
   updateEssentialsWarning();
   renderThemePicker();
+  renderTagGroups();
 }
 
 function hideSettingsPanel() {
@@ -406,6 +407,368 @@ function populateTagColors() {
     row.appendChild(group);
     container.appendChild(row);
   });
+}
+
+function applyGroupColor(chip, color) {
+  chip.style.background = hexToRgba(color, 0.15);
+  chip.style.color = color;
+}
+
+function setGroupLocked(block, locked) {
+  block.querySelector('.tag-group-name-input').disabled = locked;
+  block.querySelector('.tag-group-del-btn').disabled = locked;
+  const textInput = block.querySelector('.chip-text-input');
+  if (textInput) textInput.disabled = locked;
+}
+
+let _tagSortMenu = null;
+
+function hideTagSortMenu() {
+  if (_tagSortMenu) { _tagSortMenu.remove(); _tagSortMenu = null; }
+  document.removeEventListener('mousedown', _tagSortMenuOutside, true);
+}
+
+function _tagSortMenuOutside(e) {
+  if (_tagSortMenu && !_tagSortMenu.contains(e.target)) hideTagSortMenu();
+}
+
+const TAG_SORT_LABELS = { az: 'A → Z', za: 'Z → A', count: 'Most used' };
+
+function showTagSortMenu(anchorEl, group) {
+  hideTagSortMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;';
+
+  ['az', 'za', 'count'].forEach(mode => {
+    const btn = document.createElement('button');
+    const isActive = group.tagSort === mode;
+    btn.style.display = 'flex';
+    btn.style.alignItems = 'center';
+    btn.style.gap = '8px';
+    if (isActive) btn.style.color = 'var(--accent)';
+    const check = document.createElement('span');
+    check.textContent = '✓';
+    check.style.cssText = `visibility:${isActive ? 'visible' : 'hidden'};font-size:0.85rem;flex-shrink:0;`;
+    btn.appendChild(check);
+    btn.appendChild(document.createTextNode(TAG_SORT_LABELS[mode]));
+    btn.addEventListener('click', () => {
+      hideTagSortMenu();
+      group.tagSort = (group.tagSort === mode) ? null : mode;
+      saveState();
+      renderTagGroups();
+    });
+    menu.appendChild(btn);
+  });
+
+  document.body.appendChild(menu);
+  _tagSortMenu = menu;
+  const rect = anchorEl.getBoundingClientRect();
+  let left = rect.left, top = rect.bottom + 2;
+  menu.style.left = '0'; menu.style.top = '0';
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  left = Math.min(left, window.innerWidth - mw - 4);
+  top = Math.min(top, window.innerHeight - mh - 4);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  document.addEventListener('mousedown', _tagSortMenuOutside, true);
+}
+
+let _tagChipMenu = null;
+
+function hideTagChipMenu() {
+  if (_tagChipMenu) { _tagChipMenu.remove(); _tagChipMenu = null; }
+  document.removeEventListener('mousedown', _tagChipMenuOutside, true);
+}
+
+function _tagChipMenuOutside(e) {
+  if (_tagChipMenu && !_tagChipMenu.contains(e.target)) hideTagChipMenu();
+}
+
+function showTagChipContextMenu(x, y, tag, sourceGroupIdx) {
+  hideTagChipMenu();
+  const groups = state.settings.tagGroups || [];
+  const targets = groups.filter((_, i) => i !== sourceGroupIdx);
+
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'padding:4px 12px 2px;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);pointer-events:none;';
+  header.textContent = 'Move to group';
+  menu.appendChild(header);
+
+  if (!targets.length) {
+    const empty = document.createElement('button');
+    empty.textContent = 'No other groups';
+    empty.disabled = true;
+    menu.appendChild(empty);
+  } else {
+    targets.forEach(group => {
+      const btn = document.createElement('button');
+      btn.style.display = 'flex';
+      btn.style.alignItems = 'center';
+      btn.style.gap = '7px';
+      if (group.color) {
+        const dot = document.createElement('span');
+        dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${group.color};flex-shrink:0;`;
+        btn.appendChild(dot);
+      }
+      btn.appendChild(document.createTextNode(group.name || '(unnamed)'));
+      btn.addEventListener('click', () => {
+        hideTagChipMenu();
+        pushUndoSnapshot();
+        if (sourceGroupIdx !== -1) {
+          const src = groups[sourceGroupIdx];
+          if (src) src.tags = (src.tags || []).filter(t => t !== tag);
+        }
+        if (!group.tags) group.tags = [];
+        if (!group.tags.includes(tag)) group.tags.push(tag);
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+      });
+      menu.appendChild(btn);
+    });
+  }
+
+  document.body.appendChild(menu);
+  _tagChipMenu = menu;
+  menu.style.left = '0';
+  menu.style.top = '0';
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.left = `${Math.min(x, window.innerWidth - mw - 4)}px`;
+  menu.style.top  = `${Math.min(y, window.innerHeight - mh - 4)}px`;
+  document.addEventListener('mousedown', _tagChipMenuOutside, true);
+}
+
+function buildTagCounts() {
+  const counts = {};
+  const tally = items => { for (const item of (items || [])) { (item?.tags || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }); if (item?.children) tally(item.children); } };
+  tally(state.essentials);
+  for (const board of state.boards) { tally(board.speedDial); for (const col of board.columns) tally(col.items); }
+  return counts;
+}
+
+function sortGroupTags(tags, mode, counts) {
+  if (!mode) return [...tags];
+  const list = [...tags];
+  if (mode === 'az') list.sort((a, b) => a.localeCompare(b));
+  else if (mode === 'za') list.sort((a, b) => b.localeCompare(a));
+  else if (mode === 'count') list.sort((a, b) => (counts[b] || 0) - (counts[a] || 0));
+  return list;
+}
+
+function renderTagGroups() {
+  if (!state.settings.tagGroups) state.settings.tagGroups = [];
+  const list = document.getElementById('tagGroupList');
+  list.innerHTML = '';
+  const groups = state.settings.tagGroups;
+  const tagCounts = buildTagCounts();
+
+  if (!groups.length) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-muted';
+    empty.style.padding = '4px 0 8px';
+    empty.textContent = 'No groups yet. Click + Add Group to create one.';
+    list.appendChild(empty);
+  }
+
+  groups.forEach((group, idx) => {
+    const block = document.createElement('div');
+    block.className = 'tag-group-block';
+
+    // Header row
+    const header = document.createElement('div');
+    header.className = 'tag-group-header';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'tag-group-name-input';
+    nameInput.value = group.name || '';
+    nameInput.placeholder = 'Group name';
+    nameInput.disabled = !!group.locked;
+    nameInput.addEventListener('focus', () => pushUndoSnapshot());
+    nameInput.addEventListener('input', () => { group.name = nameInput.value; saveState(); updateUndoRedoUI(); });
+
+    // Sort button
+    const sortBtn = document.createElement('button');
+    sortBtn.type = 'button';
+    sortBtn.className = 'icon-btn tag-group-sort-btn';
+    sortBtn.title = group.tagSort ? `Sort: ${TAG_SORT_LABELS[group.tagSort]}` : 'Sort tags';
+    sortBtn.classList.toggle('active', !!group.tagSort);
+    sortBtn.innerHTML = '<svg width="14" height="14" aria-hidden="true"><use href="#icon-sort"/></svg>';
+    sortBtn.addEventListener('click', () => showTagSortMenu(sortBtn, group));
+
+    // Color swatch + hidden native color picker
+    const colorWrap = document.createElement('span');
+    colorWrap.className = 'tag-group-color-wrap';
+    const colorSwatch = document.createElement('button');
+    colorSwatch.type = 'button';
+    colorSwatch.className = 'tag-group-color-swatch';
+    colorSwatch.style.background = group.color || '#6d7cff';
+    colorSwatch.title = 'Pick group color';
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.value = group.color || '#6d7cff';
+    colorInput.style.cssText = 'position:absolute;opacity:0;pointer-events:none;width:0;height:0;';
+    colorSwatch.addEventListener('click', () => { pushUndoSnapshot(); colorInput.click(); });
+    colorInput.addEventListener('input', () => {
+      group.color = colorInput.value;
+      colorSwatch.style.background = colorInput.value;
+      block.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, colorInput.value));
+      saveState();
+      updateUndoRedoUI();
+    });
+    colorWrap.appendChild(colorSwatch);
+    colorWrap.appendChild(colorInput);
+
+    // Lock toggle
+    const lockWrap = document.createElement('span');
+    lockWrap.className = 'tag-group-lock-wrap';
+    const lockLbl = document.createElement('span');
+    lockLbl.className = 'settings-muted';
+    lockLbl.textContent = 'Lock';
+    const lockToggle = document.createElement('label');
+    lockToggle.className = 'settings-toggle';
+    const lockCheck = document.createElement('input');
+    lockCheck.type = 'checkbox';
+    lockCheck.checked = !!group.locked;
+    const lockTrack = document.createElement('span');
+    lockTrack.className = 'toggle-track';
+    lockToggle.appendChild(lockCheck);
+    lockToggle.appendChild(lockTrack);
+    lockCheck.addEventListener('change', () => {
+      pushUndoSnapshot();
+      group.locked = lockCheck.checked;
+      setGroupLocked(block, group.locked);
+      saveState();
+      updateUndoRedoUI();
+    });
+    lockWrap.appendChild(lockLbl);
+    lockWrap.appendChild(lockToggle);
+
+    // Delete button
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'icon-btn tag-group-del-btn';
+    delBtn.title = 'Delete group';
+    delBtn.textContent = '×';
+    delBtn.disabled = !!group.locked;
+    delBtn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      state.settings.tagGroups.splice(idx, 1);
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+    });
+
+    header.appendChild(nameInput);
+    header.appendChild(sortBtn);
+    header.appendChild(colorWrap);
+    header.appendChild(lockWrap);
+    header.appendChild(delBtn);
+
+    // Tag chip input — display sorted, store in original order
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'text';
+    hiddenInput.placeholder = 'Add tags…';
+    hiddenInput.value = sortGroupTags(group.tags || [], group.tagSort, tagCounts).join(' ');
+
+    block.appendChild(header);
+    block.appendChild(hiddenInput);
+    list.appendChild(block);
+
+    initChipInput(hiddenInput);
+
+    const wrapper = block.querySelector('.chip-input-wrapper');
+    if (wrapper) {
+      const color = group.color || '#6d7cff';
+      wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, color));
+      const observer = new MutationObserver(() => {
+        wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, group.color || '#6d7cff'));
+      });
+      observer.observe(wrapper, { childList: true });
+      if (group.locked) {
+        const textInput = wrapper.querySelector('.chip-text-input');
+        if (textInput) textInput.disabled = true;
+      }
+    }
+
+    // Attach contextmenu to chips — existing ones immediately, future via observer
+    const attachChipCtx = chip => {
+      if (chip.dataset.ctx) return;
+      chip.dataset.ctx = '1';
+      chip.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const tag = chip.querySelector('span')?.textContent?.trim();
+        if (tag) showTagChipContextMenu(e.clientX, e.clientY, tag, idx);
+      });
+    };
+    if (wrapper) {
+      wrapper.querySelectorAll('.chip-live').forEach(attachChipCtx);
+      new MutationObserver(() => wrapper.querySelectorAll('.chip-live').forEach(attachChipCtx))
+        .observe(wrapper, { childList: true });
+    }
+
+    hiddenInput.addEventListener('input', () => {
+      pushUndoSnapshot();
+      const newSet = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
+      // Preserve insertion order: keep existing, remove deleted, append new
+      const kept = (group.tags || []).filter(t => newSet.has(t));
+      const added = [...newSet].filter(t => !kept.includes(t));
+      group.tags = [...kept, ...added];
+      saveState();
+      updateUndoRedoUI();
+    });
+  });
+
+  // --- Unsorted block (always shown) ---
+  const allTags = new Set();
+  const walkAll = items => { for (const item of (items || [])) { (item?.tags || []).forEach(t => allTags.add(t)); (item?.sharedTags || []).forEach(t => allTags.add(t)); if (item?.children) walkAll(item.children); } };
+  walkAll(state.essentials);
+  for (const board of state.boards) { walkAll(board.speedDial); for (const col of board.columns) walkAll(col.items); }
+
+  const groupedTags = new Set(groups.flatMap(g => g.tags || []));
+  const unsorted = [...allTags].filter(t => !groupedTags.has(t)).sort();
+
+  const uBlock = document.createElement('div');
+  uBlock.className = 'tag-group-block tag-group-block--unsorted';
+
+  const uHeader = document.createElement('div');
+  uHeader.className = 'tag-group-header';
+  const uLabel = document.createElement('span');
+  uLabel.className = 'tag-group-name-input tag-group-name--readonly';
+  uLabel.textContent = '\u00a0Unsorted';
+  uHeader.appendChild(uLabel);
+  uBlock.appendChild(uHeader);
+
+  const chipRow = document.createElement('div');
+  chipRow.className = 'chip-input-wrapper tag-group-unsorted-chips';
+
+  if (unsorted.length) {
+    unsorted.forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = tag;
+      applyTagColor(chip, tag);
+      chip.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        showTagChipContextMenu(e.clientX, e.clientY, tag, -1);
+      });
+      chipRow.appendChild(chip);
+    });
+  } else {
+    const placeholder = document.createElement('span');
+    placeholder.className = 'settings-muted';
+    placeholder.style.fontSize = '0.8rem';
+    placeholder.textContent = 'All tags are grouped.';
+    chipRow.appendChild(placeholder);
+  }
+
+  uBlock.appendChild(chipRow);
+  list.appendChild(uBlock);
 }
 
 function attachSettingsListeners() {
@@ -541,6 +904,18 @@ function attachSettingsListeners() {
     if (typeof bridge !== 'undefined' && bridge.nativeIsAvailable()) await bridge.saveTheme(theme);
     renderThemePicker();
   });
+
+  document.getElementById('stgAddGroupBtn').addEventListener('click', () => {
+    if (!state.settings.tagGroups) state.settings.tagGroups = [];
+    pushUndoSnapshot();
+    state.settings.tagGroups.push({ id: 'grp-' + Date.now(), name: '', color: '#6d7cff', locked: false, tags: [] });
+    saveState();
+    updateUndoRedoUI();
+    renderTagGroups();
+  });
+
+  document.getElementById('stgUndoBtn').addEventListener('click', () => { undo(); renderTagGroups(); });
+  document.getElementById('stgRedoBtn').addEventListener('click', () => { redo(); renderTagGroups(); });
 
   document.getElementById('settingsDoneBtn').addEventListener('click', hideSettingsPanel);
 

@@ -891,7 +891,7 @@ button {
   background: rgba(0, 0, 0, 0.65);
   display: grid;
   place-items: center;
-  z-index: 20;
+  z-index: 300;
 }
 
 .hidden {
@@ -1135,7 +1135,7 @@ button {
 
 .settings-panel {
   width: min(900px, calc(100vw - 40px));
-  max-height: calc(100vh - 40px);
+  height: min(720px, calc(100vh - 40px));
   overflow-y: auto;
   padding: 26px;
   background: var(--panel-muted);
@@ -2704,3 +2704,133 @@ button {
   font-style: italic;
 }
 
+
+/* --- Tag Group Editor --- */
+.settings-section-label--row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tag-group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-group-block:last-child {
+  border-bottom: none;
+}
+
+.tag-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-group-name-input {
+  flex: 1;
+  background: var(--panel-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.tag-group-name-input:focus {
+  border-color: var(--accent);
+}
+
+.tag-group-name-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tag-group-color-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.tag-group-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.tag-group-color-swatch:hover {
+  border-color: var(--accent);
+  transform: scale(1.15);
+}
+
+.tag-group-lock-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.tag-group-del-btn {
+  font-size: 1.1rem;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+
+.tag-group-del-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.tag-group-block--unsorted {
+  opacity: 0.75;
+}
+
+.tag-group-name--readonly {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 4px 2px;
+}
+
+.tag-group-unsorted-chips {
+  cursor: default;
+}
+
+.tag-group-unsorted-chips .chip-remove-btn {
+  display: none;
+}
+
+.stg-tag-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-group-sort-btn {
+  flex-shrink: 0;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.tag-group-sort-btn:hover,
+.tag-group-sort-btn.active {
+  opacity: 1;
+}
+
+.tag-group-sort-btn.active {
+  color: var(--accent);
+}
