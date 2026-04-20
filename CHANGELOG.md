@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.18] — 2026-04-20
+
+### Fixed
+
+- **DnD column flicker** — board item/column/folder dragover handlers now reposition the existing preview clone in-place instead of destroying and re-animating it on every cursor movement within the same container; animation only plays when crossing into a new container for the first time
+
+---
+
 ## [0.11.17] — 2026-04-20
 
 ### Changed
