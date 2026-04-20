@@ -1071,10 +1071,15 @@ button {
   gap: 8px;
 }
 
-.tag-field-row {
-  display: flex;
+.tag-section-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 8px;
   align-items: center;
-  gap: 8px;
+}
+
+.tag-field-row {
+  display: contents;
 }
 
 .tag-field-row > label {
@@ -1082,12 +1087,11 @@ button {
   color: var(--text-muted);
   text-align: right;
   white-space: nowrap;
-  width: 62px;
-  flex-shrink: 0;
+  padding-right: 2px;
 }
 
 .tag-field-row .tags-input-container {
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
@@ -1104,8 +1108,9 @@ button {
 }
 
 .tag-readonly-field {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-muted);
@@ -1118,6 +1123,7 @@ button {
 }
 
 .tag-toggle-row {
+  grid-column: 1 / -1;
   display: flex;
   gap: 12px;
   align-items: center;

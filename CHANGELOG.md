@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.9] — 2026-04-20
+
+### Changed
+
+- **Tag section grid layout** — labels (Tags / Inherited / Shared) and fields are now in a true two-column CSS grid; label column is auto-width with right-aligned text, field column stretches to fill remaining space; all label edges align across rows; toggle row spans both columns
+
+---
+
 ## [0.11.8] — 2026-04-20
 
 ### Changed
