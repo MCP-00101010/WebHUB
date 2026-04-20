@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.27] — 2026-04-20
+
+### Fixed
+
+- **"Open in board" now unfolds ancestor folders**: when navigating to a deeply nested item via search, all parent folders in the path are expanded before rendering so the item is immediately visible
+
+---
+
 ## [0.11.26] — 2026-04-20
 
 ### Added

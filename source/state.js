@@ -320,6 +320,22 @@ function findBoardItemInColumns(board, itemId) {
   return null;
 }
 
+function unfoldBoardItemAncestors(board, itemId) {
+  const search = (list) => {
+    for (const item of list) {
+      if (item.id === itemId) return true;
+      if (item.type === 'folder' && Array.isArray(item.children)) {
+        if (search(item.children)) {
+          item.collapsed = false;
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+  for (const column of board.columns) search(column.items);
+}
+
 function removeBoardItemById(itemId) {
   const board = getActiveBoard();
   for (const column of board.columns) {

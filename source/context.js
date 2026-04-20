@@ -356,6 +356,10 @@ function handleContextMenuAction(action) {
       } else if (action.startsWith('openInBoard:')) {
         const boardId = action.slice('openInBoard:'.length);
         state.activeBoardId = boardId;
+        const targetBoard = state.boards.find(b => b.id === boardId);
+        if (targetBoard && contextTarget?.item?.id) {
+          unfoldBoardItemAncestors(targetBoard, contextTarget.item.id);
+        }
         elements.searchInput.value = '';
         elements.mainPanel.classList.remove('search-active');
         elements.searchResultsPane.classList.add('hidden');
