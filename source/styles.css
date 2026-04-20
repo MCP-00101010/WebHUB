@@ -1779,7 +1779,6 @@ button {
   width: 42px;
   min-width: 42px;
   padding: 10px 6px;
-  overflow: hidden;
   gap: 0;
 }
 

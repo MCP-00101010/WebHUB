@@ -243,9 +243,11 @@ function makeDraggable(panel, handle, onDrop) {
 }
 
 function centerPanel(panel) {
-  panel.classList.add('draggable');
-  panel.style.left = Math.round((window.innerWidth  - panel.offsetWidth)  / 2) + 'px';
-  panel.style.top  = Math.round((window.innerHeight - panel.offsetHeight) / 2) + 'px';
+  requestAnimationFrame(() => {
+    panel.classList.add('draggable');
+    panel.style.left = Math.round((window.innerWidth  - panel.offsetWidth)  / 2) + 'px';
+    panel.style.top  = Math.round((window.innerHeight - panel.offsetHeight) / 2) + 'px';
+  });
 }
 
 // --- Init ---
