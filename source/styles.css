@@ -19,6 +19,7 @@
   --title-line-thickness: 1px;
   --board-title-font-size: 22px;
   --tags-display: flex;
+  --tags-grid-display: grid;
   --bookmark-font-family: inherit;
   --bookmark-font-weight: normal;
   --bookmark-font-style: normal;
@@ -271,10 +272,51 @@ button {
 .bookmark-item {
   cursor: pointer;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   background: var(--surface-1);
   padding: 7px 10px;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.item-header .bookmark-label,
+.item-header .folder-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-tag-grid {
+  display: var(--tags-grid-display, grid);
+  grid-template-columns: min-content 1fr;
+  gap: 3px 8px;
+  align-items: center;
+  padding-left: 2px;
+}
+
+.item-tag-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0.6;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.item-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-items: center;
 }
 
 .bookmark-item:hover {

@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.13] — 2026-04-20
+
+### Changed
+
+- **Unified bookmark and folder item layout** — both now render a single header row (checkbox → icon → name) with a grid tag display below (Tags / Inherited / Shared columns) matching the modal tag section style; folder icon remains the collapse toggle; tag visibility still controlled by the show-tags setting
+
+---
+
 ## [0.11.12] — 2026-04-20
 
 ### Fixed

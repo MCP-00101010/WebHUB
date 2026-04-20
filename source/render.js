@@ -78,6 +78,7 @@ function applySettings() {
   r.setProperty('--title-line-thickness', `${s.titleLineThickness}px`);
   r.setProperty('--board-title-font-size', `${s.boardTitleFontSize}px`);
   r.setProperty('--tags-display', s.showTags ? 'flex' : 'none');
+  r.setProperty('--tags-grid-display', s.showTags ? 'grid' : 'none');
 
   const ff = (key) => s[key] || 'inherit';
   const fw = (key, def = 'normal') => s[key] ? 'bold' : def;

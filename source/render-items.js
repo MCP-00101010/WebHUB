@@ -31,6 +31,17 @@ function createTagSection(labelText, tags) {
   return section;
 }
 
+function appendTagRow(grid, labelText, tags) {
+  const lbl = document.createElement('span');
+  lbl.className = 'item-tag-label';
+  lbl.textContent = labelText;
+  const chips = document.createElement('div');
+  chips.className = 'item-tag-chips';
+  renderTagsInto(chips, tags);
+  grid.appendChild(lbl);
+  grid.appendChild(chips);
+}
+
 // --- Board item element ---
 
 function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) {
@@ -43,124 +54,108 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
   itemEl.dataset.itemType = item.type;
   itemEl.draggable = true;
 
-  if (item.type === 'folder') {
-    itemEl.classList.add('folder-card');
+  if (item.type === 'folder' || item.type === 'bookmark') {
+    if (item.type === 'folder') itemEl.classList.add('folder-card');
+    else itemEl.classList.add('bookmark-item');
     if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
 
+    // --- Header row: checkbox + icon + name ---
     const header = document.createElement('div');
-    header.className = 'folder-header';
+    header.className = 'item-header';
 
-    const folderCheckbox = document.createElement('div');
-    folderCheckbox.className = 'item-checkbox';
-    folderCheckbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
-    header.appendChild(folderCheckbox);
+    const checkbox = document.createElement('div');
+    checkbox.className = 'item-checkbox';
+    checkbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+    header.appendChild(checkbox);
 
-    const collapseBtn = document.createElement('button');
-    collapseBtn.type = 'button';
-    collapseBtn.className = 'collapse-btn';
-    collapseBtn.title = item.collapsed ? 'Expand' : 'Collapse';
-    collapseBtn.setAttribute('aria-label', item.collapsed ? 'Expand folder' : 'Collapse folder');
-    collapseBtn.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
-    collapseBtn.addEventListener('click', event => {
-      event.stopPropagation();
-      item.collapsed = !item.collapsed;
-      saveState();
-      const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
-      if (inInbox) renderInboxPanel(); else renderBoard();
-    });
+    if (item.type === 'folder') {
+      const collapseBtn = document.createElement('button');
+      collapseBtn.type = 'button';
+      collapseBtn.className = 'collapse-btn';
+      collapseBtn.title = item.collapsed ? 'Expand' : 'Collapse';
+      collapseBtn.setAttribute('aria-label', item.collapsed ? 'Expand folder' : 'Collapse folder');
+      collapseBtn.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
+      collapseBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        item.collapsed = !item.collapsed;
+        saveState();
+        const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
+        if (inInbox) renderInboxPanel(); else renderBoard();
+      });
+      header.appendChild(collapseBtn);
+    } else {
+      const favicon = document.createElement('span');
+      favicon.className = 'bookmark-favicon';
+      if (item.url) {
+        const faviconImg = document.createElement('img');
+        setFavicon(faviconImg, item, 64);
+        faviconImg.alt = '';
+        faviconImg.draggable = false;
+        favicon.appendChild(faviconImg);
+      }
+      header.appendChild(favicon);
+    }
 
-    const title = document.createElement('div');
-    title.className = 'folder-title';
-    title.textContent = item.title;
+    const name = document.createElement('span');
+    name.className = item.type === 'folder' ? 'folder-title' : 'bookmark-label';
+    name.textContent = item.type === 'folder' ? item.title : (item.title || item.url || 'Untitled Bookmark');
+    header.appendChild(name);
 
-    header.appendChild(collapseBtn);
-    header.appendChild(title);
     itemEl.appendChild(header);
 
+    // --- Tag grid ---
     const board = getActiveBoard();
-    const folderTagArea = document.createElement('div');
-    folderTagArea.className = 'folder-tag-area';
     const inherited = computeInheritedTags(item, board);
-    if (inherited.length) folderTagArea.appendChild(createTagSection('Inherited', inherited));
-    if (item.sharedTags?.length) folderTagArea.appendChild(createTagSection('Shared', item.sharedTags));
-    if (item.tags?.length) folderTagArea.appendChild(createTagSection('Tags', item.tags));
-    if (folderTagArea.children.length) itemEl.appendChild(folderTagArea);
+    const ownTags = item.tags || [];
+    const sharedTags = item.type === 'folder' ? (item.sharedTags || []) : [];
 
-    header.addEventListener('dragover', event => handleBoardFolderHeaderDragOver(event, item, columnId, depth));
-    header.addEventListener('dragleave', event => {
-      if (header.contains(event.relatedTarget)) return;
-      header.classList.remove('drop-target');
-    });
-    header.addEventListener('drop', event => {
-      event.preventDefault();
-      event.stopPropagation();
-      handleBoardFolderHeaderDrop(event, item, columnId, depth);
-    });
+    if (ownTags.length || inherited.length || sharedTags.length) {
+      const tagGrid = document.createElement('div');
+      tagGrid.className = 'item-tag-grid';
+      if (ownTags.length) appendTagRow(tagGrid, 'Tags', ownTags);
+      if (inherited.length) appendTagRow(tagGrid, 'Inherited', inherited);
+      if (sharedTags.length) appendTagRow(tagGrid, 'Shared', sharedTags);
+      itemEl.appendChild(tagGrid);
+    }
 
-    if (!item.collapsed) {
-      const childrenContainer = document.createElement('div');
-      childrenContainer.className = 'folder-children';
-      childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, item, columnId, depth));
-      childrenContainer.addEventListener('dragleave', event => {
-        if (event.currentTarget.contains(event.relatedTarget)) return;
-        event.currentTarget.classList.remove('drop-target');
+    // --- Bookmark-specific ---
+    if (item.type === 'bookmark') {
+      itemEl.dataset.tooltip = buildTooltip(item);
+      itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
+    }
+
+    // --- Folder-specific: drag on header + children container ---
+    if (item.type === 'folder') {
+      header.addEventListener('dragover', event => handleBoardFolderHeaderDragOver(event, item, columnId, depth));
+      header.addEventListener('dragleave', event => {
+        if (header.contains(event.relatedTarget)) return;
+        header.classList.remove('drop-target');
       });
-      childrenContainer.addEventListener('drop', event => {
+      header.addEventListener('drop', event => {
         event.preventDefault();
         event.stopPropagation();
-        handleBoardFolderContainerDrop(event, item, columnId, depth);
+        handleBoardFolderHeaderDrop(event, item, columnId, depth);
       });
-      itemEl.appendChild(childrenContainer);
-      if (Array.isArray(item.children)) {
-        item.children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item)));
+
+      if (!item.collapsed) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.className = 'folder-children';
+        childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, item, columnId, depth));
+        childrenContainer.addEventListener('dragleave', event => {
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          event.currentTarget.classList.remove('drop-target');
+        });
+        childrenContainer.addEventListener('drop', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleBoardFolderContainerDrop(event, item, columnId, depth);
+        });
+        itemEl.appendChild(childrenContainer);
+        if (Array.isArray(item.children)) {
+          item.children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item)));
+        }
       }
     }
-  } else if (item.type === 'bookmark') {
-    itemEl.classList.add('bookmark-item');
-    if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
-
-    const bmCheckbox = document.createElement('div');
-    bmCheckbox.className = 'item-checkbox';
-    bmCheckbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
-    itemEl.appendChild(bmCheckbox);
-
-    const favicon = document.createElement('span');
-    favicon.className = 'bookmark-favicon';
-    if (item.url) {
-      const faviconImg = document.createElement('img');
-      setFavicon(faviconImg, item, 64);
-      faviconImg.alt = '';
-      faviconImg.draggable = false;
-      favicon.appendChild(faviconImg);
-    }
-    itemEl.appendChild(favicon);
-
-    const body = document.createElement('div');
-    body.className = 'bookmark-body';
-
-    const label = document.createElement('span');
-    label.className = 'bookmark-label';
-    label.textContent = item.title || item.url || 'Untitled Bookmark';
-    body.appendChild(label);
-
-    const bmBoard = getActiveBoard();
-    const bmInherited = computeInheritedTags(item, bmBoard);
-    if (bmInherited.length) {
-      const iSection = createTagSection('Inherited', bmInherited);
-      iSection.classList.add('bookmark-tags');
-      body.appendChild(iSection);
-    }
-
-    if (item.tags && item.tags.length > 0) {
-      const tagsEl = document.createElement('div');
-      tagsEl.className = 'bookmark-tags';
-      renderTagsInto(tagsEl, item.tags);
-      body.appendChild(tagsEl);
-    }
-
-    itemEl.appendChild(body);
-    itemEl.dataset.tooltip = buildTooltip(item);
-    itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
   } else if (item.type === 'title') {
     if (item.title) {
       itemEl.classList.add('title-item');
