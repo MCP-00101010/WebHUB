@@ -581,14 +581,30 @@ function createNavItem(item, depth = 0, parent = null) {
     el.appendChild(header);
   } else {
     if (item.type !== 'title' || item.title) {
-      const label = document.createElement('div');
-      label.textContent = item.title || (item.type === 'board' ? 'Untitled Board' : '');
-      el.appendChild(label);
+      if (item.type === 'board') {
+        const info = document.createElement('div');
+        info.className = 'nav-board-info';
+        const label = document.createElement('div');
+        label.className = 'nav-board-title';
+        label.textContent = item.title || 'Untitled Board';
+        info.appendChild(label);
+        el.appendChild(info);
+      } else {
+        const label = document.createElement('div');
+        label.textContent = item.title || '';
+        el.appendChild(label);
+      }
     }
   }
 
   if (item.type === 'board') {
     const board = state.boards.find(b => b.id === item.boardId);
+    if (board?.tags?.length) {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'nav-board-tags';
+      renderTagsInto(tagsEl, board.tags);
+      el.querySelector('.nav-board-info')?.appendChild(tagsEl);
+    }
     const { bookmarks: ibm, folders: ifl } = getBoardInboxCounts(board);
     if (ibm + ifl > 0) {
       const bmBadge = document.createElement('span');

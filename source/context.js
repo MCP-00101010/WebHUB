@@ -201,6 +201,16 @@ function handleContextMenuAction(action) {
     case 'addBoardSubfolder':
       showFolderModal('create', { ...contextTarget, area: 'board-subfolder' });
       break;
+    case 'addBookmarkToFolder': {
+      const folderCtx = { ...contextTarget, area: 'board-folder-item' };
+      showModal('addBookmark', {
+        title: 'Add Bookmark', placeholder1: 'New Bookmark',
+        showUrl: true, placeholder2: 'Bookmark URL',
+        showTags: true, contextTarget: folderCtx,
+        inheritedTags: getContextInheritedTags({ ...contextTarget, area: 'board-subfolder' })
+      });
+      break;
+    }
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
       showModal('addFolder', { title: 'Create Subfolder', placeholder1: 'New Folder' });
@@ -325,6 +335,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth) {
   const options = [];
   if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
+    options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
     options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
     if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });

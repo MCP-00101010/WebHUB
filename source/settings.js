@@ -30,7 +30,8 @@ function showBoardSettingsPanel(isNew = false) {
   const bstgInheritedRow = document.getElementById('bstgInheritedTagsRow');
   const bstgInheritedSpan = document.getElementById('bstgInheritedTags');
   if (bstgInheritedRow && bstgInheritedSpan) {
-    bstgInheritedSpan.textContent = bstgInherited.join(' ');
+    bstgInheritedSpan.innerHTML = '';
+    renderTagsInto(bstgInheritedSpan, bstgInherited);
     bstgInheritedRow.classList.toggle('hidden', bstgInherited.length === 0);
   }
 }

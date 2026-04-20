@@ -94,7 +94,8 @@ function showModal(type, options = {}) {
   const inheritedRow = document.getElementById('modalInheritedTagsRow');
   const inheritedSpan = document.getElementById('modalInheritedTags');
   if (inheritedRow && inheritedSpan) {
-    inheritedSpan.textContent = inherited.join(' ');
+    inheritedSpan.innerHTML = '';
+    renderTagsInto(inheritedSpan, inherited);
     inheritedRow.classList.toggle('hidden', inherited.length === 0);
   }
   if (showName) elements.modalInput1.focus();
@@ -131,6 +132,10 @@ function handleModalSubmit(event) {
       } else if (area === 'essential') {
         if (!setEssential(contextTarget.slot, value1, value2, tags)) return;
         hideModal(); renderEssentials(); saveState(); return;
+      } else if (area === 'board-folder-item') {
+        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
+        contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: '' });
+        contextTarget.item.collapsed = false;
       } else {
         addBookmark(value1, value2, contextTarget?.columnId, tags);
       }
@@ -245,7 +250,8 @@ function showFolderModal(mode, ct) {
   const fmInheritedRow = document.getElementById('fmInheritedTagsRow');
   const fmInheritedSpan = document.getElementById('fmInheritedTags');
   if (fmInheritedRow && fmInheritedSpan) {
-    fmInheritedSpan.textContent = inherited.join(' ');
+    fmInheritedSpan.innerHTML = '';
+    renderTagsInto(fmInheritedSpan, inherited);
     fmInheritedRow.classList.toggle('hidden', inherited.length === 0);
   }
   document.getElementById('fmName').focus();

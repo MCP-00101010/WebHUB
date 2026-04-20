@@ -446,12 +446,24 @@ button {
   align-items: center;
 }
 
-.nav-item[data-type="board"] > div {
+.nav-board-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-board-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nav-board-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
 }
 
 .nav-inbox-badge {
@@ -1835,12 +1847,11 @@ button {
 
 /* Inherited tags read-only display */
 .modal-inherited-tags {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-style: italic;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   flex: 1;
   min-width: 0;
-  word-break: break-word;
 }
 
 /* Tooltip trigger icon in modal labels */

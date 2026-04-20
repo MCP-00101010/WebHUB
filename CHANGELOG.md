@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.6] — 2026-04-20
+
+### Added
+
+- **Nav pane: board tags display** — board items in the nav pane now show their own tags as chips below the board title
+- **Folder context menu: Add bookmark** — right-clicking a folder now includes "Add bookmark", which opens the bookmark modal and inserts directly into that folder's children
+
+### Changed
+
+- **Inherited tags now render as chips** — the "Inherited" row in bookmark, folder, and board modals now displays tags as styled tag chips instead of plain italic text
+
+---
+
 ## [0.11.5] — 2026-04-20
 
 ### Added
