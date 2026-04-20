@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.20] — 2026-04-20
+
+### Fixed
+
+- **DnD folder reordering** — items dragged within a folder now land at the correct position instead of always appending to the bottom; `handleBoardFolderContainerDragOver` now does full position-aware preview (nearest-item mid-point logic matching column dragover) instead of always pushing preview to the end
+- **DnD nested folder preview** — removed the `depth >= 2` guard from `activateFolderDrop`; preview now appears correctly inside nested folders; actual folder-in-folder nesting is still blocked at drop time by the existing depth check in the drop handler
+- **DnD collapsed folder drag** — dragging over a collapsed folder now correctly shows before/after reorder indicators instead of silently delegating to `activateFolderDrop` with no visible feedback
+
+---
+
 ## [0.11.19] — 2026-04-20
 
 ### Fixed

@@ -340,7 +340,6 @@ function _moveBoardPreview(parentEl, beforeEl) {
 // section hits the same guard and does not re-trigger on micro-movements.
 function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
   if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
-  if (depth >= 2) return;
   event.preventDefault();
   event.stopPropagation();
   if (_dropTarget === folderCardEl) return;
@@ -359,9 +358,10 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   if (!dragPayload) return;
   if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
 
-  // Any drag over a folder card (even on padding areas outside header/tagGrid/children)
-  // should drop into the folder, not reorder it.
-  if (targetItem.type === 'folder') {
+  // Dragging over an expanded folder card (including padding areas not covered by
+  // header/tagGrid/children handlers) should drop into it, not reorder it.
+  // Collapsed folders fall through to normal before/after reorder.
+  if (targetItem.type === 'folder' && !targetItem.collapsed) {
     activateFolderDrop(event, event.currentTarget, targetItem, columnId, depth);
     return;
   }
@@ -611,8 +611,49 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
 }
 
 function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
-  activateFolderDrop(event, folderCardEl, folderItem, columnId, depth);
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  event.preventDefault();
+  event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
+
+  const containerEl = event.currentTarget;
+  containerEl.classList.add('drop-target');
+
+  // Position-aware preview within the folder's children — same logic as column dragover.
+  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
+
+  if (itemEls.length === 0) {
+    if (_dropTarget === containerEl && _dropPos === 'start') return;
+    _dropTarget = containerEl; _dropPos = 'start';
+    _moveBoardPreview(containerEl, containerEl.firstChild);
+    return;
+  }
+
+  let nearestEl = null, nearestPos = null, nearestDist = Infinity;
+  for (const el of itemEls) {
+    const rect = el.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const dist = Math.abs(event.clientY - midY);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestEl = el;
+      nearestPos = event.clientY <= midY ? 'before' : 'after';
+    }
+  }
+
+  if (!nearestEl) {
+    if (_dropTarget === containerEl && _dropPos === 'end') return;
+    _dropTarget = containerEl; _dropPos = 'end';
+    _moveBoardPreview(containerEl, null);
+    return;
+  }
+
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
+  _dropTarget = nearestEl; _dropPos = nearestPos;
+  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
+  nearestEl.dataset.dropPosition = nearestPos;
+  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
+  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
@@ -620,6 +661,11 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   if (dragPayload.itemId === folderItem.id) return;
   event.preventDefault();
   event.stopPropagation();
+
+  // Capture position before removeDragPlaceholders clears them.
+  const dropTargetEl = _dropTarget;
+  const dropPos = _dropPos;
+
   removeDragPlaceholders();
   event.currentTarget.classList.remove('drop-target');
   pushUndoSnapshot();
@@ -636,7 +682,21 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
     addBoardItemToColumn(columnId, dragged);
   } else {
     folderItem.children = folderItem.children || [];
-    folderItem.children.push(dragged);
+    const targetItemId = dropTargetEl?.dataset?.itemId;
+    if (targetItemId && dropPos) {
+      const targetIdx = folderItem.children.findIndex(c => c.id === targetItemId);
+      if (targetIdx !== -1) {
+        const insertIdx = Math.max(0, Math.min(
+          dropPos === 'after' ? targetIdx + 1 : targetIdx,
+          folderItem.children.length
+        ));
+        folderItem.children.splice(insertIdx, 0, dragged);
+      } else {
+        folderItem.children.push(dragged);
+      }
+    } else {
+      folderItem.children.push(dragged);
+    }
   }
 
   dragPayload = null;
