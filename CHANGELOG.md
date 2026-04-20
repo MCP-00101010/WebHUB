@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.19] — 2026-04-20
+
+### Fixed
+
+- **DnD folder flickering** — dragging onto folder cards (header, tag grid, or card padding) now consistently activates folder-drop mode without flickering; child items no longer jump around when hovering over the folder name; dragging between header and children area no longer drops and re-animates the preview
+
+---
+
 ## [0.11.18] — 2026-04-20
 
 ### Fixed

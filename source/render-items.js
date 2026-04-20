@@ -124,25 +124,42 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
       itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
     }
 
-    // --- Folder-specific: drag on header + children container ---
+    // --- Folder-specific: drag on header, tag grid, and children container ---
     if (item.type === 'folder') {
-      header.addEventListener('dragover', event => handleBoardFolderHeaderDragOver(event, item, columnId, depth));
-      header.addEventListener('dragleave', event => {
-        if (header.contains(event.relatedTarget)) return;
-        header.classList.remove('drop-target');
-      });
-      header.addEventListener('drop', event => {
+      // Both header and tag grid route through activateFolderDrop, keyed on the
+      // folder card element, so micro-movements between them don't retrigger.
+      const onFolderTopDragOver = event => handleBoardFolderHeaderDragOver(event, itemEl, item, columnId, depth);
+      const onFolderTopDragleave = event => {
+        if (itemEl.contains(event.relatedTarget)) return;
+        const cc = itemEl.querySelector('.folder-children');
+        if (cc) cc.classList.remove('drop-target');
+      };
+      const onFolderTopDrop = event => {
         event.preventDefault();
         event.stopPropagation();
         handleBoardFolderHeaderDrop(event, item, columnId, depth);
-      });
+      };
+
+      header.addEventListener('dragover', onFolderTopDragOver);
+      header.addEventListener('dragleave', onFolderTopDragleave);
+      header.addEventListener('drop', onFolderTopDrop);
+
+      // Wire the tag grid (if present) so it doesn't bubble to handleBoardItemDragOver
+      const tagGrid = itemEl.querySelector('.item-tag-grid');
+      if (tagGrid) {
+        tagGrid.addEventListener('dragover', onFolderTopDragOver);
+        tagGrid.addEventListener('dragleave', onFolderTopDragleave);
+        tagGrid.addEventListener('drop', onFolderTopDrop);
+      }
 
       if (!item.collapsed) {
         const childrenContainer = document.createElement('div');
         childrenContainer.className = 'folder-children';
-        childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, item, columnId, depth));
+        childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, itemEl, item, columnId, depth));
         childrenContainer.addEventListener('dragleave', event => {
-          if (event.currentTarget.contains(event.relatedTarget)) return;
+          // Only remove drop-target when leaving the whole folder card, not just the children area.
+          // This prevents the highlight from flickering when moving between header and children.
+          if (itemEl.contains(event.relatedTarget)) return;
           event.currentTarget.classList.remove('drop-target');
         });
         childrenContainer.addEventListener('drop', event => {
@@ -189,6 +206,8 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null) 
     if (itemEl.contains(event.relatedTarget)) return;
     itemEl.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
     itemEl.removeAttribute('data-drop-position');
+    const cc = itemEl.querySelector('.folder-children');
+    if (cc) cc.classList.remove('drop-target');
   });
   itemEl.addEventListener('drop', event => handleBoardItemDrop(event, item, columnId, parentFolder, depth));
 

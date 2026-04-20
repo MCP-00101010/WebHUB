@@ -325,13 +325,31 @@ function _moveBoardPreview(parentEl, beforeEl) {
     el.classList.remove('drop-position-before', 'drop-position-after');
     el.removeAttribute('data-drop-position');
   });
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   const existing = document.querySelector('.drag-preview:not(.essential-slot-preview)');
   if (existing && existing.parentElement === parentEl) {
     parentEl.insertBefore(existing, beforeEl || null);
   } else {
-    document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
     if (existing) existing.remove();
     _insertDragPreview(createDragPlaceholder('board'), parentEl, beforeEl);
+  }
+}
+
+// Shared "drop into folder" activation used by both the header and tag-grid dragover
+// handlers. Keyed on the folder card element so any subelement of the folder top
+// section hits the same guard and does not re-trigger on micro-movements.
+function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (depth >= 2) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (_dropTarget === folderCardEl) return;
+  _dropTarget = folderCardEl;
+  _dropPos    = null;
+  const childrenContainer = folderCardEl.querySelector('.folder-children');
+  if (childrenContainer) {
+    _moveBoardPreview(childrenContainer, null);
+    childrenContainer.classList.add('drop-target');
   }
 }
 
@@ -340,6 +358,14 @@ function _moveBoardPreview(parentEl, beforeEl) {
 function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, depth) {
   if (!dragPayload) return;
   if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
+
+  // Any drag over a folder card (even on padding areas outside header/tagGrid/children)
+  // should drop into the folder, not reorder it.
+  if (targetItem.type === 'folder') {
+    activateFolderDrop(event, event.currentTarget, targetItem, columnId, depth);
+    return;
+  }
+
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -551,20 +577,8 @@ function handleBoardColumnDrop(event, columnId) {
 
 // --- Board folder drag & drop ---
 
-function handleBoardFolderHeaderDragOver(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
-  if (depth >= 2) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const header = event.currentTarget;
-  if (_dropTarget === header) return;
-  _dropTarget = header;
-  _dropPos    = null;
-  const childrenContainer = header.parentElement.querySelector('.folder-children');
-  if (childrenContainer) {
-    _moveBoardPreview(childrenContainer, null);
-    header.classList.add('drop-target');
-  }
+function handleBoardFolderHeaderDragOver(event, folderCardEl, folderItem, columnId, depth) {
+  activateFolderDrop(event, folderCardEl, folderItem, columnId, depth);
 }
 
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
@@ -596,18 +610,9 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   saveState();
 }
 
-function handleBoardFolderContainerDragOver(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
-  if (depth >= 2) return;
-  event.preventDefault();
+function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
+  activateFolderDrop(event, folderCardEl, folderItem, columnId, depth);
   event.dataTransfer.dropEffect = 'move';
-  event.stopPropagation();
-  const container = event.currentTarget;
-  if (_dropTarget === container) return;
-  _dropTarget = container;
-  _dropPos    = null;
-  _moveBoardPreview(container, null);
-  container.classList.add('drop-target');
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
