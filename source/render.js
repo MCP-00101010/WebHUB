@@ -15,7 +15,6 @@ const elements = {
   modalInput2: document.getElementById('modalInput2'),
   modalUrlRow: document.getElementById('modalUrlRow'),
   modalTagsRow: document.getElementById('modalTagsRow'),
-  modalTagsLabel: document.getElementById('modalTagsLabel'),
   modalInput3: document.getElementById('modalInput3'),
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),

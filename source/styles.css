@@ -1066,6 +1066,11 @@ button {
   color: var(--text-muted);
 }
 
+.tag-section {
+  padding: 12px 14px;
+  gap: 10px;
+}
+
 .settings-row {
   display: flex;
   align-items: center;

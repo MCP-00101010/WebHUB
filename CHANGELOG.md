@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.7] — 2026-04-20
+
+### Changed
+
+- **Tag section standardization** — all modals with tag fields (bookmark, folder, board) now group every tag-related control inside a boxed "Tags" section (`settings-section`); consistent order throughout: Tags → Shared tags → Pass/Strip toggles → Inherited
+- **Tag input design unified** — folder and board tag inputs now use the same `form-row` layout and input styling (border-radius 12px, padded) as the bookmark modal; inputs are wrapped in `tags-input-container` for correct positioning context
+
+---
+
 ## [0.11.6] — 2026-04-20
 
 ### Added

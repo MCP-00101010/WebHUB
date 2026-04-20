@@ -78,7 +78,6 @@ function showModal(type, options = {}) {
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
-  if (elements.modalTagsLabel) elements.modalTagsLabel.textContent = options.label3 || 'Tags';
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
   const selectLabel = document.getElementById('modalSelectLabel');

@@ -154,7 +154,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.6</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.7</button>
       </div>
     </aside>
 
@@ -203,16 +203,18 @@
           <input id="modalInput2" type="text" placeholder="duckduckgo.com" />
         </div>
         <div id="modalDuplicateWarning" class="modal-duplicate-warning hidden"></div>
-        <div class="form-row hidden" id="modalTagsRow">
-          <label id="modalTagsLabel" for="modalInput3">Tags</label>
-          <div class="tags-input-container">
-            <input id="modalInput3" type="text" placeholder="work tools productivity" />
-            <div id="tagSuggestions" class="tag-suggestions hidden"></div>
+        <div class="settings-section tag-section hidden" id="modalTagsRow">
+          <div class="settings-section-label">Tags</div>
+          <div class="form-row">
+            <div class="tags-input-container">
+              <input id="modalInput3" type="text" placeholder="work tools productivity" form="modalForm" />
+              <div id="tagSuggestions" class="tag-suggestions hidden"></div>
+            </div>
           </div>
-        </div>
-        <div class="form-row hidden" id="modalInheritedTagsRow">
-          <label>Inherited</label>
-          <span id="modalInheritedTags" class="modal-inherited-tags"></span>
+          <div class="form-row hidden" id="modalInheritedTagsRow">
+            <label>Inherited</label>
+            <span id="modalInheritedTags" class="modal-inherited-tags"></span>
+          </div>
         </div>
         <div class="form-row hidden" id="modalSelectRow">
           <label id="modalSelectLabel" for="modalSelect">Select</label>
@@ -252,19 +254,19 @@
           </div>
         </div>
 
-        <div class="settings-section">
+        <div class="settings-section tag-section">
           <div class="settings-section-label">Tags</div>
-          <div class="settings-row hidden" id="bstgInheritedTagsRow">
-            <span>Inherited</span>
-            <span id="bstgInheritedTags" class="modal-inherited-tags"></span>
+          <div class="form-row">
+            <label for="bstgTags">Tags</label>
+            <div class="tags-input-container">
+              <input id="bstgTags" type="text" placeholder="for-later urgent" />
+            </div>
           </div>
-          <div class="settings-row">
-            <span>Tags</span>
-            <input id="bstgTags" type="text" class="settings-text-input" placeholder="for-later urgent" />
-          </div>
-          <div class="settings-row">
-            <span>Shared tags</span>
-            <input id="bstgSharedTags" type="text" class="settings-text-input" placeholder="topic category" />
+          <div class="form-row">
+            <label for="bstgSharedTags">Shared tags</label>
+            <div class="tags-input-container">
+              <input id="bstgSharedTags" type="text" placeholder="topic category" />
+            </div>
           </div>
           <div class="settings-row">
             <span>Pass to items <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are added to all items it contains. Items created or moved here receive these tags automatically.">?</span></span>
@@ -279,6 +281,10 @@
               <input id="bstgAutoRemove" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
+          </div>
+          <div class="form-row hidden" id="bstgInheritedTagsRow">
+            <label>Inherited</label>
+            <span id="bstgInheritedTags" class="modal-inherited-tags"></span>
           </div>
         </div>
 
@@ -690,7 +696,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.11.6</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.11.7</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>
@@ -704,31 +710,38 @@
         <input id="fmName" type="text" class="bstg-title-input" placeholder="New Folder" />
       </div>
       <div class="folder-modal-body">
-        <div class="settings-row hidden" id="fmInheritedTagsRow">
-          <span>Inherited</span>
-          <span id="fmInheritedTags" class="modal-inherited-tags"></span>
-        </div>
-        <div class="settings-row">
-          <span>Tags</span>
-          <input id="fmTags" type="text" class="settings-text-input" placeholder="tag1 tag2" />
-        </div>
-        <div class="settings-row">
-          <span>Shared tags</span>
-          <input id="fmSharedTags" type="text" class="settings-text-input" placeholder="tag1 tag2" />
-        </div>
-        <div class="settings-row">
-          <span>Pass to children <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are added to all items inside it. Items created or moved here receive these tags automatically.">?</span></span>
-          <label class="settings-toggle">
-            <input id="fmInheritTags" type="checkbox" checked />
-            <span class="toggle-track"></span>
-          </label>
-        </div>
-        <div class="settings-row">
-          <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are removed from items moved out of this folder.">?</span></span>
-          <label class="settings-toggle">
-            <input id="fmAutoRemove" type="checkbox" />
-            <span class="toggle-track"></span>
-          </label>
+        <div class="settings-section tag-section">
+          <div class="settings-section-label">Tags</div>
+          <div class="form-row">
+            <label for="fmTags">Tags</label>
+            <div class="tags-input-container">
+              <input id="fmTags" type="text" placeholder="tag1 tag2" />
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="fmSharedTags">Shared tags</label>
+            <div class="tags-input-container">
+              <input id="fmSharedTags" type="text" placeholder="tag1 tag2" />
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Pass to children <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are added to all items inside it. Items created or moved here receive these tags automatically.">?</span></span>
+            <label class="settings-toggle">
+              <input id="fmInheritTags" type="checkbox" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this folder's Shared Tags are removed from items moved out of this folder.">?</span></span>
+            <label class="settings-toggle">
+              <input id="fmAutoRemove" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="form-row hidden" id="fmInheritedTagsRow">
+            <label>Inherited</label>
+            <span id="fmInheritedTags" class="modal-inherited-tags"></span>
+          </div>
         </div>
         <div class="form-actions">
           <button type="button" id="folderModalCancelBtn" class="secondary-btn">Cancel</button>
