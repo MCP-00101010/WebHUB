@@ -2057,6 +2057,20 @@ button {
   grid-template-columns: repeat(var(--essentials-cols, 6), 1fr);
 }
 
+/* --- Search result highlight --- */
+
+@keyframes search-highlight-pulse {
+  0%   { box-shadow: 0 0 0 0px var(--accent); outline-color: transparent; }
+  20%  { box-shadow: 0 0 0 3px var(--accent); outline-color: var(--accent); }
+  70%  { box-shadow: 0 0 0 3px var(--accent); outline-color: var(--accent); }
+  100% { box-shadow: 0 0 0 0px var(--accent); outline-color: transparent; }
+}
+
+.search-highlight {
+  animation: search-highlight-pulse 1.6s ease forwards;
+  border-radius: var(--item-radius, 10px);
+}
+
 /* --- Board fade-in transition --- */
 
 @keyframes board-fade-in {

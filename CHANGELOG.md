@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.28] — 2026-04-20
+
+### Added
+
+- **Search highlight on "Open in board"**: after navigating, the target item scrolls into view and pulses with an accent-colored glow for ~1.6s so it's immediately visible even inside large folders
+
+---
+
 ## [0.11.27] — 2026-04-20
 
 ### Fixed

@@ -357,14 +357,23 @@ function handleContextMenuAction(action) {
         const boardId = action.slice('openInBoard:'.length);
         state.activeBoardId = boardId;
         const targetBoard = state.boards.find(b => b.id === boardId);
-        if (targetBoard && contextTarget?.item?.id) {
-          unfoldBoardItemAncestors(targetBoard, contextTarget.item.id);
+        const highlightId = contextTarget?.item?.id || null;
+        if (targetBoard && highlightId) {
+          unfoldBoardItemAncestors(targetBoard, highlightId);
         }
         elements.searchInput.value = '';
         elements.mainPanel.classList.remove('search-active');
         elements.searchResultsPane.classList.add('hidden');
         renderAll();
         saveState();
+        if (highlightId) {
+          const el = document.querySelector(`[data-item-id="${highlightId}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('search-highlight');
+            el.addEventListener('animationend', () => el.classList.remove('search-highlight'), { once: true });
+          }
+        }
       } else if (action.startsWith('moveToBoard:')) {
         const targetBoardId = action.slice('moveToBoard:'.length);
         const targetBoard = state.boards.find(b => b.id === targetBoardId);
