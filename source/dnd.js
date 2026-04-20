@@ -244,6 +244,35 @@ function _extractDraggedItem(board) {
   return null;
 }
 
+function createEssentialSlotPreview() {
+  if (!dragPayload) return null;
+  let item = null;
+  const board = getActiveBoard();
+  if (dragPayload.area === 'board') {
+    item = findBoardItemInColumns(board, dragPayload.itemId)?.item;
+  } else if (dragPayload.area === 'speed-dial') {
+    item = board?.speedDial.find(i => i.id === dragPayload.itemId);
+  } else if (dragPayload.area === 'essential') {
+    item = state.essentials[dragPayload.slot];
+  }
+  if (!item) return null;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'drag-preview essential-slot-preview';
+  if (item.url) {
+    const img = document.createElement('img');
+    setFavicon(img, item, 64);
+    img.alt = '';
+    img.draggable = false;
+    wrapper.appendChild(img);
+  } else {
+    const fb = document.createElement('span');
+    fb.className = 'essential-slot-fallback';
+    fb.textContent = item.title ? item.title[0].toUpperCase() : '?';
+    wrapper.appendChild(fb);
+  }
+  return wrapper;
+}
+
 // --- Essential slot drop ---
 
 function handleEssentialSlotDrop(targetSlot) {

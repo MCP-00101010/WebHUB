@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.16] — 2026-04-20
+
+### Fixed
+
+- **Essentials DnD preview** — dragging any bookmark over an essentials slot now shows a semi-transparent favicon preview inside the slot, matching the behaviour of speed-dial and column previews
+
+---
+
 ## [0.11.15] — 2026-04-20
 
 ### Fixed
