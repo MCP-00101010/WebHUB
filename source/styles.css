@@ -980,7 +980,7 @@ button {
 }
 
 .drop-target {
-  outline: 2px dashed var(--accent);
+  outline: none;
 }
 
 .drag-placeholder {
@@ -1092,7 +1092,7 @@ button {
 }
 
 .folder-children.drop-target {
-  outline: 2px dashed rgba(111, 115, 255, 0.85);
+  outline: none;
 }
 
 .form-row label {

@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.21] — 2026-04-20
+
+### Fixed
+
+- **DnD dotted outlines removed** — `.drop-target` no longer shows a dashed outline anywhere (columns, inbox, essentials, folder children); the preview clone and favicon preview are the sole drop indicators
+
+---
+
 ## [0.11.20] — 2026-04-20
 
 ### Fixed
