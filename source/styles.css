@@ -334,6 +334,52 @@ button {
   white-space: nowrap;
 }
 
+.chip-input-wrapper {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  padding: 4px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 31px;
+  cursor: text;
+}
+.chip-input-wrapper:focus-within {
+  border-color: var(--accent);
+}
+.chip-text-input {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+  flex: 1;
+  min-width: 80px;
+  padding: 2px;
+}
+.chip-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.chip-remove-btn {
+  background: none;
+  border: none;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  color: inherit;
+  font-size: 0.8em;
+  line-height: 1;
+  opacity: 0.6;
+}
+.chip-remove-btn:hover { opacity: 1; }
+
 
 
 #folderModal {

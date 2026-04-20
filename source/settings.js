@@ -162,7 +162,7 @@ function attachBoardSettingsListeners() {
     board.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
     renderBoard();
   });
-  attachTagAutocomplete(bstgSharedTagsEl);
+  initChipInput(bstgSharedTagsEl);
 
   const bstgTagsEl = document.getElementById('bstgTags');
   bstgTagsEl.addEventListener('input', e => {
@@ -170,7 +170,7 @@ function attachBoardSettingsListeners() {
     if (!board) return;
     board.tags = e.target.value.trim().split(/\s+/).filter(Boolean);
   });
-  attachTagAutocomplete(bstgTagsEl);
+  initChipInput(bstgTagsEl);
 
   document.getElementById('bstgInheritTags').addEventListener('change', e => {
     const board = getActiveBoard();

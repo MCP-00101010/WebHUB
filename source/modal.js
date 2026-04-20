@@ -296,8 +296,8 @@ function attachFolderModalListeners() {
   document.getElementById('fmName').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleFolderModalSubmit(); }
   });
-  attachTagAutocomplete(document.getElementById('fmTags'));
-  attachTagAutocomplete(document.getElementById('fmSharedTags'));
+  initChipInput(document.getElementById('fmTags'));
+  initChipInput(document.getElementById('fmSharedTags'));
 }
 
 // --- External bookmark modal (called from dnd and essentials) ---

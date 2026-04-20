@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.10';
+const APP_VERSION = '0.11.11';
 
 let activeModal = null;
 let contextTarget = null;
@@ -370,7 +370,7 @@ function attachEventListeners() {
       warning.classList.add('hidden');
     }
   });
-  attachTagAutocomplete(elements.modalInput3);
+  initChipInput(elements.modalInput3);
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);
   elements.navList.addEventListener('drop', handleNavListDrop);

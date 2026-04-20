@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.11] — 2026-04-20
+
+### Added
+
+- **Chip tokenizer for tag inputs** — tag input fields in bookmark modal, folder modal, and board settings now display each entered tag as a coloured chip; clicking a chip returns it to editable text; Space/Tab/Enter commits the current word as a chip; Backspace on empty input pops the last chip back to text
+
+---
+
 ## [0.11.10] — 2026-04-20
 
 ### Changed
