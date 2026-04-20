@@ -226,7 +226,8 @@ function handleContextMenuAction(action) {
         title: 'Edit Bookmark',
         placeholder1: 'Bookmark title', value1: contextTarget.item.title,
         showUrl: true, placeholder2: 'Bookmark URL', value2: contextTarget.item.url || '',
-        showTags: true, value3: (contextTarget.item.tags || []).join(' ')
+        showTags: true, value3: (contextTarget.item.tags || []).join(' '),
+        inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'openAll': {
@@ -242,18 +243,47 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'refreshFavicon': {
-      const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
-      if (found?.item) { found.item.faviconCache = ''; renderAll(); saveState(); }
+      const area = contextTarget.area;
+      if (area === 'speed-dial-item') {
+        const board = getActiveBoard();
+        const sdItem = board?.speedDial.find(i => i.id === contextTarget.itemId);
+        if (sdItem) { sdItem.faviconCache = ''; renderAll(); saveState(); }
+      } else if (area === 'essential') {
+        const essItem = state.essentials[contextTarget.slot];
+        if (essItem) { essItem.faviconCache = ''; renderEssentials(); saveState(); }
+      } else {
+        const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
+        if (found?.item) { found.item.faviconCache = ''; renderAll(); saveState(); }
+      }
       break;
     }
     case 'duplicateBookmark': {
-      const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
-      if (found?.item) {
-        pushUndoSnapshot();
-        const copy = { ...found.item, id: `bm-${Date.now()}`, title: found.item.title + ' (copy)', faviconCache: '' };
-        found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
-        renderAll();
-        saveState();
+      const area = contextTarget.area;
+      if (area === 'speed-dial-item') {
+        const board = getActiveBoard();
+        const sdIdx = board?.speedDial.findIndex(i => i.id === contextTarget.itemId);
+        if (sdIdx !== -1) {
+          pushUndoSnapshot();
+          const copy = { ...board.speedDial[sdIdx], id: `bm-${Date.now()}`, title: board.speedDial[sdIdx].title + ' (copy)', faviconCache: '' };
+          board.speedDial.splice(sdIdx + 1, 0, copy);
+          renderAll(); saveState();
+        }
+      } else if (area === 'essential') {
+        const essItem = state.essentials[contextTarget.slot];
+        if (essItem) {
+          pushUndoSnapshot();
+          const copy = { ...essItem, id: `bm-${Date.now()}`, title: essItem.title + ' (copy)', faviconCache: '' };
+          state.essentials.push(copy);
+          renderEssentials(); saveState();
+        }
+      } else {
+        const found = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId);
+        if (found?.item) {
+          pushUndoSnapshot();
+          const copy = { ...found.item, id: `bm-${Date.now()}`, title: found.item.title + ' (copy)', faviconCache: '' };
+          found.list.splice(found.list.indexOf(found.item) + 1, 0, copy);
+          renderAll(); saveState();
+        }
       }
       break;
     }
@@ -379,7 +409,12 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
 function handleEssentialContextMenu(event, slot, item) {
   contextTarget = { area: 'essential', slot, item };
   const options = item
-    ? [{ label: 'Edit bookmark', action: 'editEssential' }, { label: 'Delete bookmark', action: 'deleteEssential' }]
+    ? [
+        { label: 'Edit bookmark',    action: 'editEssential' },
+        { label: 'Duplicate',        action: 'duplicateBookmark' },
+        { label: 'Refresh favicon',  action: 'refreshFavicon' },
+        { label: 'Delete bookmark',  action: 'deleteEssential' }
+      ]
     : [{ label: 'Add bookmark', action: 'addEssential' }];
   showContextMenu(event.clientX, event.clientY, options);
 }
@@ -387,7 +422,9 @@ function handleEssentialContextMenu(event, slot, item) {
 function handleSpeedDialContextMenu(event, item) {
   contextTarget = { area: 'speed-dial-item', itemId: item.id, item };
   showContextMenu(event.clientX, event.clientY, [
-    { label: 'Edit bookmark', action: 'editSpeedDial' },
+    { label: 'Edit bookmark',   action: 'editSpeedDial' },
+    { label: 'Duplicate',       action: 'duplicateBookmark' },
+    { label: 'Refresh favicon', action: 'refreshFavicon' },
     { label: 'Delete bookmark', action: 'deleteSpeedDial' }
   ]);
 }

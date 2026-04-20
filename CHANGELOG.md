@@ -5,6 +5,20 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.22] — 2026-04-20
+
+### Added
+
+- **Context menu parity — speed dial**: Duplicate and Refresh favicon actions now available on speed dial bookmarks (matching board bookmark menus)
+- **Context menu parity — essentials**: Duplicate and Refresh favicon actions now available on essential slot bookmarks
+
+### Fixed
+
+- **Duplicate / Refresh favicon cross-area**: both actions now work in all contexts (board column, speed dial, essential) — previously they only operated on board-column items
+- **Edit essential modal**: now passes `inheritedTags` to the bookmark modal, matching the edit path for board and speed dial bookmarks
+
+---
+
 ## [0.11.21] — 2026-04-20
 
 ### Fixed

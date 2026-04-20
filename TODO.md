@@ -39,6 +39,26 @@
 - add localisation support
 - code restructuring: JSDoc comments on all major functions and data types
 
+## UI Standardization
+
+### Context menu parity
+
+- Speed dial bookmarks: add Duplicate and Refresh favicon actions (board bookmarks have them)
+- Essentials: add Duplicate and Refresh favicon actions (currently only Edit/Delete)
+- Nav folders: add "Add bookmark" and "Open all" actions (board folders have them)
+
+### Edit modal unification
+
+- Route all bookmark edits through one modal regardless of source area (board, inbox, speed dial, essential currently diverge slightly)
+- Essentials and speed dial "edit" should open the same full bookmark modal as board items
+
+### Bulk selection parity
+
+- Inbox panel: add checkbox + bulk toolbar (same item types as board columns but no selection mechanism)
+- Speed dial / Essentials: evaluate if bulk-select makes sense for these areas
+
+---
+
 ## Open bugs / QoL
 
 - hub should have a list of commonly used tags baked into its config as a base suggestion set
