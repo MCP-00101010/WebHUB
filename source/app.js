@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.25';
+const APP_VERSION = '0.11.26';
 
 let activeModal = null;
 let contextTarget = null;
@@ -417,6 +417,29 @@ function attachEventListeners() {
     }
   });
 
+  function _updateSearchFilterBtn() {
+    const isDefault = searchFilters.name && searchFilters.tags &&
+      searchFilters.typeBookmark && searchFilters.typeFolder && searchFilters.typeBoard;
+    elements.searchFilterBtn.classList.toggle('has-active', !isDefault);
+  }
+
+  elements.searchFilterBtn.addEventListener('click', () => {
+    const isOpen = !elements.searchFilterBar.classList.contains('hidden');
+    elements.searchFilterBar.classList.toggle('hidden', isOpen);
+    elements.searchFilterBtn.classList.toggle('open', !isOpen);
+  });
+
+  elements.searchFilterBar.addEventListener('click', e => {
+    const chip = e.target.closest('.search-filter-chip');
+    if (!chip) return;
+    const key = chip.dataset.filter;
+    searchFilters[key] = !searchFilters[key];
+    chip.classList.toggle('active', searchFilters[key]);
+    _updateSearchFilterBtn();
+    const q = elements.searchInput.value.trim();
+    if (q) renderSearchResults(q);
+  });
+
   document.addEventListener('keydown', event => {
     const inInput = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
 
@@ -465,6 +488,8 @@ function attachEventListeners() {
       elements.searchInput.value = '';
       elements.mainPanel.classList.remove('search-active');
       elements.searchResultsPane.classList.add('hidden');
+      elements.searchFilterBar.classList.add('hidden');
+      elements.searchFilterBtn.classList.remove('open');
       return;
     }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }

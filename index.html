@@ -122,6 +122,10 @@
         <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 17.76 4H6.24a2 2 0 0 0-1.79 1.11z"/>
       </symbol>
 
+      <symbol id="icon-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+      </symbol>
+
     </defs>
   </svg>
 
@@ -138,7 +142,25 @@
       </div>
 
       <div class="sidebar-search">
-        <input id="searchInput" type="search" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false" />
+        <div class="search-input-row">
+          <input id="searchInput" type="search" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false" />
+          <button id="searchFilterBtn" class="search-filter-btn" title="Filter search results" aria-label="Toggle search filters">
+            <svg width="13" height="13" aria-hidden="true"><use href="#icon-filter"/></svg>
+          </button>
+        </div>
+        <div id="searchFilterBar" class="search-filter-bar hidden">
+          <div class="search-filter-group">
+            <span class="search-filter-label">Match</span>
+            <button class="search-filter-chip active" data-filter="name">Name</button>
+            <button class="search-filter-chip active" data-filter="tags">Tags</button>
+          </div>
+          <div class="search-filter-group">
+            <span class="search-filter-label">Show</span>
+            <button class="search-filter-chip active" data-filter="typeBookmark">Bookmarks</button>
+            <button class="search-filter-chip active" data-filter="typeFolder">Folders</button>
+            <button class="search-filter-chip active" data-filter="typeBoard">Boards</button>
+          </div>
+        </div>
       </div>
 
       <div id="essentialsSection">
@@ -154,7 +176,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.25</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn">v0.11.26</button>
       </div>
     </aside>
 
@@ -707,7 +729,7 @@
         <h3>About Morpheus WebHub</h3>
       </div>
       <div class="about-body">
-        <div class="about-version" id="aboutVersionLine">Version 0.11.25</div>
+        <div class="about-version" id="aboutVersionLine">Version 0.11.26</div>
         <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
         <p class="about-note">Data is stored in localStorage. Use Export JSON in Settings to keep regular backups.</p>
       </div>

@@ -5,6 +5,18 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.26] — 2026-04-20
+
+### Added
+
+- **Search filter panel**: funnel icon button beside the search input toggles a compact filter bar with two groups — "Match" (Name / Tags) and "Show" (Bookmarks / Folders / Boards); chips toggle independently; icon gets an accent dot indicator when any filter is non-default; panel collapses via the button or Escape
+
+### Changed
+
+- `renderSearchResults` now respects `searchFilters`: name/URL matching and tag matching are gated by their respective chips; result types (bookmark, folder, board) are individually suppressible
+
+---
+
 ## [0.11.25] — 2026-04-20
 
 ### Added

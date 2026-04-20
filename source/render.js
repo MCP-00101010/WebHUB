@@ -21,7 +21,17 @@ const elements = {
   modalCancelBtn: document.getElementById('modalCancelBtn'),
   contextMenu: document.getElementById('contextMenu'),
   searchInput: document.getElementById('searchInput'),
-  searchResultsPane: document.getElementById('searchResultsPane')
+  searchResultsPane: document.getElementById('searchResultsPane'),
+  searchFilterBtn: document.getElementById('searchFilterBtn'),
+  searchFilterBar: document.getElementById('searchFilterBar')
+};
+
+const searchFilters = {
+  name: true,
+  tags: true,
+  typeBookmark: true,
+  typeFolder: true,
+  typeBoard: true
 };
 
 function faviconUrl(url, sz) {
@@ -208,21 +218,31 @@ function renderSearchResults(query) {
   pane.innerHTML = '';
 
   const matchesQuery = (item, board) => {
-    if ((item.title || '').toLowerCase().includes(q)) return true;
-    if (item.url && item.url.toLowerCase().includes(q)) return true;
-    if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
-    if (item.sharedTags && item.sharedTags.some(t => t.toLowerCase().includes(q))) return true;
-    if (board) {
-      const inherited = computeInheritedTags(item, board);
-      if (inherited.some(t => t.toLowerCase().includes(q))) return true;
+    if (searchFilters.name) {
+      if ((item.title || '').toLowerCase().includes(q)) return true;
+      if (item.url && item.url.toLowerCase().includes(q)) return true;
+    }
+    if (searchFilters.tags) {
+      if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
+      if (item.sharedTags && item.sharedTags.some(t => t.toLowerCase().includes(q))) return true;
+      if (board) {
+        const inherited = computeInheritedTags(item, board);
+        if (inherited.some(t => t.toLowerCase().includes(q))) return true;
+      }
     }
     return false;
+  };
+
+  const typeAllowed = (item) => {
+    if (item.type === 'board') return searchFilters.typeBoard;
+    if (item.type === 'folder') return searchFilters.typeFolder;
+    return searchFilters.typeBookmark;
   };
 
   const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
-      if (matchesQuery(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId } });
+      if (typeAllowed(item) && matchesQuery(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId } });
       if (item.children) hits.push(...collectFromList(item.children, board, columnId));
     }
     return hits;
@@ -230,13 +250,13 @@ function renderSearchResults(query) {
 
   const groups = [];
   const essHits = state.essentials
-    .map((e, i) => e && matchesQuery(e, null) ? { item: e, meta: { area: 'essential', slot: i } } : null)
+    .map((e, i) => e && searchFilters.typeBookmark && matchesQuery(e, null) ? { item: e, meta: { area: 'essential', slot: i } } : null)
     .filter(Boolean);
   if (essHits.length) groups.push({ label: 'Essentials', items: essHits });
   for (const board of state.boards) {
     const hits = [];
-    if (matchesQuery(board, null)) hits.push({ item: board, meta: { area: 'board-item', boardId: board.id } });
-    hits.push(...board.speedDial.filter(i => matchesQuery(i, board)).map(i => ({ item: i, meta: { area: 'speed-dial-item', boardId: board.id } })));
+    if (searchFilters.typeBoard && matchesQuery(board, null)) hits.push({ item: board, meta: { area: 'board-item', boardId: board.id } });
+    if (searchFilters.typeBookmark) hits.push(...board.speedDial.filter(i => matchesQuery(i, board)).map(i => ({ item: i, meta: { area: 'speed-dial-item', boardId: board.id } })));
     hits.push(...board.columns.filter(c => !c.isInbox).flatMap(col => collectFromList(col.items, board, col.id)));
     if (hits.length) groups.push({ label: board.title, items: hits });
   }

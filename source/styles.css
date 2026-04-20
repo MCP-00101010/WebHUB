@@ -1551,10 +1551,111 @@ button {
 
 .sidebar-search {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.search-filter-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.search-filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.search-filter-btn.open {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.search-filter-btn.has-active::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.search-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 9px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.search-filter-bar.hidden {
+  display: none;
+}
+
+.search-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.search-filter-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  min-width: 38px;
+}
+
+.search-filter-chip {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.search-filter-chip.active {
+  background: var(--accent-chip);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-filter-chip:hover:not(.active) {
+  border-color: var(--text-muted);
+  color: var(--text);
 }
 
 .sidebar-search input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
