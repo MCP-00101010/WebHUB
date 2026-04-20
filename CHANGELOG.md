@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.7] — 2026-04-21
+
+### Added
+
+- **Tag disambiguation in autocomplete**: when two tags share the same name in different groups (e.g. "python" in "Coding" and "Snakes"), suggestions and committed chips now show `python · GroupName`; chip inputs resolve the qualified format `name · GroupName` to the correct tag ID
+- **Delete tags from Unsorted**: Unsorted chips now show a × button to permanently remove a tag from all items and state
+- **Orphan tag cleanup**: if any tags are unreferenced by all items, an `× N orphans` pill appears in the Unsorted header; clicking it batch-deletes all zero-use tags with a single undo snapshot
+
+---
+
 ## [0.11.6] — 2026-04-20
 
 ### Changed

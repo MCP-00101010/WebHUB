@@ -27,15 +27,40 @@ function getBoardInheritedTags() {
 
 // --- Tag ID-mode chip input options ---
 
+function tagGroupLabel(tag) {
+  if (!tag) return null;
+  return (state.settings.tagGroups || []).find(g => g.id === tag.groupId)?.name || null;
+}
+
+function tagDisplayName(id) {
+  const tag = getTagById(id);
+  if (!tag) return id;
+  const sameNameCount = (state.tags || []).filter(t => t.name.toLowerCase() === tag.name.toLowerCase()).length;
+  if (sameNameCount > 1) {
+    const grp = tagGroupLabel(tag);
+    return grp ? `${tag.name} \u00b7 ${grp}` : tag.name;
+  }
+  return tag.name;
+}
+
 function tagChipOpts() {
   return {
-    displayOf: id => getTagById(id)?.name || id,
+    displayOf: id => tagDisplayName(id),
     resolveInput: typed => {
-      // Find existing tag by name (case-insensitive first-match)
+      // Support "name · GroupName" qualified format for disambiguation
+      const dot = typed.indexOf(' \u00b7 ');
+      if (dot !== -1) {
+        const name = typed.slice(0, dot).trim().toLowerCase();
+        const grpName = typed.slice(dot + 3).trim().toLowerCase();
+        const match = (state.tags || []).find(t => {
+          if (t.name.toLowerCase() !== name) return false;
+          return tagGroupLabel(t)?.toLowerCase() === grpName;
+        });
+        if (match) return match.id;
+      }
       const lc = typed.toLowerCase();
       const match = (state.tags || []).find(t => t.name.toLowerCase() === lc);
       if (match) return match.id;
-      // Create new ungrouped tag
       return createTag(typed).id;
     }
   };
@@ -46,13 +71,20 @@ function tagChipOpts() {
 function getTagSuggestions(partial, hiddenInput) {
   if (!partial) return [];
   const currentIds = new Set((hiddenInput?.value || '').split(/\s+/).filter(Boolean));
-  const currentNames = new Set([...currentIds].map(id => getTagById(id)?.name || id));
   const lc = partial.toLowerCase();
   const seen = new Set();
-  return (state.tags || [])
-    .filter(t => t.name.toLowerCase().startsWith(lc) && t.name.toLowerCase() !== lc && !currentNames.has(t.name))
-    .filter(t => { if (seen.has(t.name)) return false; seen.add(t.name); return true; })
-    .map(t => t.name);
+  const results = [];
+  for (const t of (state.tags || [])) {
+    if (currentIds.has(t.id)) continue;
+    if (!t.name.toLowerCase().startsWith(lc)) continue;
+    const grp = tagGroupLabel(t);
+    const display = grp ? `${t.name} \u00b7 ${grp}` : t.name;
+    if (seen.has(display)) continue;
+    seen.add(display);
+    if (display.toLowerCase() === lc) continue; // exact match, nothing to complete
+    results.push(display);
+  }
+  return results;
 }
 
 function renderTagSuggestions(textInput, hiddenInput) {

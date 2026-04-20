@@ -757,6 +757,7 @@ function renderTagGroups() {
 
   // --- Unsorted block (always shown) ---
   const unsorted = (state.tags || []).filter(t => !t.groupId).sort((a, b) => a.name.localeCompare(b.name));
+  const orphans = (state.tags || []).filter(t => !tagCounts[t.id]);
 
   const uBlock = document.createElement('div');
   uBlock.className = 'tag-group-block tag-group-block--unsorted';
@@ -767,6 +768,23 @@ function renderTagGroups() {
   uLabel.className = 'tag-group-name-input tag-group-name--readonly';
   uLabel.textContent = '\u00a0Unsorted';
   uHeader.appendChild(uLabel);
+
+  if (orphans.length) {
+    const cleanBtn = document.createElement('button');
+    cleanBtn.type = 'button';
+    cleanBtn.className = 'tag-orphan-clean-btn';
+    cleanBtn.textContent = `\u00d7 ${orphans.length} orphan${orphans.length > 1 ? 's' : ''}`;
+    cleanBtn.title = 'Remove tags not used by any item';
+    cleanBtn.addEventListener('click', () => {
+      pushUndoSnapshot();
+      orphans.forEach(t => deleteTag(t.id));
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+    });
+    uHeader.appendChild(cleanBtn);
+  }
+
   uBlock.appendChild(uHeader);
 
   const chipRow = document.createElement('div');
@@ -775,9 +793,26 @@ function renderTagGroups() {
   if (unsorted.length) {
     unsorted.forEach(tag => {
       const chip = document.createElement('span');
-      chip.className = 'tag-chip';
+      chip.className = 'tag-chip chip-live';
       chip.dataset.value = tag.id;
-      chip.textContent = tag.name;
+      const label = document.createElement('span');
+      label.textContent = tag.name;
+      chip.appendChild(label);
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'chip-remove-btn';
+      delBtn.textContent = '\u00d7';
+      delBtn.title = 'Delete tag';
+      delBtn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        pushUndoSnapshot();
+        deleteTag(tag.id);
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+      });
+      chip.appendChild(delBtn);
       applyTagColor(chip, tag.id);
       chip.addEventListener('contextmenu', e => {
         e.preventDefault();

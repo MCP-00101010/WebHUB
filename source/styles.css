@@ -2809,8 +2809,21 @@ button {
   cursor: default;
 }
 
-.tag-group-unsorted-chips .chip-remove-btn {
-  display: none;
+.tag-orphan-clean-btn {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--text-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tag-orphan-clean-btn:hover {
+  color: var(--danger, #e05);
+  border-color: var(--danger, #e05);
 }
 
 .stg-tag-actions {
