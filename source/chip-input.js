@@ -124,7 +124,12 @@ function initChipInput(hiddenInput, opts = {}) {
 
   textInput.addEventListener('keydown', e => {
     if (e.key === ' ' || e.key === 'Tab') {
-      if (textInput.value.trim()) { e.preventDefault(); chipifyWord(); }
+      if (textInput.value.trim()) {
+        e.preventDefault();
+        // If Tab fires while autocomplete suggestion is selected, let autocomplete accept it first
+        if (e.key === 'Tab' && textInput.selectionStart !== textInput.selectionEnd) return;
+        chipifyWord();
+      }
     } else if (e.key === 'Enter') {
       if (textInput.value.trim()) { e.preventDefault(); chipifyWord(); }
       // else let Enter propagate for form submit

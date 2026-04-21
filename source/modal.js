@@ -110,7 +110,9 @@ function tagChipOpts() {
     displayOf: id => tagDisplayName(id),
     resolveInput: (typed, textInput, hiddenInput) => {
       const lc = typed.toLowerCase();
-      const matches = (state.tags || []).filter(t => t.name.toLowerCase() === lc);
+      const currentIds = new Set((hiddenInput?.value || '').split(/\s+/).filter(Boolean));
+      // Exclude already-committed tags so the picker only shows remaining options
+      const matches = (state.tags || []).filter(t => t.name.toLowerCase() === lc && !currentIds.has(t.id));
       if (matches.length > 1) {
         // Ambiguous — show group picker; chip commit deferred to picker click
         const pickerMatches = matches.map(t => {
