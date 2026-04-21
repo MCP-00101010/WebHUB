@@ -368,46 +368,6 @@ function hideSettingsPanel() {
   saveState();
 }
 
-function populateTagColors() {
-  const tags = new Set();
-  const walk = items => { for (const item of (items || [])) { if (item?.tags) item.tags.forEach(t => tags.add(t)); if (item?.children) walk(item.children); } };
-  walk(state.essentials);
-  for (const board of state.boards) { walk(board.speedDial); for (const col of board.columns) walk(col.items); }
-
-  const container = document.getElementById('stgTagColors');
-  container.innerHTML = '';
-  if (!tags.size) {
-    const empty = document.createElement('span');
-    empty.className = 'settings-muted';
-    empty.textContent = 'No tags in use yet.';
-    container.appendChild(empty);
-    return;
-  }
-  [...tags].sort().forEach(tag => {
-    const row = document.createElement('div');
-    row.className = 'tag-color-row';
-    const label = document.createElement('span');
-    label.textContent = tag;
-    const group = document.createElement('div');
-    group.className = 'color-picker-group';
-    const input = document.createElement('input');
-    input.type = 'color';
-    input.className = 'color-input';
-    input.value = state.settings.tagColors[tag] || '#6d7cff';
-    input.addEventListener('input', e => { state.settings.tagColors[tag] = e.target.value; renderAll(); saveState(); });
-    const reset = document.createElement('button');
-    reset.type = 'button';
-    reset.className = 'color-reset-btn';
-    reset.title = 'Reset to default';
-    reset.textContent = '×';
-    reset.addEventListener('click', () => { delete state.settings.tagColors[tag]; input.value = '#6d7cff'; renderAll(); saveState(); });
-    group.appendChild(input);
-    group.appendChild(reset);
-    row.appendChild(label);
-    row.appendChild(group);
-    container.appendChild(row);
-  });
-}
 
 function applyGroupColor(chip, color) {
   chip.style.background = hexToRgba(color, 0.15);
