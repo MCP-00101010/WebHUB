@@ -577,8 +577,9 @@ function tagGroupChipOpts(group) {
     displayOf: id => getTagById(id)?.name || id,
     resolveInput: typed => {
       const lc = typed.toLowerCase();
-      const existing = (state.tags || []).find(t => t.name.toLowerCase() === lc);
-      if (existing) return existing.id;
+      // Only reuse a tag already in this group — same name in another group is a separate tag
+      const inGroup = (state.tags || []).find(t => t.name.toLowerCase() === lc && t.groupId === group.id);
+      if (inGroup) return inGroup.id;
       return createTag(typed, null, null).id;
     }
   };
