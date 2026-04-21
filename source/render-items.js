@@ -7,9 +7,10 @@ function resolveTag(tagId) {
 
 function applyTagColor(chip, tagId) {
   const tag = resolveTag(tagId);
-  if (tag.color) {
-    chip.style.background = hexToRgba(tag.color, 0.15);
-    chip.style.color = tag.color;
+  const color = tag.color || (state.settings.tagGroups || []).find(g => g.id === tag.groupId)?.color || null;
+  if (color) {
+    chip.style.background = hexToRgba(color, 0.15);
+    chip.style.color = color;
   }
 }
 

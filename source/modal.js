@@ -170,8 +170,11 @@ function attachTagAutocomplete(textInput, hiddenInput) {
     if ((e.key === 'Tab' || e.key === 'ArrowRight') && start !== end && end === textInput.value.length) {
       e.preventDefault();
       const accepted = textInput.value.slice(0, end);
-      textInput.value = accepted + ' ';
-      textInput.setSelectionRange(accepted.length + 1, accepted.length + 1);
+      textInput.value = accepted;
+      textInput.setSelectionRange(accepted.length, accepted.length);
+      // Immediately commit: shows picker for multi-group, adds chip for single-group
+      if (hiddenInput._commit) hiddenInput._commit();
+      else { textInput.value = accepted + ' '; textInput.setSelectionRange(accepted.length + 1, accepted.length + 1); }
     } else if (e.key === 'Backspace' && start !== end && end === textInput.value.length) {
       e.preventDefault();
       textInput.value = textInput.value.slice(0, start);

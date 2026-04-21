@@ -101,6 +101,8 @@ function initChipInput(hiddenInput, opts = {}) {
     if (word && addChip(word)) textInput.value = '';
   }
 
+  hiddenInput._commit = chipifyWord;
+
   function setValue(raw) {
     chips = [];
     textInput.value = '';
