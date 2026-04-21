@@ -758,7 +758,7 @@ function renderTagGroups() {
 
   // --- Unsorted block (always shown) ---
   const unsorted = (state.tags || []).filter(t => !t.groupId).sort((a, b) => a.name.localeCompare(b.name));
-  const orphans = (state.tags || []).filter(t => !tagCounts[t.id]);
+  const orphans = (state.tags || []).filter(t => !tagCounts[t.id] && !t.groupId);
 
   const uBlock = document.createElement('div');
   uBlock.className = 'tag-group-block tag-group-block--unsorted';
