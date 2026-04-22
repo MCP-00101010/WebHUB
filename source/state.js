@@ -895,6 +895,21 @@ function restoreFromTrash(trashId) {
   return true;
 }
 
+function cleanTrashAfterRestore() {
+  const liveIds = new Set();
+  const walkItems = (list) => { for (const item of (list || [])) { if (item?.id) liveIds.add(item.id); if (item?.children) walkItems(item.children); } };
+  const walkNav = (items) => { for (const ni of (items || [])) { liveIds.add(ni.id); if (ni.type === 'collection') for (const i of (ni.speedDial || [])) if (i?.id) liveIds.add(i.id); if (ni.children) walkNav(ni.children); } };
+  for (const board of (state.boards || [])) { liveIds.add(board.id); for (const col of (board.columns || [])) walkItems(col.items); for (const i of (board.speedDial || [])) if (i?.id) liveIds.add(i.id); }
+  for (const item of (state.essentials || [])) { if (item?.id) liveIds.add(item.id); }
+  walkNav(state.navItems);
+  const prev = recentlyDeleted.length;
+  recentlyDeleted = recentlyDeleted.filter(e => {
+    const id = e.item?.board?.id ?? e.item?.id;
+    return !liveIds.has(id);
+  });
+  if (recentlyDeleted.length !== prev) saveTrash();
+}
+
 function removeTrashItem(trashId) {
   const idx = recentlyDeleted.findIndex(e => e.trashId === trashId);
   if (idx !== -1) { recentlyDeleted.splice(idx, 1); saveTrash(); }

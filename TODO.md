@@ -9,6 +9,10 @@
 - ✓ *Completed 2026-04-22* Collections: nav item type grouping boards into a tabbed workspace with shared speed dial and tag inheritance — see [0.11.9] in CHANGELOG.
 - ✓ *Fixed 2026-04-22* edit/create bookmark modal double border on tag chip input — see [0.11.12]
 
+## Trash / Undo-Redo
+
+- ✓ *Fixed 2026-04-23* undo/redo now auto-removes restored items from trash — see [0.11.16]
+
 ## Collections
 
 - ✓ *Fixed 2026-04-22* shared tag input placeholder now matches other tag fields — see [0.11.14]
@@ -19,7 +23,7 @@
 - ✓ *Fixed 2026-04-22* empty collection showed last active board name in title bar — see [0.11.12]
 - ✓ *Fixed 2026-04-22* collection shared tags modal lacked "Pass to items" / "Strip on remove" toggles — see [0.11.13]
 - ✓ *Fixed 2026-04-22* boards not displaying inherited tags from ancestor folders/collections — see [0.11.13]
-- bug: when adding a new board to a collection, the tab bar shows "New Board" instead of the board's name. tab bar needs refresh when we add new board to it.
+- ✓ *Fixed 2026-04-23* tab bar now refreshes when closing board settings with an empty title — see [0.11.16]
 - ✓ *Fixed 2026-04-22* board tab bar icon removed — see bd5a442
 - ✓ *Fixed 2026-04-22* speed dial DnD and context-menu "Add bookmark" were targeting last active board instead of collection — see [0.11.12]
 - ✓ *Fixed 2026-04-22* collection create/edit modal now includes Tags and Shared Tags chip inputs — see [0.11.12]
@@ -38,7 +42,7 @@
 
 ## Drag and Drop
 
-- visual: when dragging a bookmark directly from the browser into essentials/speed dial it does not seem to load (works when dragging the bookmark into a column)
+- visual: when dragging a bookmark directly from the browser into essentials/speed dial it does not seem to load (works when dragging the bookmark into a column). sometimes bookmarks seem to loose their icons when moving them between essentials/speed dial/colums
 # - visual: when dragging any object, the object is shown in its old position
 - ✓ *Fixed 2026-04-20* — Visual: column preview clone stuck when dragging to empty speed-dial or essentials. Fixed by handling the empty speed-dial case in `handleSpeedDialContainerDragOver` and calling `removeDragPlaceholders()` on first entry into an essentials cell.
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover` — only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.

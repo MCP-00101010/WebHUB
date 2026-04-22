@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.16] — 2026-04-23
+
+### Fixed
+
+- **Undo/redo leaves stale trash entries** — after undoing a deletion, the restored item is now removed from the Recently Deleted panel automatically. Applies to redo as well. If the trash panel is open, it refreshes immediately.
+- **Board tab bar stale after closing settings with no rename** — `hideBoardSettingsPanel` now refreshes the collection/folder tab bar when the title input is empty (placeholder fallback path), matching the existing live-update on every keystroke.
+
+### Changed
+
+- **Trash panel label for deleted collections** — restored-collection entries now show "Collection" in the trash panel meta line instead of "Item".
+
+---
+
 ## [0.11.15] — 2026-04-23
 
 ### Changed

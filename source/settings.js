@@ -50,6 +50,11 @@ function hideBoardSettingsPanel() {
     board.title = titleEl.placeholder || 'New Board';
     const navItem = _findNavBoardItem(state.navItems, board.id);
     if (navItem) navItem.title = board.title;
+    if (!elements.collectionTabBar.classList.contains('hidden')) {
+      const coll = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+      if (coll) renderCollectionTabBar(coll);
+      else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
+    }
   }
   document.getElementById('boardSettingsDoneBtn').textContent = 'OK';
   document.getElementById('boardSettingsPanel').classList.add('hidden');

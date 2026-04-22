@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.15';
+const APP_VERSION = '0.11.16';
 
 let activeModal = null;
 let contextTarget = null;
@@ -53,18 +53,22 @@ function undo() {
   if (!undoStack.length) return;
   redoStack.push(JSON.stringify(state));
   restoreStateSnapshot(undoStack.pop());
+  cleanTrashAfterRestore();
   saveState();
   renderAll();
   updateUndoRedoUI();
+  if (!document.getElementById('trashPanel').classList.contains('hidden')) renderTrashPanel();
 }
 
 function redo() {
   if (!redoStack.length) return;
   undoStack.push(JSON.stringify(state));
   restoreStateSnapshot(redoStack.pop());
+  cleanTrashAfterRestore();
   saveState();
   renderAll();
   updateUndoRedoUI();
+  if (!document.getElementById('trashPanel').classList.contains('hidden')) renderTrashPanel();
 }
 
 function updateUndoRedoUI() {
@@ -170,6 +174,7 @@ function getTrashItemLabel(entry) {
     return t === 'folder' ? 'Nav folder' : t === 'title' ? 'Nav title' : 'Nav item';
   }
   if (a === 'speed-dial') return 'Speed dial';
+  if (a === 'collection') return 'Collection';
   if (a === 'essential') return 'Essential';
   const t = entry.item?.type;
   return t === 'folder' ? 'Folder' : t === 'bookmark' ? 'Bookmark' : t === 'title' ? 'Title' : 'Item';
