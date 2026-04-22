@@ -42,38 +42,59 @@ let activeTagFilters = new Set();
 let _tagFilterMode = 'or';
 let _tagPickerSort = 'az';
 
-function faviconUrl(url, sz) {
-  try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=${sz}`; }
-  catch { return ''; }
+function _faviconHostname(url) {
+  try { return new URL(url).hostname; } catch { return ''; }
 }
 
-async function fetchFaviconDataUrl(url, sz) {
-  const src = faviconUrl(url, sz);
-  if (!src) return '';
+async function _tryFetchDataUrl(src) {
   try {
-    const resp = await fetch(src);
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(src, { signal: controller.signal });
+    clearTimeout(tid);
     if (!resp.ok) return '';
     const blob = await resp.blob();
-    return new Promise(resolve => {
+    if (!blob.size) return '';
+    return await new Promise(res => {
       const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = () => resolve('');
+      reader.onload = e => res(e.target.result || '');
+      reader.onerror = () => res('');
       reader.readAsDataURL(blob);
     });
   } catch { return ''; }
+}
+
+async function fetchFaviconDataUrl(url) {
+  const hostname = _faviconHostname(url);
+  if (!hostname) return '';
+  // Race Google and DuckDuckGo — first non-empty result wins
+  return new Promise(resolve => {
+    let pending = 2;
+    let done = false;
+    const settle = result => {
+      if (done) return;
+      if (result) { done = true; resolve(result); return; }
+      if (--pending === 0) resolve('');
+    };
+    _tryFetchDataUrl(`https://www.google.com/s2/favicons?domain=${hostname}&sz=64`).then(settle);
+    _tryFetchDataUrl(`https://icons.duckduckgo.com/ip3/${hostname}.ico`).then(settle);
+  });
 }
 
 function setFavicon(img, item, sz) {
   if (item.faviconCache) {
     img.src = item.faviconCache;
   } else if (item.url) {
-    img.src = faviconUrl(item.url, sz);
-    fetchFaviconDataUrl(item.url, sz).then(dataUrl => {
+    const hostname = _faviconHostname(item.url);
+    if (hostname) img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`;
+    fetchFaviconDataUrl(item.url).then(dataUrl => {
       if (dataUrl) {
         item.faviconCache = dataUrl;
         trimFaviconCache(item);
-        img.src = dataUrl;
+        if (img.isConnected) img.src = dataUrl;
         saveState();
+      } else if (hostname && img.isConnected) {
+        img.src = `https://${hostname}/favicon.ico`;
       }
     });
   }

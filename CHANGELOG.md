@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.17] — 2026-04-23
+
+### Fixed
+
+- **Favicon loading reliability** — replaced single-service fetch with a parallel race between Google (`/s2/favicons`) and DuckDuckGo (`icons.duckduckgo.com/ip3/`), each with a 5-second `AbortController` timeout. The first non-empty data URL wins and is cached. If both services fail (e.g. corporate firewalls, obscure domains), falls back to setting `img.src` directly to `https://{hostname}/favicon.ico`, which bypasses CORS and lets the browser display the icon without caching it as a data URL.
+
+---
+
 ## [0.11.16] — 2026-04-23
 
 ### Fixed
