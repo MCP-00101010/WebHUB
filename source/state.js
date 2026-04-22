@@ -887,6 +887,10 @@ function restoreFromTrash(trashId) {
       const col = board.columns.find(c => c.id === source.columnId) || board.columns[0];
       if (col) col.items.push(JSON.parse(JSON.stringify(item)));
     }
+  } else if (source.area === 'collection') {
+    const restored = JSON.parse(JSON.stringify(item));
+    state.navItems = state.navItems.filter(ni => !(ni.type === 'board' && (restored.boardIds || []).includes(ni.boardId)));
+    state.navItems.push(restored);
   }
   return true;
 }

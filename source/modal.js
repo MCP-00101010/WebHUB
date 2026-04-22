@@ -328,6 +328,9 @@ function handleModalSubmit(event) {
       if (area === 'speed-dial-item') {
         const board = getActiveBoard();
         board.speedDial = board.speedDial.filter(i => i.id !== contextTarget.itemId);
+      } else if (area === 'collection-speed-dial') {
+        const coll = state.navItems.find(i => i.id === contextTarget.collectionId);
+        if (coll) coll.speedDial = (coll.speedDial || []).filter(i => i.id !== contextTarget.itemId);
       } else if (area === 'essential') {
         removeEssential(contextTarget.slot);
         trimEssentialsTail();

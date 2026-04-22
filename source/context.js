@@ -207,6 +207,7 @@ function handleContextMenuAction(action) {
         : `Delete collection "${coll.title}"?`;
       showConfirmDialog(msg, () => {
         pushUndoSnapshot();
+        pushToTrash(JSON.parse(JSON.stringify(coll)), { area: 'collection' });
         for (const boardId of (coll.boardIds || [])) {
           const board = state.boards.find(b => b.id === boardId);
           if (board) state.navItems.push({ id: `nav-${boardId}`, type: 'board', title: board.title, boardId });
@@ -216,7 +217,7 @@ function handleContextMenuAction(action) {
           state.activeCollectionId = null;
           state.activeBoardId = coll.boardIds[0] || state.activeBoardId;
         }
-        renderAll(); saveState();
+        renderAll(); saveState(); updateTrashBadge();
       }, 'Delete');
       break;
     }
@@ -495,17 +496,21 @@ function handleContextMenuAction(action) {
       const area = contextTarget.area;
       // Speed dial and essentials are not board-scoped, so offer all boards.
       // Board items exclude the current board (already there); import manager gets all regular boards.
-      const boards = (area === 'speed-dial-item' || area === 'essential')
+      const boards = (area === 'speed-dial-item' || area === 'essential' || area === 'collection-speed-dial')
         ? state.boards.filter(b => !b.isImportManager && !b.locked)
         : cab?.isImportManager
           ? state.boards.filter(b => !b.isImportManager && !b.locked)
           : state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== cab?.id);
+      const boardLabel = (b) => {
+        const coll = findBoardCollection(b.id);
+        return coll ? `${coll.title} — ${b.title}` : b.title;
+      };
       showModal('moveToBoard', {
         title: 'Move to Board',
         showName: false,
         showSelect: true,
         selectLabel: 'Target board',
-        selectOptions: boards.map(b => ({ value: b.id, label: b.title })),
+        selectOptions: boards.map(b => ({ value: b.id, label: boardLabel(b) })),
         contextTarget
       });
       break;
@@ -725,10 +730,12 @@ function handleFolderTabContextMenu(event, navItem, folder) {
 
 function handleCollectionSpeedDialContextMenu(event, item, collection) {
   contextTarget = { area: 'collection-speed-dial', itemId: item.id, collectionId: collection.id, item };
+  const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
   showContextMenu(event.clientX, event.clientY, [
     { label: 'Edit bookmark', action: 'editCollectionSpeedDial' },
     { label: 'Duplicate', action: 'duplicateCollectionSpeedDial' },
     { label: 'Refresh favicon', action: 'refreshCollectionSpeedDialFavicon' },
+    ...(allBoards.length ? [{ label: 'Move to board', action: 'moveToBoard' }] : []),
     { label: 'Delete bookmark', action: 'deleteCollectionSpeedDial' }
   ]);
 }
@@ -811,7 +818,7 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
     const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== meta.boardId);
     if (allBoards.length) {
-      options.push({ label: 'Move to board', submenu: allBoards.map(b => ({ label: b.title, action: `moveToBoard:${b.id}` })) });
+      options.push({ label: 'Move to board', submenu: allBoards.map(b => { const c = findBoardCollection(b.id); return { label: c ? `${c.title} — ${b.title}` : b.title, action: `moveToBoard:${b.id}` }; }) });
     }
     options.push({ label: 'Show in board',   action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });

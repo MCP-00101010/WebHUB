@@ -19,6 +19,7 @@ function _canSendToInbox() {
   if (dragPayload.area === 'board') return ['bookmark', 'folder'].includes(dragPayload.itemType);
   if (dragPayload.area === 'speed-dial') return true;
   if (dragPayload.area === 'essential') return !!state.essentials[dragPayload.slot];
+  if (dragPayload.area === 'collection-speed-dial') return true;
   if (dragPayload.area === 'nav') {
     const path = findNavItemPath(dragPayload.itemId);
     const item = path?.list.find(i => i.id === dragPayload.itemId);
@@ -99,6 +100,9 @@ function _renderCrossContextPreview(kind) {
     } else if (dragPayload.area === 'essential') {
       item = state.essentials.find?.(i => i?.id === dragPayload.itemId)
           ?? (dragPayload.slot != null ? state.essentials[dragPayload.slot] : null);
+    } else if (dragPayload.area === 'collection-speed-dial') {
+      const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+      item = coll?.speedDial?.find(i => i.id === dragPayload.itemId) ?? null;
     } else if (dragPayload.area === 'nav') {
       const p = findNavItemPath(dragPayload.itemId);
       item = p?.list.find(i => i.id === dragPayload.itemId);
@@ -241,7 +245,19 @@ function _extractDraggedItem(board) {
     if (!dragged.tags) dragged.tags = [];
     return dragged;
   }
+  if (dragPayload.area === 'collection-speed-dial') return _extractCollectionSpeedDialItem();
   return null;
+}
+
+function _extractCollectionSpeedDialItem() {
+  const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+  if (!coll) return null;
+  const idx = (coll.speedDial || []).findIndex(i => i.id === dragPayload.itemId);
+  if (idx === -1) return null;
+  const [item] = coll.speedDial.splice(idx, 1);
+  item.type = 'bookmark';
+  if (!item.tags) item.tags = [];
+  return item;
 }
 
 function createEssentialSlotPreview() {
@@ -254,6 +270,9 @@ function createEssentialSlotPreview() {
     item = board?.speedDial.find(i => i.id === dragPayload.itemId);
   } else if (dragPayload.area === 'essential') {
     item = state.essentials[dragPayload.slot];
+  } else if (dragPayload.area === 'collection-speed-dial') {
+    const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+    item = coll?.speedDial?.find(i => i.id === dragPayload.itemId) ?? null;
   }
   if (!item) return null;
   const wrapper = document.createElement('div');
@@ -307,6 +326,16 @@ function handleEssentialSlotDrop(targetSlot) {
     if (existing) addBoardItemToColumn(dragPayload.sourceColumnId || board.columns[0].id, existing);
     while (state.essentials.length < targetSlot) state.essentials.push(null);
     state.essentials[targetSlot] = item;
+  } else if (dragPayload.area === 'collection-speed-dial') {
+    const item = _extractCollectionSpeedDialItem();
+    if (!item) { dragPayload = null; return; }
+    const existing = state.essentials[targetSlot];
+    if (existing) {
+      const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+      if (coll) { if (!coll.speedDial) coll.speedDial = []; coll.speedDial.push(existing); }
+    }
+    while (state.essentials.length < targetSlot) state.essentials.push(null);
+    state.essentials[targetSlot] = item;
   } else {
     dragPayload = null;
     return;
@@ -339,7 +368,7 @@ function _moveBoardPreview(parentEl, beforeEl) {
 // handlers. Keyed on the folder card element so any subelement of the folder top
 // section hits the same guard and does not re-trigger on micro-movements.
 function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
   event.preventDefault();
   event.stopPropagation();
   if (_dropTarget === folderCardEl) return;
@@ -357,7 +386,7 @@ function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
 function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, depth) {
   if (!dragPayload) return;
   if (getActiveBoard()?.locked) return;
-  if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
+  if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
   // Reject dragover when this item lives inside a locked folder (inherited lock).
   if (event.currentTarget.parentElement?.closest('.board-column-item.is-locked')) return;
 
@@ -391,7 +420,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   if (!dragPayload) return;
   if (getActiveBoard()?.locked) return;
   const isNavColWidget = dragPayload.area === 'nav' && _canDropAsColumnWidget();
-  if (!isNavColWidget && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential') return;
+  if (!isNavColWidget && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial') return;
   if (dragPayload.itemId === targetItem.id) return;
   if (event.currentTarget.parentElement?.closest('.board-column-item.is-locked')) return;
 
@@ -418,12 +447,15 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 
   const targetPath = findBoardItemInColumns(board, targetItem.id);
 
-  if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') {
+  if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential' || dragPayload.area === 'collection-speed-dial') {
     let extracted;
     if (dragPayload.area === 'speed-dial') {
       const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
       if (sdIdx === -1) { dragPayload = null; return; }
       [extracted] = board.speedDial.splice(sdIdx, 1);
+    } else if (dragPayload.area === 'collection-speed-dial') {
+      extracted = _extractCollectionSpeedDialItem();
+      if (!extracted) { dragPayload = null; return; }
     } else {
       extracted = state.essentials[dragPayload.slot];
       if (!extracted) { dragPayload = null; return; }
@@ -472,7 +504,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 
 function handleBoardColumnDragOver(event) {
   if (getActiveBoard()?.locked) return;
-  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
+  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
@@ -532,7 +564,7 @@ function handleBoardColumnDrop(event, columnId) {
   }
 
   const isNavColWidget = dragPayload && dragPayload.area === 'nav' && _canDropAsColumnWidget();
-  if (!isNavColWidget && (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential'))) return;
+  if (!isNavColWidget && (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial'))) return;
   pushUndoSnapshot();
 
   const board = getActiveBoard();
@@ -568,6 +600,9 @@ function handleBoardColumnDrop(event, columnId) {
     [draggedItem] = board.speedDial.splice(sdIdx, 1);
     draggedItem.type = 'bookmark';
     if (!draggedItem.tags) draggedItem.tags = [];
+  } else if (dragPayload.area === 'collection-speed-dial') {
+    draggedItem = _extractCollectionSpeedDialItem();
+    if (!draggedItem) { dragPayload = null; return; }
   } else {
     draggedItem = state.essentials[dragPayload.slot];
     if (!draggedItem) { dragPayload = null; return; }
@@ -592,7 +627,7 @@ function handleBoardFolderHeaderDragOver(event, folderCardEl, folderItem, column
 }
 
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   event.preventDefault();
@@ -624,7 +659,7 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
 
 function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -670,7 +705,7 @@ function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, col
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential')) return;
+  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   event.preventDefault();

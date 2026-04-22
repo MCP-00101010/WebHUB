@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.14] — 2026-04-22
+
+### Added
+
+- **Collections in trash** — deleting a collection now pushes it to Recently Deleted. Restoring puts the collection back in the nav and un-promotes its boards (removes the stub nav entries that were created on delete).
+- **Collection speed dial → DnD to columns / essentials** — bookmarks in a collection's speed dial can now be dragged into board columns, board sub-folders, and essential slots (was silently rejected before). Displaced essentials are returned to the collection speed dial.
+- **Collection speed dial → "Move to board"** — right-clicking a collection speed dial bookmark now offers "Move to board", identical to the regular speed dial item menu.
+
+### Changed
+
+- **Move to board board list** — boards that live inside a collection are now labelled `Collection — Board` instead of just `Board` in all "Move to board" dropdowns (modal selector and search-result submenu).
+- **Shared tags input placeholder** — changed from "shared tag1 tag2" to "tag1 tag2" to match all other tag input fields.
+
+---
+
 ## [0.11.13] — 2026-04-22
 
 ### Added
