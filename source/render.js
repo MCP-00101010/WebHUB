@@ -1083,7 +1083,7 @@ function renderCollectionTabBar(collection) {
     tab.dataset.boardId = boardId;
     const tabIcon = document.createElement('span');
     tabIcon.className = 'collection-tab-icon';
-    tabIcon.appendChild(icon('icon-board-add'));
+    tabIcon.appendChild(icon('icon-board'));
     tab.appendChild(tabIcon);
     const tabLabel = document.createElement('span');
     tabLabel.textContent = board.title || 'Untitled Board';
@@ -1143,7 +1143,7 @@ function renderFolderTabBar(folder) {
     tab.dataset.navItemId = navItem.id;
     const tabIcon = document.createElement('span');
     tabIcon.className = 'collection-tab-icon';
-    tabIcon.appendChild(icon('icon-board-add'));
+    tabIcon.appendChild(icon('icon-board'));
     tab.appendChild(tabIcon);
     const tabLabel = document.createElement('span');
     tabLabel.textContent = board?.title || navItem.title || 'Untitled Board';

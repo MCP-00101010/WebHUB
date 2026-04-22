@@ -117,6 +117,8 @@ function migrateItems(items) {
       if (!item.tags) item.tags = [];
       if (!item.sharedTags) item.sharedTags = [];
       if (!item.boardIds) item.boardIds = [];
+      if (item.inheritTags === undefined) item.inheritTags = true;
+      if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
     }
     if (item.children) migrateItems(item.children);
   }
@@ -319,6 +321,26 @@ function findNavBoardItem(boardId, list = state.navItems) {
     }
   }
   return null;
+}
+
+function getBoardNavInheritedTags(boardId) {
+  const tags = [];
+  function collect(items, chain) {
+    for (const item of (items || [])) {
+      if (item.type === 'board' && item.boardId === boardId) {
+        for (const f of chain) if (f.inheritTags !== false && f.sharedTags) tags.push(...f.sharedTags);
+        return true;
+      }
+      if (item.type === 'folder' && item.children) {
+        if (collect(item.children, [...chain, item])) return true;
+      }
+    }
+    return false;
+  }
+  collect(state.navItems, []);
+  const collection = findBoardCollection(boardId);
+  if (collection?.inheritTags !== false && collection?.sharedTags?.length) tags.push(...collection.sharedTags);
+  return [...new Set(tags)];
 }
 
 function findNavParentFolder(boardId, list = state.navItems, parent = null) {
@@ -604,7 +626,7 @@ function findBoardFolder(boardId) {
 
 function createCollection(title) {
   const id = `col-${Date.now()}`;
-  const navItem = { id, type: 'collection', title, speedDial: [], boardIds: [], tags: [], sharedTags: [] };
+  const navItem = { id, type: 'collection', title, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
   state.navItems.push(navItem);
   state.activeCollectionId = id;
   return navItem;
@@ -670,7 +692,7 @@ function computeInheritedTags(item, board) {
     if (ancestor.inheritTags !== false && ancestor.sharedTags) tags.push(...ancestor.sharedTags);
   }
   const collection = findBoardCollection(board.id);
-  if (collection?.sharedTags?.length) tags.push(...collection.sharedTags);
+  if (collection?.inheritTags !== false && collection?.sharedTags?.length) tags.push(...collection.sharedTags);
   return [...new Set(tags)];
 }
 

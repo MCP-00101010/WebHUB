@@ -15,7 +15,9 @@ function showBoardSettingsPanel(isNew = false) {
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('bstgHeader'));
-  document.getElementById('bstgTitle').value = board.title;
+  const titleEl = document.getElementById('bstgTitle');
+  titleEl.placeholder = isNew ? board.title : 'Board Name';
+  titleEl.value = isNew ? '' : board.title;
   const colRadio = document.querySelector(`input[name="bstgCols"][value="${board.columnCount}"]`);
   if (colRadio) colRadio.checked = true;
   document.getElementById('bstgBgUrl').value = board.backgroundImage || '';
@@ -41,12 +43,28 @@ function showBoardSettingsPanel(isNew = false) {
 }
 
 function hideBoardSettingsPanel() {
+  // If the title field is empty, fall back to the placeholder (the original title)
+  const titleEl = document.getElementById('bstgTitle');
+  const board = getActiveBoard();
+  if (board && !titleEl.value.trim()) {
+    board.title = titleEl.placeholder || 'New Board';
+    const navItem = _findNavBoardItem(state.navItems, board.id);
+    if (navItem) navItem.title = board.title;
+  }
   document.getElementById('boardSettingsDoneBtn').textContent = 'OK';
   document.getElementById('boardSettingsPanel').classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.add('hidden');
   boardSettingsCreatingId = null;
   saveState();
+}
+
+function _findNavBoardItem(items, boardId) {
+  for (const i of (items || [])) {
+    if (i.boardId === boardId) return i;
+    if (i.children) { const f = _findNavBoardItem(i.children, boardId); if (f) return f; }
+  }
+  return null;
 }
 
 function cancelBoardSettingsPanel() {
@@ -63,12 +81,18 @@ function attachBoardSettingsListeners() {
   document.getElementById('bstgTitle').addEventListener('input', e => {
     const board = getActiveBoard();
     if (!board) return;
-    board.title = e.target.value;
+    board.title = e.target.value || e.target.placeholder;
     elements.boardTitle.textContent = board.title;
     const findNavItem = (items) => { for (const i of items) { if (i.boardId === board.id) return i; if (i.children) { const f = findNavItem(i.children); if (f) return f; } } return null; };
     const navItem = findNavItem(state.navItems);
     if (navItem) navItem.title = board.title;
     renderNav();
+    // Refresh tab bar if visible (collection or folder context)
+    if (!elements.collectionTabBar.classList.contains('hidden')) {
+      const coll = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+      if (coll) renderCollectionTabBar(coll);
+      else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
+    }
   });
 
   document.querySelectorAll('input[name="bstgCols"]').forEach(radio => {

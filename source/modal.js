@@ -21,8 +21,7 @@ function getContextInheritedTags(contextTarget) {
 function getBoardInheritedTags() {
   const board = getActiveBoard();
   if (!board) return [];
-  const navParent = findNavParentFolder(board.id);
-  return navParent?.sharedTags || [];
+  return getBoardNavInheritedTags(board.id);
 }
 
 // --- Tag ID-mode chip input options ---
@@ -198,6 +197,12 @@ function showModal(type, options = {}) {
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   document.getElementById('modalSharedTagsRow').classList.toggle('hidden', !options.showSharedTags);
+  const sharedTagsOptsEl = document.getElementById('modalSharedTagsOptions');
+  if (sharedTagsOptsEl) {
+    sharedTagsOptsEl.classList.toggle('hidden', !options.showSharedTagsOptions);
+    document.getElementById('cmInheritTags').checked = options.inheritTags !== false;
+    document.getElementById('cmAutoRemove').checked = options.autoRemoveTags === true;
+  }
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
@@ -230,6 +235,7 @@ function hideModal() {
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
+  document.getElementById('modalSharedTagsOptions')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
@@ -305,6 +311,11 @@ function handleModalSubmit(event) {
       if (value1.trim()) coll.title = value1.trim();
       coll.tags = tags;
       coll.sharedTags = sharedTagsFromModal;
+      const sharedTagsOptsEl2 = document.getElementById('modalSharedTagsOptions');
+      if (sharedTagsOptsEl2 && !sharedTagsOptsEl2.classList.contains('hidden')) {
+        coll.inheritTags = document.getElementById('cmInheritTags').checked;
+        coll.autoRemoveTags = document.getElementById('cmAutoRemove').checked;
+      }
       break;
     }
     case 'moveToBoard': {

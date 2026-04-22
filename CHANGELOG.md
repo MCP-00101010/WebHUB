@@ -5,6 +5,20 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.13] — 2026-04-22
+
+### Added
+
+- **Collection `inheritTags` / `autoRemoveTags` toggles** — the Edit Collection modal now shows "Pass to items" and "Strip on remove" toggles below the Shared Tags input, matching the equivalent controls in folder and board settings. Collections missing these fields are migrated on load (defaults: `inheritTags: true`, `autoRemoveTags: false`).
+- `autoRemoveTags` logic on collection removal — when "Strip on remove" is enabled, removing a board from a collection (via context menu or DnD to nav) strips the collection's shared tags from the board's own tag list.
+
+### Fixed
+
+- **Boards not displaying inherited tags** — `getBoardInheritedTags()` in modal.js was only looking one level up (immediate nav parent folder). It now calls `getBoardNavInheritedTags(boardId)` from state.js, which walks the full ancestor chain (nested folders + collection) and respects each ancestor's `inheritTags` flag.
+- **`computeInheritedTags` ignoring collection `inheritTags`** — the in-board tag computation now checks `collection.inheritTags !== false` before appending collection shared tags, consistent with folder ancestry logic.
+
+---
+
 ## [0.11.12] — 2026-04-22
 
 ### Added

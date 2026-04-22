@@ -11,10 +11,14 @@
 
 ## Collections
 
+- bug: when creating a new collection, the create modal has "New Collection" as name it in. Should only show as example text, not as actual input. (same on new board modal)
 - ✓ *Fixed 2026-04-22* empty collection showed last active board name in title bar — see [0.11.12]
+- ✓ *Fixed 2026-04-22* collection shared tags modal lacked "Pass to items" / "Strip on remove" toggles — see [0.11.13]
+- ✓ *Fixed 2026-04-22* boards not displaying inherited tags from ancestor folders/collections — see [0.11.13]
+- bug: when adding a new board to a collection, the tab bar shows "New Board" instead of the board's name. tab bar needs refresh when we add new board to it.
+- bug: board tab bar shows the "add board" icon in front of every board 
 - ✓ *Fixed 2026-04-22* speed dial DnD and context-menu "Add bookmark" were targeting last active board instead of collection — see [0.11.12]
 - ✓ *Fixed 2026-04-22* collection create/edit modal now includes Tags and Shared Tags chip inputs — see [0.11.12]
-  
 
 ## Customization
 

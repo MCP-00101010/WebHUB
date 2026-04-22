@@ -170,8 +170,8 @@ function handleContextMenuAction(action) {
       renderAll();
       saveState();
       showModal('editCollection', {
-        title: 'New Collection', placeholder1: 'Collection Name', value1: 'New Collection',
-        showTags: true, showSharedTags: true
+        title: 'New Collection', placeholder1: 'Collection Name', value1: '',
+        showTags: true, showSharedTags: true, showSharedTagsOptions: true
       });
       break;
     case 'editCollection': {
@@ -180,7 +180,9 @@ function handleContextMenuAction(action) {
       contextTarget = { ...contextTarget, collectionId: coll.id };
       showModal('editCollection', {
         title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
-        showTags: true, showSharedTags: true,
+        showTags: true, showSharedTags: true, showSharedTagsOptions: true,
+        inheritTags: coll.inheritTags !== false,
+        autoRemoveTags: coll.autoRemoveTags === true,
         value3: (coll.tags || []).join(' '),
         value4: (coll.sharedTags || []).join(' ')
       });
@@ -234,7 +236,13 @@ function handleContextMenuAction(action) {
       pushUndoSnapshot();
       coll.boardIds = (coll.boardIds || []).filter(id => id !== contextTarget.boardId);
       const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) state.navItems.push({ id: `nav-${contextTarget.boardId}`, type: 'board', title: board.title, boardId: contextTarget.boardId });
+      if (board) {
+        if (coll.autoRemoveTags && coll.sharedTags?.length) {
+          const toStrip = new Set(coll.sharedTags);
+          board.tags = (board.tags || []).filter(t => !toStrip.has(t));
+        }
+        state.navItems.push({ id: `nav-${contextTarget.boardId}`, type: 'board', title: board.title, boardId: contextTarget.boardId });
+      }
       if (state.activeBoardId === contextTarget.boardId) {
         state.activeCollectionId = coll.boardIds.length ? coll.id : null;
         if (coll.boardIds.length) state.activeBoardId = coll.boardIds[0];

@@ -988,6 +988,10 @@ function handleNavDrop(event, targetItem, parent) {
     srcColl.boardIds = (srcColl.boardIds || []).filter(id => id !== boardId);
     const board = state.boards.find(b => b.id === boardId);
     if (board) {
+      if (srcColl.autoRemoveTags && srcColl.sharedTags?.length) {
+        const toStrip = new Set(srcColl.sharedTags);
+        board.tags = (board.tags || []).filter(t => !toStrip.has(t));
+      }
       const navItem = { id: `nav-${boardId}`, type: 'board', title: board.title, boardId };
       const targetPath = findNavItemPath(targetItem.id);
       if (targetPath) {
