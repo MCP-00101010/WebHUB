@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.19] — 2026-04-23
+
+### Fixed
+
+- **Favicon for browser-dragged bookmarks** — Firefox includes `application/x-moz-place` in bookmark drags which contains `iconuri` (the favicon data URL the browser has cached). The hub now reads this on drop and uses it as `faviconCache` when creating the bookmark — no service lookup needed, the correct icon appears immediately.
+- **Favicon service fallback chain** — switched the primary lookup from Google's `/s2/favicons` (which always returns HTTP 200 even for unknown sites, returning a generic globe instead of triggering fallbacks) to Google's `faviconV2` endpoint which returns HTTP 404 for unknowns, allowing the `onerror` chain to properly try DuckDuckGo → direct `/favicon.ico` → `/s2/favicons` in sequence.
+
+---
+
 ## [0.11.18] — 2026-04-23
 
 ### Fixed

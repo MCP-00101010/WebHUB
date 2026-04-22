@@ -54,14 +54,20 @@ function setFavicon(img, item, sz) {
   if (!item.url) return;
   const hostname = _faviconHostname(item.url);
   if (!hostname) return;
-  img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`;
-  img.onerror = () => {
-    img.onerror = () => {
-      img.onerror = null;
-      img.src = `https://${hostname}/favicon.ico`;
-    };
-    img.src = `https://icons.duckduckgo.com/ip3/${hostname}.ico`;
+  // faviconV2 returns 404 for unknown sites (unlike /s2/favicons which always returns 200+generic globe)
+  const srcs = [
+    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${hostname}&size=${sz}`,
+    `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
+    `https://${hostname}/favicon.ico`,
+    `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`,
+  ];
+  let i = 0;
+  const tryNext = () => {
+    if (i >= srcs.length) { img.onerror = null; return; }
+    img.onerror = tryNext;
+    img.src = srcs[i++];
   };
+  tryNext();
 }
 
 function buildTooltip(item, board = null) {
@@ -647,7 +653,7 @@ function renderEssentials() {
       cell.classList.remove('drop-target');
       if (isExternalDrag(event)) {
         const ext = getExternalDrop(event);
-        if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'essential', slot, item });
+        if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'essential', slot, item }, ext.faviconCache);
         return;
       }
       handleEssentialSlotDrop(slot);

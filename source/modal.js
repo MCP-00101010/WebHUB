@@ -255,20 +255,22 @@ function handleModalSubmit(event) {
   const area = contextTarget?.area;
 
   switch (activeModal) {
-    case 'addBookmark':
+    case 'addBookmark': {
+      const fc = contextTarget?.faviconCache || '';
       if (area === 'speed-dial' || area === 'speed-dial-item') {
-        addSpeedDialBookmark(value1, value2, tags);
+        addSpeedDialBookmark(value1, value2, tags, fc);
       } else if (area === 'essential') {
-        if (!setEssential(contextTarget.slot, value1, value2, tags)) return;
+        if (!setEssential(contextTarget.slot, value1, value2, tags, fc)) return;
         hideModal(); renderEssentials(); saveState(); return;
       } else if (area === 'board-folder-item') {
         if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
-        contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: '' });
+        contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: fc });
         contextTarget.item.collapsed = false;
       } else {
-        addBookmark(value1, value2, contextTarget?.columnId, tags);
+        addBookmark(value1, value2, contextTarget?.columnId, tags, fc);
       }
       break;
+    }
     case 'editBookmark':
       if (area === 'speed-dial-item') {
         if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
@@ -470,8 +472,8 @@ function attachFolderModalListeners() {
 
 // --- External bookmark modal (called from dnd and essentials) ---
 
-function openExternalBookmarkModal(url, title, target) {
-  contextTarget = target;
+function openExternalBookmarkModal(url, title, target, faviconCache = '') {
+  contextTarget = { ...target, faviconCache };
   showModal('addBookmark', {
     title: 'Add Bookmark',
     placeholder1: 'New Bookmark',

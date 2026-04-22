@@ -33,18 +33,30 @@ function isExternalDrag(event) {
 }
 
 function getExternalDrop(event) {
+  // Firefox rich bookmark drag — includes the cached favicon as iconuri
+  const mozPlace = event.dataTransfer.getData('application/x-moz-place') ||
+                   event.dataTransfer.getData('application/x-moz-place+json');
+  if (mozPlace) {
+    try {
+      const data = JSON.parse(mozPlace);
+      if (data.uri) {
+        const faviconCache = (data.iconuri && data.iconuri.startsWith('data:')) ? data.iconuri : '';
+        return { url: data.uri, title: data.title || '', faviconCache };
+      }
+    } catch {}
+  }
   const mozUrl = event.dataTransfer.getData('text/x-moz-url');
   if (mozUrl) {
     const [url, title] = mozUrl.split('\n');
-    return { url: (url || '').trim(), title: (title || '').trim() };
+    return { url: (url || '').trim(), title: (title || '').trim(), faviconCache: '' };
   }
   const uriList = event.dataTransfer.getData('text/uri-list');
   if (uriList) {
     const url = uriList.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-    if (url) return { url, title: '' };
+    if (url) return { url, title: '', faviconCache: '' };
   }
   const text = event.dataTransfer.getData('text/plain');
-  if (text?.trim().match(/^https?:\/\//)) return { url: text.trim(), title: '' };
+  if (text?.trim().match(/^https?:\/\//)) return { url: text.trim(), title: '', faviconCache: '' };
   return null;
 }
 
@@ -559,7 +571,7 @@ function handleBoardColumnDrop(event, columnId) {
 
   if (isExternalDrag(event)) {
     const ext = getExternalDrop(event);
-    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'board-empty', columnId });
+    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'board-empty', columnId }, ext.faviconCache);
     return;
   }
 
@@ -859,7 +871,7 @@ function handleSpeedDialContainerDrop(event) {
   if (isExternalDrag(event)) {
     removeDragPlaceholders();
     const ext = getExternalDrop(event);
-    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial' });
+    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial' }, ext.faviconCache);
     return;
   }
   if (!dragPayload) return;

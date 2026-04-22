@@ -493,20 +493,20 @@ function addNavSection(item) {
   state.navItems.push(item);
 }
 
-function addBookmark(title, url, columnId, tags = []) {
+function addBookmark(title, url, columnId, tags = [], faviconCache = '') {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
-  column.items.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
+  column.items.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache });
 }
 
-function addSpeedDialBookmark(title, url, tags = []) {
+function addSpeedDialBookmark(title, url, tags = [], faviconCache = '') {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
   const collection = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
   const target = collection || getActiveBoard();
   if (!target) return;
   if (!target.speedDial) target.speedDial = [];
-  target.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
+  target.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache });
 }
 
 function addBookmarkItem(type, title, columnId, options = {}) {
@@ -654,9 +654,9 @@ function trimEssentialsTail() {
   while (state.essentials.length > 0 && !state.essentials[state.essentials.length - 1]) state.essentials.pop();
 }
 
-function setEssential(slot, title, url, tags = []) {
+function setEssential(slot, title, url, tags = [], faviconCache = '') {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
-  const item = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' };
+  const item = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache };
   while (state.essentials.length < slot) state.essentials.push(null);
   state.essentials[slot] = item;
   return true;
