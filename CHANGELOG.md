@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.21] — 2026-04-23
+
+### Fixed
+
+- **Undo/redo/inbox/settings icon color** — `.icon-btn` was inheriting `var(--text)` from the shared button rule, making those icons brighter than sidebar icons (trash, search filter, etc.) which explicitly use `var(--text-muted)`. Added `color: var(--text-muted)` to `.icon-btn` with `color: var(--text)` on hover, matching the sidebar button pattern.
+
+---
+
 ## [0.11.20] — 2026-04-23
 
 ### Fixed

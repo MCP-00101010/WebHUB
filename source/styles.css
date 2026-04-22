@@ -821,6 +821,11 @@ button {
   padding: 8px;
   display: grid;
   place-items: center;
+  color: var(--text-muted);
+}
+
+.icon-btn:hover {
+  color: var(--text);
 }
 
 .icon-btn svg {
