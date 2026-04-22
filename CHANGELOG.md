@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.15] — 2026-04-23
+
+### Changed
+
+- **"Move to board" list sorting** — all board selectors (modal dropdown, search-result submenu, bulk-move dropdown) now sort: standalone boards A-Z first, then collection boards grouped by collection name A-Z, then board name A-Z within each collection.
+
+---
+
 ## [0.11.14] — 2026-04-22
 
 ### Added

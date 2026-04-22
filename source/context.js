@@ -59,6 +59,24 @@ function hideContextMenu() {
   elements.contextMenu.innerHTML = '';
 }
 
+function _sortedBoardOptions(boards) {
+  const withMeta = boards.map(b => {
+    const coll = findBoardCollection(b.id);
+    return { value: b.id, label: coll ? `${coll.title} — ${b.title}` : b.title, collTitle: coll?.title ?? null, boardTitle: b.title };
+  });
+  withMeta.sort((a, b) => {
+    const aInColl = a.collTitle !== null;
+    const bInColl = b.collTitle !== null;
+    if (aInColl !== bInColl) return aInColl ? 1 : -1;
+    if (aInColl) {
+      const cc = a.collTitle.localeCompare(b.collTitle);
+      if (cc !== 0) return cc;
+    }
+    return a.boardTitle.localeCompare(b.boardTitle);
+  });
+  return withMeta.map(({ value, label }) => ({ value, label }));
+}
+
 function _findNavItem(id, items) {
   for (const item of (items || state.navItems)) {
     if (item.id === id) return item;
@@ -501,16 +519,12 @@ function handleContextMenuAction(action) {
         : cab?.isImportManager
           ? state.boards.filter(b => !b.isImportManager && !b.locked)
           : state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== cab?.id);
-      const boardLabel = (b) => {
-        const coll = findBoardCollection(b.id);
-        return coll ? `${coll.title} — ${b.title}` : b.title;
-      };
       showModal('moveToBoard', {
         title: 'Move to Board',
         showName: false,
         showSelect: true,
         selectLabel: 'Target board',
-        selectOptions: boards.map(b => ({ value: b.id, label: boardLabel(b) })),
+        selectOptions: _sortedBoardOptions(boards),
         contextTarget
       });
       break;
@@ -818,7 +832,7 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
     const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== meta.boardId);
     if (allBoards.length) {
-      options.push({ label: 'Move to board', submenu: allBoards.map(b => { const c = findBoardCollection(b.id); return { label: c ? `${c.title} — ${b.title}` : b.title, action: `moveToBoard:${b.id}` }; }) });
+      options.push({ label: 'Move to board', submenu: _sortedBoardOptions(allBoards).map(o => ({ ...o, action: `moveToBoard:${o.value}` })) });
     }
     options.push({ label: 'Show in board',   action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });

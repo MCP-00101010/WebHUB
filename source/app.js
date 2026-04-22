@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.14';
+const APP_VERSION = '0.11.15';
 
 let activeModal = null;
 let contextTarget = null;
@@ -321,7 +321,7 @@ function attachEventListeners() {
       showName: false,
       showSelect: true,
       selectLabel: 'Target board',
-      selectOptions: boards.map(b => ({ value: b.id, label: b.title }))
+      selectOptions: _sortedBoardOptions(boards)
     });
   });
   document.getElementById('bulkDeselectBtn').addEventListener('click', clearSelection);
