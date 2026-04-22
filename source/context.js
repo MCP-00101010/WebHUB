@@ -59,6 +59,14 @@ function hideContextMenu() {
   elements.contextMenu.innerHTML = '';
 }
 
+function _findNavItem(id, items) {
+  for (const item of (items || state.navItems)) {
+    if (item.id === id) return item;
+    if (item.children) { const r = _findNavItem(id, item.children); if (r) return r; }
+  }
+  return null;
+}
+
 function handleContextMenuAction(action) {
   if (!contextTarget) return;
 
@@ -238,6 +246,65 @@ function handleContextMenuAction(action) {
         }
         renderAll(); saveState(); updateTrashBadge();
       });
+      break;
+    }
+    case 'editBoardFromFolderTab': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId);
+      if (board) { state.activeBoardId = board.id; renderBoard(); showBoardSettingsPanel(); }
+      break;
+    }
+    case 'unlockBoardFromFolderTab': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId);
+      if (board) { board.locked = false; renderAll(); saveState(); }
+      break;
+    }
+    case 'removeFromFolder': {
+      const folderItem = _findNavItem(contextTarget.folderId);
+      if (!folderItem) break;
+      pushUndoSnapshot();
+      const navItem = (folderItem.children || []).find(c => c.id === contextTarget.navItemId);
+      folderItem.children = (folderItem.children || []).filter(c => c.id !== contextTarget.navItemId);
+      if (navItem) state.navItems.push(navItem);
+      renderAll(); saveState();
+      break;
+    }
+    case 'deleteBoardFromFolder': {
+      const folderItem2 = _findNavItem(contextTarget.folderId);
+      const board2 = state.boards.find(b => b.id === contextTarget.boardId);
+      if (!folderItem2 || !board2) break;
+      confirmDelete('confirmDeleteBoard', `Delete board "${board2.title}"? This cannot be undone.`, () => {
+        pushUndoSnapshot();
+        folderItem2.children = (folderItem2.children || []).filter(c => c.id !== contextTarget.navItemId);
+        state.boards = state.boards.filter(b => b.id !== contextTarget.boardId);
+        if (state.activeBoardId === contextTarget.boardId) {
+          const sibling = (folderItem2.children || []).find(c => c.type === 'board' && c.boardId);
+          state.activeBoardId = sibling?.boardId || null;
+        }
+        renderAll(); saveState(); updateTrashBadge();
+      });
+      break;
+    }
+    case 'addBoardToFolder': {
+      const folderForAdd = _findNavItem(contextTarget.folderId || contextTarget.itemId);
+      if (!folderForAdd) break;
+      pushUndoSnapshot();
+      const newId = `board-${Date.now()}`;
+      const newBoard = {
+        id: newId, title: 'New Board', columnCount: 3, backgroundImage: '', containerOpacity: 100,
+        showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
+        columns: [
+          { id: `${newId}-col-1`, title: 'Column 1', items: [] },
+          { id: `${newId}-col-2`, title: 'Column 2', items: [] },
+          { id: `${newId}-col-3`, title: 'Column 3', items: [] },
+          { id: `${newId}-inbox`, title: 'Inbox', isInbox: true, items: [] }
+        ]
+      };
+      state.boards.push(newBoard);
+      if (!folderForAdd.children) folderForAdd.children = [];
+      folderForAdd.children.push({ id: `nav-${Date.now()}`, type: 'board', title: 'New Board', boardId: newId });
+      state.activeBoardId = newId;
+      state.activeCollectionId = null;
+      renderAll(); saveState(); showBoardSettingsPanel(true);
       break;
     }
     case 'editCollectionSpeedDial':
@@ -594,6 +661,7 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
     }
   } else if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
+    options.push({ label: 'Add board', action: 'addBoardToFolder' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addNavSubfolder' });
     options.push({ label: 'Delete folder', action: 'deleteNavItem' });
   } else if (item.type === 'title') {
@@ -620,6 +688,19 @@ function handleCollectionTabContextMenu(event, boardId, collection) {
         { label: 'Edit board', action: 'editBoardFromTab' },
         { label: 'Remove from collection', action: 'removeFromCollection' },
         { label: 'Delete board', action: 'deleteBoardFromCollection' }
+      ];
+  showContextMenu(event.clientX, event.clientY, options);
+}
+
+function handleFolderTabContextMenu(event, navItem, folder) {
+  contextTarget = { area: 'folder-tab', navItemId: navItem.id, boardId: navItem.boardId, folderId: folder.id };
+  const board = state.boards.find(b => b.id === navItem.boardId);
+  const options = board?.locked
+    ? [{ label: 'Unlock board', action: 'unlockBoardFromFolderTab' }]
+    : [
+        { label: 'Edit board', action: 'editBoardFromFolderTab' },
+        { label: 'Remove from folder', action: 'removeFromFolder' },
+        { label: 'Delete board', action: 'deleteBoardFromFolder' }
       ];
   showContextMenu(event.clientX, event.clientY, options);
 }

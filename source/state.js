@@ -37,6 +37,10 @@ const defaultSettings = {
   boardTextAlign: 'left', boardColor: '',
   bookmarkTextAlign: 'left', bookmarkColor: '',
   folderTextAlign: 'left', folderColor: '',
+  collectionFontSize: 15,
+  collectionFontFamily: '',
+  collectionBold: false, collectionItalic: false, collectionUnderline: false,
+  collectionTextAlign: 'left', collectionColor: '',
   titleColor: '',
   tagGroups: [],
   activeThemeName: 'default-dark',
@@ -573,6 +577,22 @@ function findBoardCollection(boardId) {
     for (const item of (items || [])) {
       if (item.type === 'collection' && (item.boardIds || []).includes(boardId)) return item;
       if (item.children) { const r = search(item.children); if (r) return r; }
+    }
+    return null;
+  }
+  return search(state.navItems);
+}
+
+function findBoardFolder(boardId) {
+  function search(items) {
+    for (const item of (items || [])) {
+      if (item.type === 'folder' && item.children) {
+        for (const child of item.children) {
+          if (child.type === 'board' && child.boardId === boardId) return item;
+        }
+        const r = search(item.children);
+        if (r) return r;
+      }
     }
     return null;
   }

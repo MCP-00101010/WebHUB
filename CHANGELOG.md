@@ -5,6 +5,32 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.11] — 2026-04-22
+
+### Added
+
+- **Collection style settings** — Collections section in the Style tab of global settings: font size, font family, bold/italic/underline, text align, and color. These control how collection names appear in the nav pane.
+
+### Fixed
+
+- Collection name shown twice in the nav pane. The nav item renderer was falling through to a generic label-append branch after already building the collection's info element.
+
+---
+
+## [0.11.10] — 2026-04-22
+
+### Added
+
+- **Board tab bar** — when the active board lives inside a nav folder, a tab bar appears above the speed dial showing all boards in that folder. Click a tab to switch boards. Active tab is highlighted with an accent bottom border. Right-click a tab for Edit / Remove from folder / Delete. Drag a tab to the nav to pull the board out of the folder. "Add board" button appends a new board to the folder.
+- **"Add board" in folder context menu** — right-clicking a nav folder now offers "Add board", creating a new board directly inside that folder.
+- `findBoardFolder(boardId)` helper in state.js to locate the immediate parent folder of a board.
+
+### Changed
+
+- Board title header shows `Folder — Board` format when the active board is in a nav folder (mirrors the `Collection — Board` format).
+
+---
+
 ## [0.11.9] — 2026-04-22
 
 ### Added

@@ -899,6 +899,20 @@ function handleNavItemDragOver(event, item, parent) {
       return;
     }
   }
+  // Accept folder-tab drags (removing a board from a folder back to nav)
+  if (dragPayload?.area === 'folder-tab') {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    const element = event.currentTarget;
+    const rect = element.getBoundingClientRect();
+    const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+    if (_dropTarget === element && _dropPos === position) return;
+    _dropTarget = element; _dropPos = position;
+    element.dataset.dropPosition = position;
+    _moveNavPreview(element.parentElement, position === 'before' ? element : element.nextSibling);
+    return;
+  }
   const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
   if (!dragPayload || (dragPayload.area !== 'nav' && !isBoardWidget)) return;
   event.preventDefault();
@@ -984,6 +998,27 @@ function handleNavDrop(event, targetItem, parent) {
     dragPayload = null; renderAll(); saveState(); return;
   }
 
+  // Folder tab dragged back to nav
+  if (dragPayload?.area === 'folder-tab') {
+    const srcFolder = _findNavItem(dragPayload.folderId);
+    if (!srcFolder) { dragPayload = null; return; }
+    removeDragPlaceholders();
+    pushUndoSnapshot();
+    const navItem = (srcFolder.children || []).find(c => c.id === dragPayload.navItemId);
+    srcFolder.children = (srcFolder.children || []).filter(c => c.id !== dragPayload.navItemId);
+    if (navItem) {
+      const targetPath = findNavItemPath(targetItem.id);
+      const position = _dropPos || 'before';
+      if (targetPath) {
+        const ti = targetPath.list.findIndex(i => i.id === targetItem.id);
+        targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, navItem);
+      } else {
+        state.navItems.push(navItem);
+      }
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
   // Nav board dropped onto collection
   if (targetItem.type === 'collection' && dragPayload?.area === 'nav') {
     const navItem = findNavItemPath(dragPayload.itemId);
@@ -1045,7 +1080,7 @@ function handleNavDrop(event, targetItem, parent) {
 
 function handleNavListDragOver(event) {
   if (!dragPayload) return;
-  if (dragPayload.area !== 'nav' && !_canDropAsNavWidget()) return;
+  if (dragPayload.area !== 'nav' && dragPayload.area !== 'folder-tab' && !_canDropAsNavWidget()) return;
   // Always accept the drop so the browser fires the drop event even when the
   // cursor is over the preview clone's transparent space.
   event.preventDefault();
@@ -1083,6 +1118,30 @@ function handleNavListDrop(event) {
       }
     }
     state.navItems.push(widget);
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
+  // Folder tab dropped onto nav list (remove from folder → add to nav root or target position)
+  if (dragPayload.area === 'folder-tab') {
+    const srcFolder = _findNavItem(dragPayload.folderId);
+    if (!srcFolder) { dragPayload = null; return; }
+    pushUndoSnapshot();
+    const navItem = (srcFolder.children || []).find(c => c.id === dragPayload.navItemId);
+    srcFolder.children = (srcFolder.children || []).filter(c => c.id !== dragPayload.navItemId);
+    if (navItem) {
+      if (savedTarget && savedTarget !== elements.navList && savedTarget.dataset.id) {
+        const targetPath = findNavItemPath(savedTarget.dataset.id);
+        const position = savedPos || 'before';
+        if (targetPath) {
+          const ti = targetPath.list.findIndex(i => i.id === savedTarget.dataset.id);
+          targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, navItem);
+        } else {
+          state.navItems.push(navItem);
+        }
+      } else {
+        state.navItems.push(navItem);
+      }
+    }
     dragPayload = null; renderAll(); saveState(); return;
   }
 

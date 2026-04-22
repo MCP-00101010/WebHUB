@@ -194,7 +194,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.9</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.11</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -596,6 +596,44 @@
         </div>
 
         <div class="settings-section" data-tab="style">
+          <div class="settings-section-label">Collections</div>
+          <div class="settings-row">
+            <span>Font size</span>
+            <div class="settings-number-group">
+              <input id="stgCollectionFont" type="number" min="10" max="24" />
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font</span>
+            <select id="stgCollectionFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="collectionBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="collectionItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="collectionUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Align</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgCollectionColor" class="color-input" />
+              <button type="button" class="color-reset-btn" data-color-key="collectionColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-tab="style">
           <div class="settings-section-label">Titles &amp; Dividers</div>
           <div class="settings-row">
             <span>Font size</span>
@@ -762,7 +800,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.9</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.11</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
         </div>

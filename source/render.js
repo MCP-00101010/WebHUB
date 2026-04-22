@@ -117,6 +117,12 @@ function applySettings() {
   r.setProperty('--folder-font-style',            fi('folderItalic'));
   r.setProperty('--folder-text-decoration',       td('folderUnderline'));
 
+  r.setProperty('--collection-font-size',         `${s.collectionFontSize || 15}px`);
+  r.setProperty('--collection-font-family',       ff('collectionFontFamily'));
+  r.setProperty('--collection-font-weight',       fw('collectionBold', '600'));
+  r.setProperty('--collection-font-style',        fi('collectionItalic'));
+  r.setProperty('--collection-text-decoration',   td('collectionUnderline'));
+
   r.setProperty('--title-font-family',            ff('titleFontFamily'));
   r.setProperty('--title-font-weight',            fw('titleBold', '600'));
   r.setProperty('--title-font-style',             fi('titleItalic'));
@@ -143,12 +149,14 @@ function applySettings() {
   r.setProperty('--board-text-align',             s.boardTextAlign      || 'left');
   r.setProperty('--bookmark-text-align',          s.bookmarkTextAlign   || 'left');
   r.setProperty('--folder-text-align',            s.folderTextAlign     || 'left');
+  r.setProperty('--collection-text-align',        s.collectionTextAlign || 'left');
 
   r.setProperty('--hub-name-color',               s.hubNameColor    || 'var(--text)');
   r.setProperty('--board-title-color',            s.boardTitleColor || 'var(--text)');
   r.setProperty('--board-color',                  s.boardColor      || 'var(--text)');
   r.setProperty('--bookmark-color',               s.bookmarkColor   || 'var(--text)');
   r.setProperty('--folder-color',                 s.folderColor     || 'var(--text)');
+  r.setProperty('--collection-color',             s.collectionColor || 'var(--text)');
   r.setProperty('--title-color',                  s.titleColor      || 'var(--text-muted)');
   r.setProperty('--title-line-color',             s.titleLineColor  || 'rgba(255,255,255,0.12)');
   r.setProperty('--title-line-style',             s.titleLineStyle  || 'solid');
@@ -817,7 +825,7 @@ function createNavItem(item, depth = 0, parent = null) {
     header.appendChild(collapseBtn);
     header.appendChild(titleDiv);
     el.appendChild(header);
-  } else {
+  } else if (item.type !== 'collection') {
     if (item.type !== 'title' || item.title) {
       if (item.type === 'board') {
         const info = document.createElement('div');
@@ -937,13 +945,17 @@ function renderBoard() {
   const collection = state.activeCollectionId
     ? state.navItems.find(i => i.id === state.activeCollectionId) || findBoardCollection(state.activeBoardId)
     : null;
+  const folder = !collection ? findBoardFolder(state.activeBoardId) : null;
   const board = getActiveBoard();
 
-  // Update collection tab bar
+  // Tab bar — shown for both collection and folder contexts
   const tabBar = elements.collectionTabBar;
   if (collection) {
     tabBar.classList.remove('hidden');
     renderCollectionTabBar(collection);
+  } else if (folder) {
+    tabBar.classList.remove('hidden');
+    renderFolderTabBar(folder);
   } else {
     tabBar.classList.add('hidden');
   }
@@ -976,7 +988,9 @@ function renderBoard() {
   elements.mainPanel.classList.remove('no-board');
   elements.boardTitle.textContent = collection
     ? `${collection.title} — ${board.title}`
-    : board.title;
+    : folder
+      ? `${folder.title} — ${board.title}`
+      : board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
   applyBoardBackground(board);
   elements.boardSettingsBtn.disabled = !!board.locked;
@@ -1109,6 +1123,84 @@ function renderCollectionTabBar(collection) {
     e.stopPropagation();
     contextTarget = { area: 'collection-tab-bar', collectionId: collection.id };
     showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToCollection' }]);
+  });
+  tabBar.appendChild(addBtn);
+}
+
+function renderFolderTabBar(folder) {
+  const tabBar = elements.collectionTabBar;
+  tabBar.innerHTML = '';
+
+  const boardNavItems = (folder.children || []).filter(c => c.type === 'board');
+  boardNavItems.forEach(navItem => {
+    const board = state.boards.find(b => b.id === navItem.boardId);
+    const tab = document.createElement('div');
+    tab.className = 'collection-tab' + (navItem.boardId === state.activeBoardId ? ' active' : '');
+    tab.dataset.boardId = navItem.boardId || '';
+    tab.dataset.navItemId = navItem.id;
+    const tabIcon = document.createElement('span');
+    tabIcon.className = 'collection-tab-icon';
+    tabIcon.appendChild(icon('icon-board-add'));
+    tab.appendChild(tabIcon);
+    const tabLabel = document.createElement('span');
+    tabLabel.textContent = board?.title || navItem.title || 'Untitled Board';
+    tab.appendChild(tabLabel);
+    if (board?.locked) tab.classList.add('tab-locked');
+    tab.addEventListener('click', () => {
+      if (!navItem.boardId) return;
+      state.activeBoardId = navItem.boardId;
+      state.activeCollectionId = null;
+      renderAll();
+      saveState();
+    });
+    tab.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFolderTabContextMenu(e, navItem, folder);
+    });
+    tab.draggable = true;
+    tab.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      dragPayload = { area: 'folder-tab', navItemId: navItem.id, boardId: navItem.boardId, folderId: folder.id };
+      e.dataTransfer.setData('text/plain', navItem.boardId || '');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tab.addEventListener('dragend', () => { dragPayload = null; });
+    tabBar.appendChild(tab);
+  });
+
+  // Add board button
+  const addBtn = document.createElement('div');
+  addBtn.className = 'collection-tab-add';
+  addBtn.title = 'Add board to folder';
+  addBtn.appendChild(icon('icon-board-add'));
+  addBtn.addEventListener('click', () => {
+    pushUndoSnapshot();
+    const id = `board-${Date.now()}`;
+    const newBoard = {
+      id, title: 'New Board', columnCount: 3, backgroundImage: '', containerOpacity: 100,
+      showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
+      columns: [
+        { id: `${id}-col-1`, title: 'Column 1', items: [] },
+        { id: `${id}-col-2`, title: 'Column 2', items: [] },
+        { id: `${id}-col-3`, title: 'Column 3', items: [] },
+        { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
+      ]
+    };
+    state.boards.push(newBoard);
+    if (!folder.children) folder.children = [];
+    folder.children.push({ id: `nav-${Date.now()}`, type: 'board', title: 'New Board', boardId: id });
+    state.activeBoardId = id;
+    state.activeCollectionId = null;
+    renderAll();
+    saveState();
+    showBoardSettingsPanel(true);
+  });
+  addBtn.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    contextTarget = { area: 'folder-tab-bar', folderId: folder.id };
+    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToFolder' }]);
   });
   tabBar.appendChild(addBtn);
 }

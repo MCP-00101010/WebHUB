@@ -272,7 +272,8 @@ async function renderThemePicker() {
 
 const COLOR_DEFAULTS = {
   hubNameColor: '#e5e7eb', boardTitleColor: '#e5e7eb', boardColor: '#e5e7eb',
-  bookmarkColor: '#e5e7eb', folderColor: '#e5e7eb', titleColor: '#9ca3af', titleLineColor: '#3a3c42'
+  bookmarkColor: '#e5e7eb', folderColor: '#e5e7eb', collectionColor: '#e5e7eb',
+  titleColor: '#9ca3af', titleLineColor: '#3a3c42'
 };
 
 const FONT_OPTIONS = [
@@ -288,7 +289,7 @@ const FONT_OPTIONS = [
 ];
 
 function populateFontSelects() {
-  ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgTitleFamily'].forEach(id => {
+  ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgCollectionFamily','stgTitleFamily'].forEach(id => {
     const sel = document.getElementById(id);
     if (sel.options.length) return;
     FONT_OPTIONS.forEach(({ value, label }) => {
@@ -336,6 +337,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
   document.getElementById('stgFolderFont').value = s.folderFontSize;
+  document.getElementById('stgCollectionFont').value = s.collectionFontSize || 15;
   document.getElementById('stgTitleFont').value = s.titleFontSize;
   document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
   document.getElementById('stgBoardTitleFont').value = s.boardTitleFontSize;
@@ -346,8 +348,9 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgBoardTitleFamily').value = s.boardTitleFontFamily || '';
   document.getElementById('stgBoardFamily').value      = s.boardFontFamily || '';
   document.getElementById('stgBookmarkFamily').value   = s.bookmarkFontFamily || '';
-  document.getElementById('stgFolderFamily').value     = s.folderFontFamily || '';
-  document.getElementById('stgTitleFamily').value      = s.titleFontFamily || '';
+  document.getElementById('stgFolderFamily').value      = s.folderFontFamily || '';
+  document.getElementById('stgCollectionFamily').value  = s.collectionFontFamily || '';
+  document.getElementById('stgTitleFamily').value       = s.titleFontFamily || '';
   document.querySelectorAll('.fmt-btn').forEach(btn => btn.classList.toggle('active', !!s[btn.dataset.fmt]));
   document.querySelectorAll('.align-btn').forEach(btn => btn.classList.toggle('active', (s[btn.dataset.alignKey] || 'left') === btn.dataset.alignVal));
   Object.entries(COLOR_DEFAULTS).forEach(([key, def]) => {
@@ -892,6 +895,7 @@ function attachSettingsListeners() {
   numSetting('stgBoardFont',      'boardFontSize',      10, 24);
   numSetting('stgBookmarkFont',   'bookmarkFontSize',   10, 24);
   numSetting('stgFolderFont',     'folderFontSize',     10, 24);
+  numSetting('stgCollectionFont', 'collectionFontSize', 10, 24);
   numSetting('stgTitleFont',      'titleFontSize',       8, 24);
   numSetting('stgBoardTitleFont', 'boardTitleFontSize', 14, 48);
   numSetting('stgHubNameFont',    'hubNameFontSize',    10, 48);
@@ -920,6 +924,7 @@ function attachSettingsListeners() {
   familySetting('stgBoardFamily',      'boardFontFamily');
   familySetting('stgBookmarkFamily',   'bookmarkFontFamily');
   familySetting('stgFolderFamily',     'folderFontFamily');
+  familySetting('stgCollectionFamily', 'collectionFontFamily');
   familySetting('stgTitleFamily',      'titleFontFamily');
 
   document.querySelectorAll('.fmt-btn').forEach(btn => {

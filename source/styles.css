@@ -28,6 +28,13 @@
   --folder-font-weight: 600;
   --folder-font-style: normal;
   --folder-text-decoration: none;
+  --collection-font-size: 15px;
+  --collection-font-family: inherit;
+  --collection-font-weight: 600;
+  --collection-font-style: normal;
+  --collection-text-decoration: none;
+  --collection-text-align: left;
+  --collection-color: var(--text);
   --title-font-family: inherit;
   --title-font-weight: 600;
   --title-font-style: normal;
@@ -586,6 +593,16 @@ button {
   gap: 8px;
 }
 
+.nav-collection-item .nav-board-title {
+  font-size: var(--collection-font-size);
+  font-family: var(--collection-font-family);
+  font-weight: var(--collection-font-weight);
+  font-style: var(--collection-font-style);
+  text-decoration: var(--collection-text-decoration);
+  text-align: var(--collection-text-align);
+  color: var(--collection-color);
+}
+
 .nav-collection-icon {
   flex-shrink: 0;
   width: 16px;
@@ -875,6 +892,11 @@ button {
 
 .collection-tab-add:hover {
   opacity: 1;
+}
+
+.collection-tab.tab-locked {
+  opacity: 0.55;
+  font-style: italic;
 }
 
 .speed-dial-panel {

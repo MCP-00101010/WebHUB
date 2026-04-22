@@ -7,7 +7,7 @@
 ## UI
 
 - ✓ *Completed 2026-04-22* Collections: nav item type grouping boards into a tabbed workspace with shared speed dial and tag inheritance — see [0.11.9] in CHANGELOG.
-  
+
 ## Customization
 
 - have icons in the board name bar adhere to theme style
@@ -176,7 +176,7 @@ See [0.11.3] and [0.11.4] in CHANGELOG.
 ### Phase 10 — Advanced navigation *(in progress)*
 
 - Collections — ✓ done in [0.11.9]
-- Board tab bar (folder-selected boards populate the tab strip) *(next)*
+- Board tab bar (folder-selected boards populate the tab strip) — ✓ done in [0.11.10]
 - DnD live previews — ✓ done in [0.11.2]
 
 ---
