@@ -1081,10 +1081,6 @@ function renderCollectionTabBar(collection) {
     const tab = document.createElement('div');
     tab.className = 'collection-tab' + (boardId === state.activeBoardId ? ' active' : '');
     tab.dataset.boardId = boardId;
-    const tabIcon = document.createElement('span');
-    tabIcon.className = 'collection-tab-icon';
-    tabIcon.appendChild(icon('icon-board'));
-    tab.appendChild(tabIcon);
     const tabLabel = document.createElement('span');
     tabLabel.textContent = board.title || 'Untitled Board';
     tab.appendChild(tabLabel);
@@ -1141,10 +1137,6 @@ function renderFolderTabBar(folder) {
     tab.className = 'collection-tab' + (navItem.boardId === state.activeBoardId ? ' active' : '');
     tab.dataset.boardId = navItem.boardId || '';
     tab.dataset.navItemId = navItem.id;
-    const tabIcon = document.createElement('span');
-    tabIcon.className = 'collection-tab-icon';
-    tabIcon.appendChild(icon('icon-board'));
-    tab.appendChild(tabIcon);
     const tabLabel = document.createElement('span');
     tabLabel.textContent = board?.title || navItem.title || 'Untitled Board';
     tab.appendChild(tabLabel);
