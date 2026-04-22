@@ -7,10 +7,18 @@
 ## UI
 
 - ✓ *Completed 2026-04-22* Collections: nav item type grouping boards into a tabbed workspace with shared speed dial and tag inheritance — see [0.11.9] in CHANGELOG.
+- ✓ *Fixed 2026-04-22* edit/create bookmark modal double border on tag chip input — see [0.11.12]
+
+## Collections
+
+- ✓ *Fixed 2026-04-22* empty collection showed last active board name in title bar — see [0.11.12]
+- ✓ *Fixed 2026-04-22* speed dial DnD and context-menu "Add bookmark" were targeting last active board instead of collection — see [0.11.12]
+- ✓ *Fixed 2026-04-22* collection create/edit modal now includes Tags and Shared Tags chip inputs — see [0.11.12]
+  
 
 ## Customization
 
-- have icons in the board name bar adhere to theme style
+- have icons in the title bar (undo, redo, inbo, settings) adhere to theme style
 - have all font color adhere to theme style (maybe a toggle in style settings panel to enable/disable - if enabled, also disable all font color selectors in the style settings dialouge.)
 - 
 - custom CSS input field in global settings for power users (low priority)
@@ -22,6 +30,7 @@
 
 ## Drag and Drop
 
+- visual: when dragging any object, the object is shown in its old position
 - ✓ *Fixed 2026-04-20* — Visual: column preview clone stuck when dragging to empty speed-dial or essentials. Fixed by handling the empty speed-dial case in `handleSpeedDialContainerDragOver` and calling `removeDragPlaceholders()` on first entry into an essentials cell.
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover` — only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
 - Known limitation: dragging a bookmark folder from Firefox/Zen only imports the first bookmark, not the folder structure. The HTML DnD API only exposes `text/x-moz-url` / `text/uri-list` (single URL) for browser bookmark drags — folder structure is not accessible. Full folder import would require the Firefox extension to intercept the drag and relay the bookmark tree.

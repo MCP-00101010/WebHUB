@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.12] — 2026-04-22
+
+### Added
+
+- **Collection tags modal** — the "New Collection" and "Edit Collection" dialogs now include a Tags chip input (collection's own tags) and a Shared Tags chip input (inherited by all boards in the collection), matching the layout used in other create/edit modals.
+
+### Fixed
+
+- **Double border on modal tag input** — `.chip-text-input { border: none }` was being overridden by the more-specific `.tag-field-row .tags-input-container input` rule; added `!important` to `.chip-text-input` border reset.
+- **Empty collection shows last active board title** — clicking a collection with no boards now sets `activeBoardId = null` so the title bar shows only the collection name.
+- **Speed dial DnD adds to wrong target** — dragging a bookmark onto the speed dial pane while a collection is active now adds to the collection's speed dial, not the last active board's speed dial.
+- **Speed dial "Add bookmark" context menu adds to wrong target** — same fix applied to `addSpeedDialBookmark()`; collection speed dial is targeted when `state.activeCollectionId` is set.
+
+---
+
 ## [0.11.11] — 2026-04-22
 
 ### Added

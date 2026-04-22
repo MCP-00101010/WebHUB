@@ -169,11 +169,21 @@ function handleContextMenuAction(action) {
       createCollection('New Collection');
       renderAll();
       saveState();
-      showModal('renameCollection', { title: 'Name Collection', placeholder1: 'Collection Name', value1: 'New Collection' });
+      showModal('editCollection', {
+        title: 'New Collection', placeholder1: 'Collection Name', value1: 'New Collection',
+        showTags: true, showSharedTags: true
+      });
       break;
     case 'editCollection': {
       const coll = contextTarget.item;
-      if (coll) showModal('renameCollection', { title: 'Rename Collection', placeholder1: 'Collection Name', value1: coll.title });
+      if (!coll) break;
+      contextTarget = { ...contextTarget, collectionId: coll.id };
+      showModal('editCollection', {
+        title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
+        showTags: true, showSharedTags: true,
+        value3: (coll.tags || []).join(' '),
+        value4: (coll.sharedTags || []).join(' ')
+      });
       break;
     }
     case 'addBoardToCollection': {

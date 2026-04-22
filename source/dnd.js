@@ -828,39 +828,47 @@ function handleSpeedDialContainerDrop(event) {
     return;
   }
   if (!dragPayload) return;
-  pushUndoSnapshot();
-  const board = getActiveBoard();
-  if (!board) { removeDragPlaceholders(); return; }
 
+  // When a collection is active, drops go to the collection's speed dial
+  const activeCollection = state.activeCollectionId
+    ? state.navItems.find(i => i.id === state.activeCollectionId)
+    : null;
+  const board = activeCollection ? null : getActiveBoard();
+  const speedDialTarget = activeCollection || board;
+  if (!speedDialTarget) { removeDragPlaceholders(); return; }
+  if (!speedDialTarget.speedDial) speedDialTarget.speedDial = [];
+
+  pushUndoSnapshot();
   const refEl  = _dropTarget;
   const refPos = _dropPos;
-  let stateInsertIndex = board.speedDial.length;
+  let stateInsertIndex = speedDialTarget.speedDial.length;
   if (refEl?.dataset.itemId) {
-    const refIdx = board.speedDial.findIndex(i => i.id === refEl.dataset.itemId);
+    const refIdx = speedDialTarget.speedDial.findIndex(i => i.id === refEl.dataset.itemId);
     if (refIdx !== -1) stateInsertIndex = refPos === 'after' ? refIdx + 1 : refIdx;
   }
 
   removeDragPlaceholders();
 
-  if (dragPayload.area === 'speed-dial') {
-    const origIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
+  const sdArea = activeCollection ? 'collection-speed-dial' : 'speed-dial';
+  if (dragPayload.area === sdArea || dragPayload.area === 'speed-dial') {
+    const origIdx = speedDialTarget.speedDial.findIndex(i => i.id === dragPayload.itemId);
     if (origIdx === -1) { dragPayload = null; return; }
-    const [dragged] = board.speedDial.splice(origIdx, 1);
+    const [dragged] = speedDialTarget.speedDial.splice(origIdx, 1);
     if (origIdx < stateInsertIndex) stateInsertIndex -= 1;
-    board.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, board.speedDial.length)), 0, dragged);
+    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, dragged);
   } else if (dragPayload.area === 'essential') {
     const essItem = state.essentials[dragPayload.slot];
     if (!essItem) { dragPayload = null; return; }
     state.essentials[dragPayload.slot] = null; trimEssentialsTail();
     essItem.type = 'bookmark';
     if (!essItem.tags) essItem.tags = [];
-    board.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, board.speedDial.length)), 0, essItem);
+    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, essItem);
   } else if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
     const dragged = removeBoardItemById(dragPayload.itemId);
     if (!dragged) { dragPayload = null; return; }
     dragged.type = 'bookmark';
     if (!dragged.tags) dragged.tags = [];
-    board.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, board.speedDial.length)), 0, dragged);
+    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, dragged);
   } else {
     dragPayload = null;
     return;

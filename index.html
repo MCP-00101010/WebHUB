@@ -194,7 +194,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.11</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.12</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -255,6 +255,12 @@
               <div class="tags-input-container">
                 <input id="modalInput3" type="text" placeholder="tag1 tag2" form="modalForm" />
                 <div id="tagSuggestions" class="tag-suggestions hidden"></div>
+              </div>
+            </div>
+            <div class="tag-field-row hidden" id="modalSharedTagsRow">
+              <label for="modalInput4">Shared</label>
+              <div class="tags-input-container">
+                <input id="modalInput4" type="text" placeholder="shared tag1 tag2" form="modalForm" />
               </div>
             </div>
             <div class="tag-field-row hidden" id="modalInheritedTagsRow">
@@ -800,7 +806,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.11</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.12</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
         </div>

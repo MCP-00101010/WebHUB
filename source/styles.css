@@ -427,7 +427,7 @@ button {
   border-color: var(--accent);
 }
 .chip-text-input {
-  border: none;
+  border: none !important;
   background: transparent;
   color: var(--text);
   font: inherit;

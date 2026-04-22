@@ -480,8 +480,11 @@ function addBookmark(title, url, columnId, tags = []) {
 
 function addSpeedDialBookmark(title, url, tags = []) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
-  const board = getActiveBoard();
-  board.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
+  const collection = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+  const target = collection || getActiveBoard();
+  if (!target) return;
+  if (!target.speedDial) target.speedDial = [];
+  target.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache: '' });
 }
 
 function addBookmarkItem(type, title, columnId, options = {}) {

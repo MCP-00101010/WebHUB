@@ -192,10 +192,12 @@ function showModal(type, options = {}) {
   elements.modalInput1.value = options.value1 || '';
   elements.modalInput2.value = options.value2 || '';
   elements.modalInput3.value = options.value3 || '';
+  elements.modalInput4.value = options.value4 || '';
   const showName = options.showName !== false;
   elements.modalInput1.classList.toggle('hidden', !showName);
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
+  document.getElementById('modalSharedTagsRow').classList.toggle('hidden', !options.showSharedTags);
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
@@ -227,6 +229,7 @@ function hideModal() {
   elements.modalOverlay.classList.add('hidden');
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
+  document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
@@ -235,7 +238,9 @@ function handleModalSubmit(event) {
   const value1 = elements.modalInput1.value.trim();
   const value2 = elements.modalInput2.value.trim();
   const value3 = elements.modalInput3.value.trim();
+  const value4 = elements.modalInput4.value.trim();
   const tags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
+  const sharedTagsFromModal = value4 ? value4.split(/\s+/).filter(Boolean) : [];
 
   const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags'];
   if (!value1 && !noNameRequired.includes(activeModal)) return;
@@ -290,6 +295,16 @@ function handleModalSubmit(event) {
     case 'renameCollection': {
       const coll = state.navItems.find(i => i.id === state.activeCollectionId);
       if (coll && value1.trim()) coll.title = value1.trim();
+      break;
+    }
+    case 'editCollection': {
+      const coll = contextTarget?.collectionId
+        ? state.navItems.find(i => i.id === contextTarget.collectionId)
+        : state.navItems.find(i => i.id === state.activeCollectionId);
+      if (!coll) break;
+      if (value1.trim()) coll.title = value1.trim();
+      coll.tags = tags;
+      coll.sharedTags = sharedTagsFromModal;
       break;
     }
     case 'moveToBoard': {

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.11';
+const APP_VERSION = '0.11.12';
 
 let activeModal = null;
 let contextTarget = null;
@@ -367,13 +367,14 @@ function attachEventListeners() {
     }
   });
   initChipInput(elements.modalInput3, tagChipOpts());
+  initChipInput(elements.modalInput4, tagChipOpts());
   elements.navList.addEventListener('contextmenu', handleNavListContextMenu);
   elements.navList.addEventListener('dragover', handleNavListDragOver);
   elements.navList.addEventListener('drop', handleNavListDrop);
   elements.speedDial.addEventListener('contextmenu', event => {
     if (event.target.closest('.speed-link')) return;
     event.preventDefault();
-    if (getActiveBoard()?.locked) return;
+    if (!state.activeCollectionId && getActiveBoard()?.locked) return;
     contextTarget = { area: 'speed-dial' };
     showContextMenu(event.clientX, event.clientY, [
       { label: 'Add bookmark', action: 'addSpeedDialBookmark' }

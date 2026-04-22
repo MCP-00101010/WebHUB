@@ -16,6 +16,7 @@ const elements = {
   modalUrlRow: document.getElementById('modalUrlRow'),
   modalTagsRow: document.getElementById('modalTagsRow'),
   modalInput3: document.getElementById('modalInput3'),
+  modalInput4: document.getElementById('modalInput4'),
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
@@ -790,7 +791,9 @@ function createNavItem(item, depth = 0, parent = null) {
     if (isActive) el.classList.add('is-active');
     el.addEventListener('click', () => {
       state.activeCollectionId = item.id;
-      if (item.boardIds?.length && !item.boardIds.includes(state.activeBoardId)) {
+      if (!item.boardIds?.length) {
+        state.activeBoardId = null;
+      } else if (!item.boardIds.includes(state.activeBoardId)) {
         state.activeBoardId = item.boardIds[0];
       }
       closeSearchModal();
