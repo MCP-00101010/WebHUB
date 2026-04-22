@@ -46,58 +46,22 @@ function _faviconHostname(url) {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
-async function _tryFetchDataUrl(src) {
-  try {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch(src, { signal: controller.signal });
-    clearTimeout(tid);
-    if (!resp.ok) return '';
-    const blob = await resp.blob();
-    if (!blob.size) return '';
-    return await new Promise(res => {
-      const reader = new FileReader();
-      reader.onload = e => res(e.target.result || '');
-      reader.onerror = () => res('');
-      reader.readAsDataURL(blob);
-    });
-  } catch { return ''; }
-}
-
-async function fetchFaviconDataUrl(url) {
-  const hostname = _faviconHostname(url);
-  if (!hostname) return '';
-  // Race Google and DuckDuckGo — first non-empty result wins
-  return new Promise(resolve => {
-    let pending = 2;
-    let done = false;
-    const settle = result => {
-      if (done) return;
-      if (result) { done = true; resolve(result); return; }
-      if (--pending === 0) resolve('');
-    };
-    _tryFetchDataUrl(`https://www.google.com/s2/favicons?domain=${hostname}&sz=64`).then(settle);
-    _tryFetchDataUrl(`https://icons.duckduckgo.com/ip3/${hostname}.ico`).then(settle);
-  });
-}
-
 function setFavicon(img, item, sz) {
   if (item.faviconCache) {
     img.src = item.faviconCache;
-  } else if (item.url) {
-    const hostname = _faviconHostname(item.url);
-    if (hostname) img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`;
-    fetchFaviconDataUrl(item.url).then(dataUrl => {
-      if (dataUrl) {
-        item.faviconCache = dataUrl;
-        trimFaviconCache(item);
-        if (img.isConnected) img.src = dataUrl;
-        saveState();
-      } else if (hostname && img.isConnected) {
-        img.src = `https://${hostname}/favicon.ico`;
-      }
-    });
+    return;
   }
+  if (!item.url) return;
+  const hostname = _faviconHostname(item.url);
+  if (!hostname) return;
+  img.src = `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`;
+  img.onerror = () => {
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = `https://${hostname}/favicon.ico`;
+    };
+    img.src = `https://icons.duckduckgo.com/ip3/${hostname}.ico`;
+  };
 }
 
 function buildTooltip(item, board = null) {

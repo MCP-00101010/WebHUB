@@ -5,11 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.18] — 2026-04-23
+
+### Fixed
+
+- **Favicon regression (0.11.17)** — the `fetch()`-based data-URL caching was silently failing for all cross-origin favicon services because browsers block reading the response body without CORS headers. This caused `img.src` to be overwritten with a bare `favicon.ico` URL that often doesn't exist, rendering alt text instead of an icon. Replaced with a simple `<img>` `onerror` chain: Google → DuckDuckGo → direct `/favicon.ico`. No `fetch()` required; the browser handles the requests natively without CORS restrictions.
+
+---
+
 ## [0.11.17] — 2026-04-23
 
 ### Fixed
 
-- **Favicon loading reliability** — replaced single-service fetch with a parallel race between Google (`/s2/favicons`) and DuckDuckGo (`icons.duckduckgo.com/ip3/`), each with a 5-second `AbortController` timeout. The first non-empty data URL wins and is cached. If both services fail (e.g. corporate firewalls, obscure domains), falls back to setting `img.src` directly to `https://{hostname}/favicon.ico`, which bypasses CORS and lets the browser display the icon without caching it as a data URL.
+- **Favicon loading reliability** — replaced single-service Google fetch with a parallel race between Google and DuckDuckGo favicon services; added direct `/favicon.ico` fallback. (Superseded by 0.11.18.)
 
 ---
 
