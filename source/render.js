@@ -21,18 +21,25 @@ const elements = {
   modalCancelBtn: document.getElementById('modalCancelBtn'),
   contextMenu: document.getElementById('contextMenu'),
   searchInput: document.getElementById('searchInput'),
-  searchResultsPane: document.getElementById('searchResultsPane'),
   searchFilterBtn: document.getElementById('searchFilterBtn'),
-  searchFilterBar: document.getElementById('searchFilterBar')
+  searchFilterBar: document.getElementById('searchFilterBar'),
+  searchModal: document.getElementById('searchModal'),
+  searchModalInput: document.getElementById('searchModalInput'),
+  searchModalResults: document.getElementById('searchModalResults'),
+  collectionTabBar: document.getElementById('collectionTabBar')
 };
 
 const searchFilters = {
   name: true,
-  tags: true,
+  url: true,
   typeBookmark: true,
   typeFolder: true,
   typeBoard: true
 };
+
+let activeTagFilters = new Set();
+let _tagFilterMode = 'or';
+let _tagPickerSort = 'az';
 
 function faviconUrl(url, sz) {
   try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=${sz}`; }
@@ -71,10 +78,15 @@ function setFavicon(img, item, sz) {
   }
 }
 
-function buildTooltip(item) {
+function buildTooltip(item, board = null) {
   const parts = [item.title || 'Untitled'];
   if (item.url) parts.push(item.url);
-  if (item.tags && item.tags.length > 0) parts.push(item.tags.map(t => `#${t}`).join(' '));
+  const ownTags = (item.tags || []).map(id => resolveTag(id).name);
+  const inherited = board ? computeInheritedTags(item, board).map(id => resolveTag(id).name) : [];
+  const shared = (item.sharedTags || []).map(id => resolveTag(id).name);
+  if (ownTags.length) parts.push(`Tags: ${ownTags.join(', ')}`);
+  if (inherited.length) parts.push(`Inherited: ${inherited.join(', ')}`);
+  if (shared.length) parts.push(`Shared: ${shared.join(', ')}`);
   return parts.join('\n');
 }
 
@@ -197,7 +209,11 @@ function renderAll() {
   const activeBoard = state.boards.find(b => b.id === state.activeBoardId);
   if (activeBoard?.isImportManager && !importManagerHasItems()) {
     function findFirstBoardId(items) {
-      for (const i of items) { if (i.boardId) return i.boardId; if (i.children) { const r = findFirstBoardId(i.children); if (r) return r; } }
+      for (const i of items) {
+        if (i.boardId) return i.boardId;
+        if (i.type === 'collection' && i.boardIds?.length) return i.boardIds[0];
+        if (i.children) { const r = findFirstBoardId(i.children); if (r) return r; }
+      }
       return null;
     }
     const fallbackId = findFirstBoardId(state.navItems);
@@ -208,30 +224,62 @@ function renderAll() {
   renderBoard();
   updateInboxBadge();
   if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
-  const q = elements.searchInput.value.trim();
-  if (q) renderSearchResults(q);
+  if (!elements.searchModal.classList.contains('hidden')) {
+    const q = elements.searchModalInput.value.trim();
+    if (q || activeTagFilters.size > 0) renderSearchResults();
+  }
 }
 
-function renderSearchResults(query) {
-  const q = query.toLowerCase();
-  const pane = elements.searchResultsPane;
+function _showTagPicker(show) {
+  const pickerEl = document.getElementById('searchTagPicker');
+  pickerEl.classList.toggle('hidden', !show);
+  const tagsChip = document.querySelector('#searchModal .search-filter-chip[data-filter="tags"]');
+  if (tagsChip) tagsChip.classList.toggle('active', show);
+}
+
+function openSearchModal(opts = {}) {
+  const modal = elements.searchModal;
+  const firstOpen = !modal.dataset.draggableAttached;
+  modal.classList.remove('hidden');
+  if (firstOpen) {
+    makeDraggable(modal, document.getElementById('searchModalDragHandle'));
+    centerPanel(modal);
+  }
+  if (opts.tagId) {
+    activeTagFilters = new Set([opts.tagId]);
+    _showTagPicker(true);
+    elements.searchModalInput.value = '';
+    renderSearchResults();
+  } else {
+    if (opts.query !== undefined) elements.searchModalInput.value = opts.query;
+    elements.searchModalInput.focus();
+    const q = elements.searchModalInput.value.trim();
+    if (q || activeTagFilters.size > 0) renderSearchResults();
+    else elements.searchModalResults.innerHTML = '';
+  }
+}
+
+function closeSearchModal() {
+  elements.searchModal.classList.add('hidden');
+  elements.searchModalInput.value = '';
+  activeTagFilters = new Set();
+  _tagFilterMode = 'or';
+  document.getElementById('searchTagModeBtn').dataset.mode = 'or';
+  document.getElementById('searchTagModeBtn').textContent = 'ANY';
+  _showTagPicker(false);
+  elements.searchModalResults.innerHTML = '';
+}
+
+function renderSearchResults() {
+  const q = elements.searchModalInput.value.trim().toLowerCase() || null;
+  const hasTagFilters = activeTagFilters.size > 0;
+  const pane = elements.searchModalResults;
   pane.innerHTML = '';
 
-  const matchesQuery = (item, board) => {
-    if (searchFilters.name) {
-      if ((item.title || '').toLowerCase().includes(q)) return true;
-      if (item.url && item.url.toLowerCase().includes(q)) return true;
-    }
-    if (searchFilters.tags) {
-      if (item.tags && item.tags.some(t => t.toLowerCase().includes(q))) return true;
-      if (item.sharedTags && item.sharedTags.some(t => t.toLowerCase().includes(q))) return true;
-      if (board) {
-        const inherited = computeInheritedTags(item, board);
-        if (inherited.some(t => t.toLowerCase().includes(q))) return true;
-      }
-    }
-    return false;
-  };
+  const pickerEl = document.getElementById('searchTagPicker');
+  const pickerOpen = !pickerEl.classList.contains('hidden');
+
+  if (!q && !hasTagFilters && !pickerOpen) return;
 
   const typeAllowed = (item) => {
     if (item.type === 'board') return searchFilters.typeBoard;
@@ -239,32 +287,65 @@ function renderSearchResults(query) {
     return searchFilters.typeBookmark;
   };
 
+  const matchesText = (item, board) => {
+    if (!typeAllowed(item)) return false;
+    if (!q) return true;
+    if (searchFilters.name && (item.title || '').toLowerCase().includes(q)) return true;
+    if (searchFilters.url && item.url && item.url.toLowerCase().includes(q)) return true;
+    return false;
+  };
+
+  const matchesTagFilter = (item, board) => {
+    if (!hasTagFilters) return true;
+    const allItemTags = [
+      ...(item.tags || []),
+      ...(item.sharedTags || []),
+      ...(board ? computeInheritedTags(item, board) : [])
+    ];
+    if (_tagFilterMode === 'and') return [...activeTagFilters].every(id => allItemTags.includes(id));
+    return [...activeTagFilters].some(id => allItemTags.includes(id));
+  };
+
+  const allBaseHits = [];
   const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
-      if (typeAllowed(item) && matchesQuery(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId } });
+      if (matchesText(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board });
       if (item.children) hits.push(...collectFromList(item.children, board, columnId));
     }
     return hits;
   };
 
-  const groups = [];
-  const essHits = state.essentials
-    .map((e, i) => e && searchFilters.typeBookmark && matchesQuery(e, null) ? { item: e, meta: { area: 'essential', slot: i } } : null)
-    .filter(Boolean);
-  if (essHits.length) groups.push({ label: 'Essentials', items: essHits });
+  state.essentials.forEach((e, i) => {
+    if (e && matchesText(e, null)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null });
+  });
   for (const board of state.boards) {
-    const hits = [];
-    if (searchFilters.typeBoard && matchesQuery(board, null)) hits.push({ item: board, meta: { area: 'board-item', boardId: board.id } });
-    if (searchFilters.typeBookmark) hits.push(...board.speedDial.filter(i => matchesQuery(i, board)).map(i => ({ item: i, meta: { area: 'speed-dial-item', boardId: board.id } })));
-    hits.push(...board.columns.filter(c => !c.isInbox).flatMap(col => collectFromList(col.items, board, col.id)));
-    if (hits.length) groups.push({ label: board.title, items: hits });
+    if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
+    board.speedDial.filter(i => matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
+    board.columns.filter(c => !c.isInbox).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
   }
+
+  const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.item, h.board)) : allBaseHits;
+
+  const groupMap = new Map();
+  for (const h of finalHits) {
+    const label = h.meta.area === 'essential' ? 'Essentials' : (h.board?.title || state.boards.find(b => b.id === h.meta.boardId)?.title || '');
+    if (!groupMap.has(label)) groupMap.set(label, []);
+    groupMap.get(label).push(h);
+  }
+  const groups = [...groupMap.entries()].map(([label, items]) => ({ label, items }));
+
+  // picker: when query exists use text-matched items, otherwise use all items (empty query = full DB)
+  const pickerBaseHits = q ? allBaseHits : finalHits.length ? finalHits : allBaseHits;
+  if (pickerOpen) renderTagPicker(pickerBaseHits);
+
+  // only render results pane when there's an active query or tag filter
+  if (!q && !hasTagFilters) return;
 
   if (!groups.length) {
     const empty = document.createElement('div');
     empty.className = 'search-empty';
-    empty.textContent = 'No bookmarks found.';
+    empty.textContent = 'No results found.';
     pane.appendChild(empty);
     return;
   }
@@ -284,6 +365,103 @@ function renderSearchResults(query) {
   }
 }
 
+function renderTagPicker(baseHits) {
+  const list = document.getElementById('searchTagPickerList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  // build tag count map from baseHits
+  const tagCount = new Map();
+  for (const { item, board } of baseHits) {
+    const allTags = [
+      ...(item.tags || []),
+      ...(item.sharedTags || []),
+      ...(board ? computeInheritedTags(item, board) : [])
+    ];
+    for (const id of allTags) {
+      tagCount.set(id, (tagCount.get(id) || 0) + 1);
+    }
+  }
+
+  if (tagCount.size === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-tag-group-header';
+    empty.style.opacity = '0.5';
+    empty.textContent = 'No tags in results';
+    list.appendChild(empty);
+    return;
+  }
+
+  let tags = [...tagCount.keys()]
+    .map(id => ({ id, tag: resolveTag(id), count: tagCount.get(id) }))
+    .filter(t => t.tag);
+
+  if (_tagPickerSort === 'az') {
+    tags.sort((a, b) => a.tag.name.localeCompare(b.tag.name));
+    const chips = document.createElement('div');
+    chips.className = 'search-tag-picker-chips';
+    tags.forEach(({ id, tag, count }) => chips.appendChild(_makePickerChip(id, tag, count)));
+    list.appendChild(chips);
+  } else if (_tagPickerSort === 'count') {
+    tags.sort((a, b) => b.count - a.count || a.tag.name.localeCompare(b.tag.name));
+    const chips = document.createElement('div');
+    chips.className = 'search-tag-picker-chips';
+    tags.forEach(({ id, tag, count }) => chips.appendChild(_makePickerChip(id, tag, count)));
+    list.appendChild(chips);
+  } else {
+    // group sort
+    const groupMap = new Map();
+    const noGroup = [];
+    for (const entry of tags) {
+      const grpId = entry.tag.groupId;
+      if (!grpId) { noGroup.push(entry); continue; }
+      if (!groupMap.has(grpId)) groupMap.set(grpId, []);
+      groupMap.get(grpId).push(entry);
+    }
+    const tagGroups = state.settings.tagGroups || [];
+    const orderedGroups = tagGroups.filter(g => groupMap.has(g.id));
+    for (const g of orderedGroups) {
+      const header = document.createElement('div');
+      header.className = 'search-tag-group-header';
+      header.textContent = g.name;
+      list.appendChild(header);
+      const chips = document.createElement('div');
+      chips.className = 'search-tag-picker-chips';
+      groupMap.get(g.id).sort((a, b) => a.tag.name.localeCompare(b.tag.name))
+        .forEach(({ id, tag, count }) => chips.appendChild(_makePickerChip(id, tag, count)));
+      list.appendChild(chips);
+    }
+    if (noGroup.length) {
+      const header = document.createElement('div');
+      header.className = 'search-tag-group-header';
+      header.textContent = 'Ungrouped';
+      list.appendChild(header);
+      const chips = document.createElement('div');
+      chips.className = 'search-tag-picker-chips';
+      noGroup.sort((a, b) => a.tag.name.localeCompare(b.tag.name))
+        .forEach(({ id, tag, count }) => chips.appendChild(_makePickerChip(id, tag, count)));
+      list.appendChild(chips);
+    }
+  }
+}
+
+function _makePickerChip(id, tag, count) {
+  const chip = document.createElement('span');
+  chip.className = 'tag-chip';
+  chip.dataset.tagId = id;
+  chip.textContent = tag.name;
+  applyTagColor(chip, id);
+  applyChipTooltip(chip, id);
+  if (count > 1) {
+    const cnt = document.createElement('span');
+    cnt.className = 'tag-chip-count';
+    cnt.textContent = count;
+    chip.appendChild(cnt);
+  }
+  if (activeTagFilters.has(id)) chip.classList.add('selected');
+  return chip;
+}
+
 function createSearchResultItem(item, meta = {}) {
   if (item.type === 'folder') return createFolderSearchResultItem(item, meta);
   if (item.type === 'board') return createBoardSearchResultItem(item, meta);
@@ -293,6 +471,7 @@ function createSearchResultItem(item, meta = {}) {
   el.href = item.url || '#';
   el.target = '_blank';
   el.rel = 'noreferrer noopener';
+  el.draggable = false;
   el.dataset.tooltip = buildTooltip(item);
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
@@ -332,6 +511,7 @@ function createSearchResultItem(item, meta = {}) {
 function createFolderSearchResultItem(item, meta = {}) {
   const el = document.createElement('div');
   el.className = 'board-column-item folder-card';
+  el.draggable = false;
   el.dataset.tooltip = item.title || 'Untitled Folder';
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
@@ -357,14 +537,14 @@ function createFolderSearchResultItem(item, meta = {}) {
 function createBoardSearchResultItem(item, meta = {}) {
   const el = document.createElement('div');
   el.className = 'board-column-item bookmark-item';
+  el.draggable = false;
   el.style.cursor = 'pointer';
   el.dataset.tooltip = item.title || 'Untitled Board';
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
   el.addEventListener('click', () => {
     state.activeBoardId = item.id;
-    elements.searchInput.value = '';
-    elements.mainPanel.classList.remove('search-active');
-    elements.searchResultsPane.classList.add('hidden');
+    state.activeCollectionId = null;
+    closeSearchModal();
     renderAll();
     saveState();
   });
@@ -518,9 +698,7 @@ function createImportManagerNavItem(board) {
 
   el.addEventListener('click', () => {
     state.activeBoardId = board.id;
-    elements.searchInput.value = '';
-    elements.mainPanel.classList.remove('search-active');
-    elements.searchResultsPane.classList.add('hidden');
+    closeSearchModal();
     renderAll();
     saveState();
   });
@@ -580,6 +758,38 @@ function createNavItem(item, depth = 0, parent = null) {
   }
 
   if (item.type === 'title') el.classList.add(item.title ? 'nav-title' : 'nav-divider');
+
+  if (item.type === 'collection') {
+    el.classList.add('nav-collection-item');
+    const collIcon = document.createElement('span');
+    collIcon.className = 'nav-collection-icon';
+    collIcon.appendChild(icon('icon-collection'));
+    el.appendChild(collIcon);
+    const info = document.createElement('div');
+    info.className = 'nav-board-info';
+    const label = document.createElement('div');
+    label.className = 'nav-board-title';
+    label.textContent = item.title || 'Untitled Collection';
+    info.appendChild(label);
+    if (item.tags?.length) {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'nav-board-tags';
+      renderTagsInto(tagsEl, item.tags);
+      info.appendChild(tagsEl);
+    }
+    el.appendChild(info);
+    const isActive = state.activeCollectionId === item.id;
+    if (isActive) el.classList.add('is-active');
+    el.addEventListener('click', () => {
+      state.activeCollectionId = item.id;
+      if (item.boardIds?.length && !item.boardIds.includes(state.activeBoardId)) {
+        state.activeBoardId = item.boardIds[0];
+      }
+      closeSearchModal();
+      renderAll();
+      saveState();
+    });
+  }
 
   if (item.type === 'folder') {
     el.classList.add('folder-card');
@@ -661,9 +871,8 @@ function createNavItem(item, depth = 0, parent = null) {
     el.addEventListener('click', () => {
       if (item.boardId) {
         state.activeBoardId = item.boardId;
-        elements.searchInput.value = '';
-        elements.mainPanel.classList.remove('search-active');
-        elements.searchResultsPane.classList.add('hidden');
+        state.activeCollectionId = null;
+        closeSearchModal();
         renderAll();
         saveState();
       }
@@ -725,14 +934,33 @@ function applyBoardBackground(board) {
 }
 
 function renderBoard() {
+  const collection = state.activeCollectionId
+    ? state.navItems.find(i => i.id === state.activeCollectionId) || findBoardCollection(state.activeBoardId)
+    : null;
   const board = getActiveBoard();
+
+  // Update collection tab bar
+  const tabBar = elements.collectionTabBar;
+  if (collection) {
+    tabBar.classList.remove('hidden');
+    renderCollectionTabBar(collection);
+  } else {
+    tabBar.classList.add('hidden');
+  }
+
   if (!board) {
     elements.mainPanel.classList.add('no-board');
     elements.mainPanel.style.backgroundImage = '';
-    elements.boardTitle.textContent = '';
+    elements.boardTitle.textContent = collection ? collection.title : '';
     elements.speedDial.innerHTML = '';
     elements.bookmarkColumns.innerHTML = '';
     lastRenderedBoardId = null;
+    if (collection) {
+      const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
+      if (speedDialPanel) speedDialPanel.classList.remove('hidden');
+      renderSpeedDial(collection, true);
+      elements.mainPanel.classList.remove('no-board');
+    }
     return;
   }
 
@@ -746,7 +974,9 @@ function renderBoard() {
   }
 
   elements.mainPanel.classList.remove('no-board');
-  elements.boardTitle.textContent = board.title;
+  elements.boardTitle.textContent = collection
+    ? `${collection.title} — ${board.title}`
+    : board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
   applyBoardBackground(board);
   elements.boardSettingsBtn.disabled = !!board.locked;
@@ -754,15 +984,22 @@ function renderBoard() {
   if (board.locked && typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
 
   const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
-  if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
+  if (collection) {
+    // Use the collection's speed dial; suppress the board's
+    if (speedDialPanel) speedDialPanel.classList.remove('hidden');
+    renderSpeedDial(collection, true);
+  } else {
+    if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
+    renderSpeedDial(board, false);
+  }
 
-  renderSpeedDial(board);
   renderColumns(board);
 }
 
-function renderSpeedDial(board) {
+function renderSpeedDial(source, isCollection = false) {
+  const board = isCollection ? null : source;
   elements.speedDial.innerHTML = '';
-  board.speedDial.forEach(item => {
+  source.speedDial.forEach(item => {
     const link = document.createElement('a');
     link.className = 'speed-link';
     link.dataset.itemId = item.id;
@@ -770,7 +1007,7 @@ function renderSpeedDial(board) {
     link.target = '_blank';
     link.rel = 'noreferrer noopener';
     link.draggable = true;
-    link.dataset.tooltip = buildTooltip(item);
+    link.dataset.tooltip = buildTooltip(item, board);
 
     if (item.url) {
       const favicon = document.createElement('img');
@@ -786,9 +1023,11 @@ function renderSpeedDial(board) {
     }
 
     link.addEventListener('dragstart', event => {
-      if (board.locked) { event.preventDefault(); return; }
+      if (!isCollection && board?.locked) { event.preventDefault(); return; }
       event.stopPropagation();
-      dragPayload = { area: 'speed-dial', itemId: item.id };
+      dragPayload = isCollection
+        ? { area: 'collection-speed-dial', itemId: item.id, collectionId: source.id }
+        : { area: 'speed-dial', itemId: item.id };
       event.dataTransfer.setData('text/plain', item.id);
       event.dataTransfer.effectAllowed = 'move';
       applyDragImage(event, link);
@@ -800,7 +1039,8 @@ function renderSpeedDial(board) {
     link.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();
-      if (!getActiveBoard()?.locked) handleSpeedDialContextMenu(event, item);
+      if (isCollection) handleCollectionSpeedDialContextMenu(event, item, source);
+      else if (!getActiveBoard()?.locked) handleSpeedDialContextMenu(event, item);
     });
     link.addEventListener('dragover', event => handleSpeedDialItemDragOver(event, item));
     link.addEventListener('dragleave', event => {
@@ -812,6 +1052,65 @@ function renderSpeedDial(board) {
 
     elements.speedDial.appendChild(link);
   });
+}
+
+function renderCollectionTabBar(collection) {
+  const tabBar = elements.collectionTabBar;
+  tabBar.innerHTML = '';
+
+  (collection.boardIds || []).forEach(boardId => {
+    const board = state.boards.find(b => b.id === boardId);
+    if (!board) return;
+    const tab = document.createElement('div');
+    tab.className = 'collection-tab' + (boardId === state.activeBoardId ? ' active' : '');
+    tab.dataset.boardId = boardId;
+    const tabIcon = document.createElement('span');
+    tabIcon.className = 'collection-tab-icon';
+    tabIcon.appendChild(icon('icon-board-add'));
+    tab.appendChild(tabIcon);
+    const tabLabel = document.createElement('span');
+    tabLabel.textContent = board.title || 'Untitled Board';
+    tab.appendChild(tabLabel);
+    tab.addEventListener('click', () => {
+      state.activeBoardId = boardId;
+      renderAll();
+      saveState();
+    });
+    tab.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleCollectionTabContextMenu(e, boardId, collection);
+    });
+    tab.draggable = true;
+    tab.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      dragPayload = { area: 'collection-tab', boardId, collectionId: collection.id };
+      e.dataTransfer.setData('text/plain', boardId);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    tab.addEventListener('dragend', () => { dragPayload = null; });
+    tabBar.appendChild(tab);
+  });
+
+  // Add board button
+  const addBtn = document.createElement('div');
+  addBtn.className = 'collection-tab-add';
+  addBtn.title = 'Add board to collection';
+  addBtn.appendChild(icon('icon-board-add'));
+  addBtn.addEventListener('click', () => {
+    pushUndoSnapshot();
+    createBoardInCollection(collection, 'New Board');
+    renderAll();
+    saveState();
+    showBoardSettingsPanel(true);
+  });
+  addBtn.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    contextTarget = { area: 'collection-tab-bar', collectionId: collection.id };
+    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToCollection' }]);
+  });
+  tabBar.appendChild(addBtn);
 }
 
 function renderColumns(board) {

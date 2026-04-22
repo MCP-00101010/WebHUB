@@ -59,6 +59,14 @@
         <line x1="16" y1="12" x2="22" y2="12"/>
       </symbol>
 
+      <!-- 2×2 grid (Collection) -->
+      <symbol id="icon-collection" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3"  y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="13" y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="3"  y="13" width="8" height="8" rx="1.5"/>
+        <rect x="13" y="13" width="8" height="8" rx="1.5"/>
+      </symbol>
+
       <!-- Gear / cog (Feather Icons style) -->
       <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
@@ -162,7 +170,7 @@
           <div class="search-filter-group">
             <span class="search-filter-label">Match</span>
             <button class="search-filter-chip active" data-filter="name">Name</button>
-            <button class="search-filter-chip active" data-filter="tags">Tags</button>
+            <button class="search-filter-chip active" data-filter="url">URL</button>
           </div>
           <div class="search-filter-group">
             <span class="search-filter-label">Show</span>
@@ -186,7 +194,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.8</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.9</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -194,7 +202,6 @@
     </aside>
 
     <main id="mainPanel" class="main-panel">
-      <section id="searchResultsPane" class="search-results-pane hidden"></section>
       <section class="board-header">
         <div class="board-title-group">
           <h2 id="boardTitle">Board</h2>
@@ -215,6 +222,8 @@
           </button>
         </div>
       </section>
+
+      <section id="collectionTabBar" class="collection-tab-bar hidden"></section>
 
       <section class="speed-dial-panel">
         <div id="speedDial" class="speed-dial"></div>
@@ -343,6 +352,9 @@
               <span class="toggle-track"></span>
             </label>
           </div>
+          <p id="bstgCollectionSpeedDialNote" class="settings-warning hidden">
+            This board's speed dial is hidden while the board belongs to a collection.
+          </p>
         </div>
 
         <div class="settings-section">
@@ -705,6 +717,10 @@
                 <span>Titles/Dividers</span>
                 <label class="settings-toggle"><input id="stgConfirmDeleteTitleDivider" type="checkbox" /><span class="toggle-track"></span></label>
               </div>
+              <div class="confirm-delete-item">
+                <span>Tags</span>
+                <label class="settings-toggle"><input id="stgConfirmDeleteTag" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
             </div>
           </div>
         </div>
@@ -746,7 +762,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.8</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.9</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
         </div>
@@ -840,6 +856,46 @@
       <div class="form-actions">
         <button type="button" id="trashClearAllBtn" class="secondary-btn">Clear All</button>
         <button type="button" id="trashCloseBtn" class="primary-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="searchModal" class="settings-panel search-modal hidden">
+    <div id="searchModalDragHandle" class="settings-header search-modal-header">
+      <h3>Search</h3>
+      <button type="button" id="searchModalCloseBtn" class="panel-icon-close-btn" title="Close" aria-label="Close search">&#x2715;</button>
+    </div>
+    <div class="search-modal-main">
+      <div class="search-modal-body">
+        <div class="search-input-row search-modal-input-row">
+          <input id="searchModalInput" type="search" placeholder="Search…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="search-filter-bar search-modal-filters">
+          <div class="search-filter-group">
+            <span class="search-filter-label">Match</span>
+            <button class="search-filter-chip active" data-filter="name">Name</button>
+            <button class="search-filter-chip active" data-filter="url">URL</button>
+            <button class="search-filter-chip" data-filter="tags">Tags</button>
+          </div>
+          <div class="search-filter-group">
+            <span class="search-filter-label">Show</span>
+            <button class="search-filter-chip active" data-filter="typeBookmark">Bookmarks</button>
+            <button class="search-filter-chip active" data-filter="typeFolder">Folders</button>
+            <button class="search-filter-chip active" data-filter="typeBoard">Boards</button>
+          </div>
+        </div>
+        <div id="searchModalResults" class="search-results-pane"></div>
+      </div>
+      <div id="searchTagPicker" class="search-tag-picker hidden">
+        <div class="search-tag-picker-header">
+          <div class="search-tag-picker-sort">
+            <button class="search-tag-sort-btn active" data-sort="az">A–Z</button>
+            <button class="search-tag-sort-btn" data-sort="group">Group</button>
+            <button class="search-tag-sort-btn" data-sort="count">Count</button>
+          </div>
+          <button id="searchTagModeBtn" class="search-tag-mode-btn" data-mode="or">ANY</button>
+        </div>
+        <div id="searchTagPickerList" class="search-tag-picker-list"></div>
       </div>
     </div>
   </div>

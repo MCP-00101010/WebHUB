@@ -14,11 +14,22 @@ function applyTagColor(chip, tagId) {
   }
 }
 
+function applyChipTooltip(chip, tagId) {
+  const tag = resolveTag(tagId);
+  const grp = (state.settings.tagGroups || []).find(g => g.id === tag.groupId);
+  const ambiguous = grp && (state.tags || []).filter(t => t.name.toLowerCase() === tag.name.toLowerCase()).length > 1;
+  chip.dataset.tooltip = ambiguous ? `${tag.name} · ${grp.name}` : tag.name;
+  const color = tag.color || grp?.color || null;
+  if (color) chip.dataset.tooltipColor = color;
+  else delete chip.dataset.tooltipColor;
+}
+
 function makeTagChip(tagId) {
   const chip = document.createElement('span');
   chip.className = 'tag-chip';
   const tag = resolveTag(tagId);
   chip.textContent = tag.name;
+  applyChipTooltip(chip, tagId);
   applyTagColor(chip, tagId);
   return chip;
 }
@@ -150,7 +161,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
 
     // --- Bookmark-specific ---
     if (item.type === 'bookmark') {
-      itemEl.dataset.tooltip = buildTooltip(item);
+      itemEl.dataset.tooltip = buildTooltip(item, getActiveBoard());
       itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
     }
 

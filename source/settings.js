@@ -22,6 +22,10 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
+  const inCollection = !!findBoardCollection(board.id);
+  const sdNote = document.getElementById('bstgCollectionSpeedDialNote');
+  if (sdNote) sdNote.classList.toggle('hidden', !inCollection);
+  document.getElementById('bstgShowSpeedDial').disabled = inCollection;
   document.getElementById('bstgTags').value = (board.tags || []).join(' ');
   document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
   document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
@@ -330,6 +334,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteBookmark').checked = s.confirmDeleteBookmark;
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
+  document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
   document.getElementById('stgFolderFont').value = s.folderFontSize;
   document.getElementById('stgTitleFont').value = s.titleFontSize;
   document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
@@ -494,6 +499,17 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
       btn.appendChild(document.createTextNode(group.name || '(unnamed)'));
       btn.addEventListener('click', () => {
         hideTagChipMenu();
+        const conflict = (state.tags || []).find(t => t.id !== tag.id && t.groupId === group.id && t.name.toLowerCase() === tag.name.toLowerCase());
+        if (conflict) {
+          showConfirmDialog(`Group "${group.name || '(unnamed)'}" already has a tag named "${tag.name}".\nMerge into it? All references will be updated.`, () => {
+            pushUndoSnapshot();
+            mergeTags(tag.id, conflict.id);
+            saveState();
+            updateUndoRedoUI();
+            renderTagGroups();
+          }, 'Merge');
+          return;
+        }
         pushUndoSnapshot();
         tag.groupId = group.id;
         saveState();
@@ -503,6 +519,14 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
       menu.appendChild(btn);
     });
   }
+
+  const divider = document.createElement('div');
+  divider.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
+  menu.appendChild(divider);
+  const refBtn = document.createElement('button');
+  refBtn.textContent = 'Find references\u2026';
+  refBtn.addEventListener('click', () => { hideTagChipMenu(); openSearchModal({ tagId }); });
+  menu.appendChild(refBtn);
 
   document.body.appendChild(menu);
   _tagChipMenu = menu;
@@ -514,9 +538,61 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
   document.addEventListener('mousedown', _tagChipMenuOutside, true);
 }
 
+function mergeTags(sourceId, targetId) {
+  const replaceIn = list => {
+    if (!list) return;
+    for (const item of list) {
+      const replaceField = field => {
+        if (!item[field]) return;
+        if (!item[field].includes(sourceId)) return;
+        item[field] = [...new Set(item[field].map(id => id === sourceId ? targetId : id))];
+      };
+      replaceField('tags');
+      replaceField('sharedTags');
+      if (item.children) replaceIn(item.children);
+    }
+  };
+  for (const board of state.boards) {
+    replaceIn(board.speedDial);
+    for (const col of board.columns) replaceIn(col.items);
+  }
+  replaceIn(state.essentials);
+  deleteTag(sourceId);
+}
+
+function buildTagUsage(tagId) {
+  const r = { boards: 0, folders: 0, bookmarks: 0 };
+  const walk = items => {
+    for (const item of (items || [])) {
+      if ([...(item.tags || []), ...(item.sharedTags || [])].includes(tagId)) {
+        if (item.type === 'folder') r.folders++;
+        else r.bookmarks++;
+      }
+      if (item.children) walk(item.children);
+    }
+  };
+  for (const board of state.boards) {
+    if ([...(board.tags || []), ...(board.sharedTags || [])].includes(tagId)) r.boards++;
+    walk(board.speedDial);
+    for (const col of board.columns) walk(col.items);
+  }
+  walk(state.essentials);
+  return r;
+}
+
+function tagUsageMessage(tagId, tagName) {
+  const u = buildTagUsage(tagId);
+  const parts = [];
+  if (u.boards) parts.push(`${u.boards} board${u.boards > 1 ? 's' : ''}`);
+  if (u.folders) parts.push(`${u.folders} folder${u.folders > 1 ? 's' : ''}`);
+  if (u.bookmarks) parts.push(`${u.bookmarks} bookmark${u.bookmarks > 1 ? 's' : ''}`);
+  const usage = parts.length ? `Used by: ${parts.join(', ')}.` : 'Not used by any items.';
+  return `Delete tag "${tagName}"?\n${usage}`;
+}
+
 function buildTagCounts() {
   const counts = {};
-  const tally = items => { for (const item of (items || [])) { (item?.tags || []).forEach(t => { counts[t] = (counts[t] || 0) + 1; }); if (item?.children) tally(item.children); } };
+  const tally = items => { for (const item of (items || [])) { [...(item?.tags || []), ...(item?.sharedTags || [])].forEach(t => { counts[t] = (counts[t] || 0) + 1; }); if (item?.children) tally(item.children); } };
   tally(state.essentials);
   for (const board of state.boards) { tally(board.speedDial); for (const col of board.columns) tally(col.items); }
   return counts;
@@ -738,11 +814,14 @@ function renderTagGroups() {
     cleanBtn.textContent = `\u00d7 ${orphans.length} orphan${orphans.length > 1 ? 's' : ''}`;
     cleanBtn.title = 'Remove tags not used by any item';
     cleanBtn.addEventListener('click', () => {
-      pushUndoSnapshot();
-      orphans.forEach(t => deleteTag(t.id));
-      saveState();
-      updateUndoRedoUI();
-      renderTagGroups();
+      const n = orphans.length;
+      confirmDelete('confirmDeleteTag', `Remove ${n} unused tag${n > 1 ? 's' : ''}?`, () => {
+        pushUndoSnapshot();
+        orphans.forEach(t => deleteTag(t.id));
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+      });
     });
     uHeader.appendChild(cleanBtn);
   }
@@ -768,11 +847,13 @@ function renderTagGroups() {
       delBtn.addEventListener('mousedown', e => {
         e.preventDefault();
         e.stopPropagation();
-        pushUndoSnapshot();
-        deleteTag(tag.id);
-        saveState();
-        updateUndoRedoUI();
-        renderTagGroups();
+        confirmDelete('confirmDeleteTag', tagUsageMessage(tag.id, tag.name), () => {
+          pushUndoSnapshot();
+          deleteTag(tag.id);
+          saveState();
+          updateUndoRedoUI();
+          renderTagGroups();
+        });
       });
       chip.appendChild(delBtn);
       applyTagColor(chip, tag.id);
@@ -822,6 +903,7 @@ function attachSettingsListeners() {
   boolSetting('stgConfirmDeleteBookmark',    'confirmDeleteBookmark');
   boolSetting('stgConfirmDeleteFolder',      'confirmDeleteFolder');
   boolSetting('stgConfirmDeleteTitleDivider','confirmDeleteTitleDivider');
+  boolSetting('stgConfirmDeleteTag',        'confirmDeleteTag');
   document.getElementById('stgShowTags').addEventListener('change', () => applySettings());
 
   const thicknessEl = document.getElementById('stgLineThicknessVal');

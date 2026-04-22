@@ -9,6 +9,7 @@ const defaultSettings = {
   confirmDeleteBookmark: false,
   confirmDeleteFolder: false,
   confirmDeleteTitleDivider: false,
+  confirmDeleteTag: false,
   bookmarkFontSize: 14,
   bookmarkFontFamily: '',
   bookmarkBold: false, bookmarkItalic: false, bookmarkUnderline: false,
@@ -48,6 +49,7 @@ const defaultSettings = {
 
 const defaultState = {
   activeBoardId: 'board-1',
+  activeCollectionId: null,
   hubName: 'Morpheus WebHub',
   lastExported: null,
   tags: [],
@@ -106,6 +108,12 @@ function migrateItems(items) {
       if (item.inheritTags === undefined) item.inheritTags = true;
       if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
     }
+    if (item.type === 'collection') {
+      if (!item.speedDial) item.speedDial = [];
+      if (!item.tags) item.tags = [];
+      if (!item.sharedTags) item.sharedTags = [];
+      if (!item.boardIds) item.boardIds = [];
+    }
     if (item.children) migrateItems(item.children);
   }
 }
@@ -131,6 +139,7 @@ function deleteTag(id) {
   const strip = items => { for (const item of (items || [])) { if (item?.tags) item.tags = item.tags.filter(tid => tid !== id); if (item?.sharedTags) item.sharedTags = item.sharedTags.filter(tid => tid !== id); if (item?.children) strip(item.children); } };
   strip(state.essentials);
   for (const board of state.boards) { strip([board]); strip(board.speedDial); for (const col of board.columns) strip(col.items); }
+  for (const item of state.navItems) { if (item.type === 'collection') strip([item]); }
 }
 
 // --- One-time migration: string-name tags → ID-based tag objects ---
@@ -182,6 +191,7 @@ function collectReferencedBoardIds(items) {
   const ids = new Set();
   for (const item of (items || [])) {
     if (item.type === 'board' && item.boardId) ids.add(item.boardId);
+    if (item.type === 'collection') for (const id of (item.boardIds || [])) ids.add(id);
     if (item.children) for (const id of collectReferencedBoardIds(item.children)) ids.add(id);
   }
   return ids;
@@ -214,6 +224,7 @@ function loadState() {
       }
     }
     migrateItems(parsed.navItems);
+    if (parsed.activeCollectionId === undefined) parsed.activeCollectionId = null;
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
@@ -557,6 +568,43 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
   }
 }
 
+function findBoardCollection(boardId) {
+  function search(items) {
+    for (const item of (items || [])) {
+      if (item.type === 'collection' && (item.boardIds || []).includes(boardId)) return item;
+      if (item.children) { const r = search(item.children); if (r) return r; }
+    }
+    return null;
+  }
+  return search(state.navItems);
+}
+
+function createCollection(title) {
+  const id = `col-${Date.now()}`;
+  const navItem = { id, type: 'collection', title, speedDial: [], boardIds: [], tags: [], sharedTags: [] };
+  state.navItems.push(navItem);
+  state.activeCollectionId = id;
+  return navItem;
+}
+
+function createBoardInCollection(collection, title) {
+  const id = `board-${Date.now()}`;
+  state.boards.push({
+    id, title, columnCount: 3, backgroundImage: '', containerOpacity: 100,
+    showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
+    columns: [
+      { id: `${id}-col-1`, title: 'Column 1', items: [] },
+      { id: `${id}-col-2`, title: 'Column 2', items: [] },
+      { id: `${id}-col-3`, title: 'Column 3', items: [] },
+      { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
+    ]
+  });
+  if (!collection.boardIds) collection.boardIds = [];
+  collection.boardIds.push(id);
+  state.activeBoardId = id;
+  state.activeCollectionId = collection.id;
+}
+
 function trimEssentialsTail() {
   while (state.essentials.length > 0 && !state.essentials[state.essentials.length - 1]) state.essentials.pop();
 }
@@ -598,6 +646,8 @@ function computeInheritedTags(item, board) {
   for (const ancestor of chain) {
     if (ancestor.inheritTags !== false && ancestor.sharedTags) tags.push(...ancestor.sharedTags);
   }
+  const collection = findBoardCollection(board.id);
+  if (collection?.sharedTags?.length) tags.push(...collection.sharedTags);
   return [...new Set(tags)];
 }
 

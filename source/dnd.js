@@ -887,6 +887,18 @@ function handleNavItemDragOver(event, item, parent) {
     }
     return;
   }
+  // Collection as drop target for nav board items or collection tabs
+  if (item.type === 'collection') {
+    const isNavBoard = dragPayload?.area === 'nav' && dragPayload?.itemType !== 'widget';
+    const isCollTab = dragPayload?.area === 'collection-tab' && dragPayload?.collectionId !== item.id;
+    if (isNavBoard || isCollTab) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      event.currentTarget.classList.add('drop-target');
+      return;
+    }
+  }
   const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
   if (!dragPayload || (dragPayload.area !== 'nav' && !isBoardWidget)) return;
   event.preventDefault();
@@ -944,6 +956,50 @@ function handleNavDrop(event, targetItem, parent) {
     inbox.items.push(dragged);
     dragPayload = null; renderAll(); saveState(); return;
   }
+  // Collection tab dragged back to nav
+  if (dragPayload?.area === 'collection-tab') {
+    const srcColl = state.navItems.find(i => i.id === dragPayload.collectionId);
+    if (!srcColl) { dragPayload = null; return; }
+    removeDragPlaceholders();
+    pushUndoSnapshot();
+    const boardId = dragPayload.boardId;
+    srcColl.boardIds = (srcColl.boardIds || []).filter(id => id !== boardId);
+    const board = state.boards.find(b => b.id === boardId);
+    if (board) {
+      const navItem = { id: `nav-${boardId}`, type: 'board', title: board.title, boardId };
+      const targetPath = findNavItemPath(targetItem.id);
+      if (targetPath) {
+        const position = _dropPos || 'before';
+        const ti = targetPath.list.findIndex(i => i.id === targetItem.id);
+        targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, navItem);
+      } else {
+        state.navItems.push(navItem);
+      }
+    }
+    if (state.activeBoardId === boardId) {
+      state.activeCollectionId = srcColl.boardIds.length ? srcColl.id : null;
+      if (srcColl.boardIds.length) state.activeBoardId = srcColl.boardIds[0];
+      else state.activeCollectionId = null;
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
+  // Nav board dropped onto collection
+  if (targetItem.type === 'collection' && dragPayload?.area === 'nav') {
+    const navItem = findNavItemPath(dragPayload.itemId);
+    if (!navItem || navItem.item.type !== 'board') { dragPayload = null; return; }
+    removeDragPlaceholders();
+    pushUndoSnapshot();
+    const removed = removeNavItemById(dragPayload.itemId);
+    if (removed?.boardId) {
+      if (!targetItem.boardIds) targetItem.boardIds = [];
+      targetItem.boardIds.push(removed.boardId);
+      state.activeBoardId = removed.boardId;
+      state.activeCollectionId = targetItem.id;
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
   if (!dragPayload || dragPayload.area !== 'nav') return;
   if (dragPayload.itemId === targetItem.id) return;
   const position = _dropPos || 'before';

@@ -6,11 +6,13 @@
 
 ## UI
 
-- New Feature: board tab bar as alternative navigation style (tabs across the top instead of sidebar list) — select a board folder in the navpane and the boards in that folder populate the tab bar
-- New Feature: tag manager panel (list all known tags, click to add/remove from a bookmark, rename/delete tags globally)
-
+- ✓ *Completed 2026-04-22* Collections: nav item type grouping boards into a tabbed workspace with shared speed dial and tag inheritance — see [0.11.9] in CHANGELOG.
+  
 ## Customization
 
+- have icons in the board name bar adhere to theme style
+- have all font color adhere to theme style (maybe a toggle in style settings panel to enable/disable - if enabled, also disable all font color selectors in the style settings dialouge.)
+- 
 - custom CSS input field in global settings for power users (low priority)
 
 ## Widgets
@@ -79,7 +81,6 @@
 
 ### Bulk operations
 
-- Merge tags — combine two tags into one, rewriting all affected items
 - Replace — swap one tag for another across all items
 - Multi-select tags → batch delete or batch group-assign
 
@@ -91,8 +92,6 @@
 ### Groups / categories
 
 - Collapse/expand groups in the tag list
-- Ungrouped bucket at the bottom for loose tags
-- Group color picker — items display a color dot matching their tag's group
 
 ### Smart suggestions
 
@@ -176,7 +175,8 @@ See [0.11.3] and [0.11.4] in CHANGELOG.
 
 ### Phase 10 — Advanced navigation *(in progress)*
 
-- Board tab bar (folder-selected boards populate the tab strip)
+- Collections — ✓ done in [0.11.9]
+- Board tab bar (folder-selected boards populate the tab strip) *(next)*
 - DnD live previews — ✓ done in [0.11.2]
 
 ---

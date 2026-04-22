@@ -34,13 +34,7 @@ function tagGroupLabel(tag) {
 
 function tagDisplayName(id) {
   const tag = getTagById(id);
-  if (!tag) return id;
-  const sameNameCount = (state.tags || []).filter(t => t.name.toLowerCase() === tag.name.toLowerCase()).length;
-  if (sameNameCount > 1) {
-    const grp = tagGroupLabel(tag);
-    return grp ? `${tag.name} \u00b7 ${grp}` : tag.name;
-  }
-  return tag.name;
+  return tag ? tag.name : id;
 }
 
 // --- Group picker (disambiguation when same name exists in multiple groups) ---
@@ -293,6 +287,11 @@ function handleModalSubmit(event) {
     case 'renameItem':
       renameContextItem(value1, contextTarget);
       break;
+    case 'renameCollection': {
+      const coll = state.navItems.find(i => i.id === state.activeCollectionId);
+      if (coll && value1.trim()) coll.title = value1.trim();
+      break;
+    }
     case 'moveToBoard': {
       const targetBoard = state.boards.find(b => b.id === elements.modalSelect.value);
       if (!targetBoard || !contextTarget?.item) break;

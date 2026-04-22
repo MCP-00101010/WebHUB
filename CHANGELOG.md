@@ -5,6 +5,22 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.9] — 2026-04-22
+
+### Added
+
+- **Collections** — new nav item type that groups boards into a tabbed workspace. Click a collection to activate it; boards appear in a scrollable tab bar above the speed dial. Context menus on collections and tabs support add/delete/rename/unlock operations. DnD: drop a board nav item onto a collection to add it; drag a tab back to the nav to remove it from the collection.
+- **Collection speed dial** — when a board lives inside a collection, its individual speed dial is hidden; the collection's own speed dial is shown instead. The board settings speed dial toggle is disabled with an explanatory note when the board is in a collection.
+- **Collection tag inheritance** — `sharedTags` on a collection are appended to every board's inherited-tag set, exactly like folder-level inheritance.
+- **Search tag picker** — a collapsible side panel in the search modal lists every tag that appears in the current text-match results. Click chips to filter results by tag. Supports AND/OR toggle and A-Z / Group / Count sort modes. Pre-selects the tag when opened via "Search for tag" from the tag manager.
+
+### Changed
+
+- Search modal now uses a two-column layout (results + tag picker panel) when the picker is open.
+- Empty search term now matches all items (so the tag picker can filter the full database without needing a text query).
+
+---
+
 ## [0.11.8] — 2026-04-21
 
 ### Changed

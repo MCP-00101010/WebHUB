@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.8';
+const APP_VERSION = '0.11.9';
 
 let activeModal = null;
 let contextTarget = null;
@@ -90,6 +90,9 @@ let tooltipTarget = null;
 
 function positionTooltip(target) {
   tooltipEl.textContent = target.dataset.tooltip;
+  const color = target.dataset.tooltipColor || '';
+  tooltipEl.style.setProperty('--tooltip-color', color);
+  tooltipEl.classList.toggle('has-color', !!color);
   tooltipEl.style.left = '-9999px';
   tooltipEl.style.top = '-9999px';
   tooltipEl.classList.remove('hidden');
@@ -404,23 +407,14 @@ function attachEventListeners() {
     }
   });
 
-  document.getElementById('searchInput').addEventListener('input', e => {
+  document.getElementById('searchInput').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
     const q = e.target.value.trim();
-    if (q) {
-      renderSearchResults(q);
-      elements.mainPanel.classList.add('search-active');
-      elements.searchResultsPane.classList.remove('hidden');
-    } else {
-      elements.mainPanel.classList.remove('search-active');
-      elements.searchResultsPane.classList.add('hidden');
-    }
+    e.target.value = '';
+    elements.searchFilterBar.classList.add('hidden');
+    elements.searchFilterBtn.classList.remove('open');
+    openSearchModal({ query: q });
   });
-
-  function _updateSearchFilterBtn() {
-    const isDefault = searchFilters.name && searchFilters.tags &&
-      searchFilters.typeBookmark && searchFilters.typeFolder && searchFilters.typeBoard;
-    elements.searchFilterBtn.classList.toggle('has-active', !isDefault);
-  }
 
   elements.searchFilterBtn.addEventListener('click', () => {
     const isOpen = !elements.searchFilterBar.classList.contains('hidden');
@@ -432,11 +426,74 @@ function attachEventListeners() {
     const chip = e.target.closest('.search-filter-chip');
     if (!chip) return;
     const key = chip.dataset.filter;
+    if (!(key in searchFilters)) return;
     searchFilters[key] = !searchFilters[key];
     chip.classList.toggle('active', searchFilters[key]);
     _updateSearchFilterBtn();
-    const q = elements.searchInput.value.trim();
-    if (q) renderSearchResults(q);
+  });
+
+  document.getElementById('searchModalCloseBtn').addEventListener('click', closeSearchModal);
+
+  document.getElementById('searchModalInput').addEventListener('input', () => {
+    const q = elements.searchModalInput.value.trim();
+    if (q || activeTagFilters.size > 0) renderSearchResults();
+    else elements.searchModalResults.innerHTML = '';
+  });
+
+  function _updateSearchFilterBtn() {
+    const isDefault = searchFilters.name && searchFilters.url &&
+      searchFilters.typeBookmark && searchFilters.typeFolder && searchFilters.typeBoard;
+    elements.searchFilterBtn.classList.toggle('has-active', !isDefault);
+  }
+
+  document.getElementById('searchModal').addEventListener('click', e => {
+    // filter chips (Name, URL, Show types)
+    const chip = e.target.closest('.search-filter-chip');
+    if (chip) {
+      const key = chip.dataset.filter;
+      if (key === 'tags') {
+        // toggle tag picker panel
+        const pickerEl = document.getElementById('searchTagPicker');
+        const willShow = pickerEl.classList.contains('hidden');
+        _showTagPicker(willShow);
+        if (willShow) renderSearchResults();
+        return;
+      }
+      searchFilters[key] = !searchFilters[key];
+      chip.classList.toggle('active', searchFilters[key]);
+      _updateSearchFilterBtn();
+      const q = elements.searchModalInput.value.trim();
+      if (q || activeTagFilters.size > 0) renderSearchResults();
+      return;
+    }
+
+    // sort buttons in tag picker
+    const sortBtn = e.target.closest('.search-tag-sort-btn');
+    if (sortBtn) {
+      document.querySelectorAll('.search-tag-sort-btn').forEach(b => b.classList.remove('active'));
+      sortBtn.classList.add('active');
+      _tagPickerSort = sortBtn.dataset.sort;
+      renderSearchResults();
+      return;
+    }
+
+    // AND/OR mode button
+    if (e.target.id === 'searchTagModeBtn') {
+      _tagFilterMode = _tagFilterMode === 'or' ? 'and' : 'or';
+      e.target.dataset.mode = _tagFilterMode;
+      e.target.textContent = _tagFilterMode === 'and' ? 'ALL' : 'ANY';
+      renderSearchResults();
+      return;
+    }
+
+    // tag chip clicks in picker list
+    const pickerChip = e.target.closest('#searchTagPickerList .tag-chip');
+    if (pickerChip) {
+      const id = pickerChip.dataset.tagId;
+      if (activeTagFilters.has(id)) activeTagFilters.delete(id);
+      else activeTagFilters.add(id);
+      renderSearchResults();
+    }
   });
 
   document.addEventListener('keydown', event => {
@@ -456,13 +513,13 @@ function attachEventListeners() {
 
     if (event.ctrlKey && event.key === 'f') {
       event.preventDefault();
-      elements.searchInput.focus();
+      openSearchModal({});
       return;
     }
 
     if (!inInput && event.key === '/') {
       event.preventDefault();
-      elements.searchInput.focus();
+      openSearchModal({});
       return;
     }
 
@@ -484,14 +541,7 @@ function attachEventListeners() {
     if (event.key !== 'Escape') return;
     if (!document.getElementById('noticeOverlay').classList.contains('hidden')) { hideNotice(); return; }
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog(); return; }
-    if (elements.searchInput.value) {
-      elements.searchInput.value = '';
-      elements.mainPanel.classList.remove('search-active');
-      elements.searchResultsPane.classList.add('hidden');
-      elements.searchFilterBar.classList.add('hidden');
-      elements.searchFilterBtn.classList.remove('open');
-      return;
-    }
+    if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }

@@ -44,6 +44,7 @@ function initChipInput(hiddenInput, opts = {}) {
       chip.className = 'tag-chip chip-live';
       chip.dataset.value = value;
       if (typeof applyTagColor === 'function') applyTagColor(chip, value);
+      if (typeof applyChipTooltip === 'function') applyChipTooltip(chip, value);
 
       const label = document.createElement('span');
       label.textContent = displayOf(value);
