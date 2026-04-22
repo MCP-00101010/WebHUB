@@ -55,11 +55,12 @@ function setFavicon(img, item, sz) {
   const hostname = _faviconHostname(item.url);
   if (!hostname) return;
   // faviconV2 returns 404 for unknown sites (unlike /s2/favicons which always returns 200+generic globe)
+  // Cap request size at 64 — larger values cause some services to return icons with white backgrounds
   const srcs = [
-    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${hostname}&size=${sz}`,
+    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${hostname}&size=64`,
     `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
     `https://${hostname}/favicon.ico`,
-    `https://www.google.com/s2/favicons?domain=${hostname}&sz=${sz}`,
+    `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`,
   ];
   let i = 0;
   const tryNext = () => {

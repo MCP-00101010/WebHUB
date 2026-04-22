@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.20] — 2026-04-23
+
+### Fixed
+
+- **Speed dial favicons drawn on white square** — the service request size was being passed as 256 for speed dial items. `faviconV2` doesn't support that size and errors, falling back to DuckDuckGo's `.ico` which has a white background baked in. All service requests are now capped at 64px; CSS controls the actual display size.
+
+---
+
 ## [0.11.19] — 2026-04-23
 
 ### Fixed
