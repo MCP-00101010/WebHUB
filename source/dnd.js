@@ -98,7 +98,7 @@ function createDragPlaceholder(kind) {
     const fresh = _renderCrossContextPreview(kind);
     if (fresh) return fresh;
   }
-  // collection-tab → nav: build a nav board item preview from the board title
+  // collection-tab → nav: synthesise a nav board item that matches what will be created on drop
   if (kind === 'nav' && dragPayload?.area === 'collection-tab' && dragPayload?.boardId) {
     const board = state.boards.find(b => b.id === dragPayload.boardId);
     const el = document.createElement('div');
@@ -109,6 +109,12 @@ function createDragPlaceholder(kind) {
     lbl.className = 'nav-board-title';
     lbl.textContent = board?.title || 'Untitled Board';
     info.appendChild(lbl);
+    if (board?.tags?.length && typeof renderTagsInto === 'function') {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'nav-board-tags';
+      renderTagsInto(tagsEl, board.tags);
+      info.appendChild(tagsEl);
+    }
     el.appendChild(info);
     return el;
   }

@@ -1067,6 +1067,13 @@ function renderCollectionTabBar(collection) {
   const tabBar = elements.collectionTabBar;
   tabBar.innerHTML = '';
 
+  // Tracks last indicator position key so we only touch the DOM when position changes.
+  let _tabIndicatorKey = '';
+  const _clearTabIndicator = () => {
+    _tabIndicatorKey = '';
+    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+  };
+
   // Reorder tabs within the collection or accept a nav board drop
   const _tabDragOver = (e, refTab) => {
     if (!dragPayload) return;
@@ -1078,12 +1085,20 @@ function renderCollectionTabBar(collection) {
     e.dataTransfer.dropEffect = 'move';
     const rect = (refTab || tabBar).getBoundingClientRect();
     const pos = refTab && e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    // Skip DOM update when position hasn't changed (dragover fires many times per second).
+    const key = `${refTab?.dataset?.boardId || 'end'}:${pos}`;
+    if (_tabIndicatorKey === key) return;
+    _tabIndicatorKey = key;
     const sentinel = refTab ? (pos === 'before' ? refTab : refTab.nextSibling) : null;
     tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
     let ghost;
     if (isTabReorder) {
       const srcTab = tabBar.querySelector(`.collection-tab[data-board-id="${CSS.escape(dragPayload.boardId)}"]`);
-      if (srcTab) { ghost = srcTab.cloneNode(true); ghost.removeAttribute('draggable'); }
+      if (srcTab) {
+        ghost = srcTab.cloneNode(true);
+        ghost.removeAttribute('draggable');
+        ghost.classList.remove('dragging', 'active');
+      }
     }
     if (!ghost) {
       ghost = document.createElement('div');
@@ -1099,7 +1114,7 @@ function renderCollectionTabBar(collection) {
     tabBar.insertBefore(ghost, sentinel);
   };
   const _tabDrop = (e, refTab) => {
-    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+    _clearTabIndicator();
     if (!dragPayload) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1163,9 +1178,8 @@ function renderCollectionTabBar(collection) {
       e.dataTransfer.effectAllowed = 'move';
       requestAnimationFrame(() => tab.classList.add('dragging'));
     });
-    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove()); });
+    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); _clearTabIndicator(); });
     tab.addEventListener('dragover', e => _tabDragOver(e, tab));
-    tab.addEventListener('dragleave', e => { if (!tab.contains(e.relatedTarget)) tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove()); });
     tab.addEventListener('drop', e => _tabDrop(e, tab));
     tabBar.appendChild(tab);
   });
@@ -1190,14 +1204,23 @@ function renderCollectionTabBar(collection) {
   });
   tabBar.appendChild(addBtn);
 
-  // Accept nav board drops anywhere on the tab bar (between tabs or at the end)
+  // Accept nav board drops anywhere on the tab bar (between tabs or at the end).
+  // When the ghost indicator has pointer-events:none, cursor events fall through to tabBar —
+  // in that case just accept the drop without repositioning to avoid flicker.
   tabBar.addEventListener('dragover', e => {
     if (e.target.closest('.collection-tab')) return; // handled by individual tab
-    _tabDragOver(e, null);
+    if (!dragPayload) return;
+    const isTabReorder = dragPayload.area === 'collection-tab' && dragPayload.collectionId === collection.id;
+    const isNavBoard = dragPayload.area === 'nav';
+    if (!isTabReorder && !isNavBoard) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (!tabBar.querySelector('.tab-drop-indicator')) _tabDragOver(e, null);
   });
   tabBar.addEventListener('dragleave', e => {
     if (tabBar.contains(e.relatedTarget)) return;
-    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+    _clearTabIndicator();
   });
   tabBar.addEventListener('drop', e => {
     if (e.target.closest('.collection-tab')) return;

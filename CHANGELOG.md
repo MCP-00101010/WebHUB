@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.24] — 2026-04-23
+
+### Fixed
+
+- **Collection tab bar drag flicker** — the per-tab `dragleave` handler was removing the indicator whenever the cursor entered the ghost element (which has `pointer-events:none`, causing events to pass through to `tabBar`); this created a remove/re-add loop that flickered. Removed the per-tab `dragleave` handler entirely — the indicator is now only cleared when the cursor leaves the entire `tabBar`. Added position-change tracking (`_tabIndicatorKey`) so the DOM is only modified when the logical drop position changes. The `tabBar.dragover` handler now silently accepts the drop without repositioning when an indicator is already placed.
+- **Ghost tab clone fidelity** — the cloned tab now strips `.dragging` and `.active` before insertion so it appears in its resting (non-active) style. The nav pane preview for collection-tab drags now includes board tags (matching the exact appearance the item would have after being dropped).
+
+---
+
 ## [0.11.23] — 2026-04-23
 
 ### Fixed
