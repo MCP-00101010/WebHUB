@@ -30,20 +30,20 @@
 
 ## Customization
 
-- have icons in the title bar (undo, redo, inbox, settings) adhere to theme style
 - have all font color adhere to theme style (maybe a toggle in style settings panel to enable/disable - if enabled, also disable all font color selectors in the style settings dialouge.)
-- 
-- custom CSS input field in global settings for power users (low priority)
 
 ## Widgets
 
 - weather widget (current conditions, configurable location)
 - news feed / RSS widget (fetch and display headlines from a feed URL)
+- search bar widget (for search engines)
+- search bar widgets for specific sites (amazon, ebay, reddit etc.)
 
 ## Drag and Drop
 
-- visual: when dragging a bookmark directly from the browser into essentials/speed dial it does not seem to load (works when dragging the bookmark into a column). sometimes bookmarks seem to loose their icons when moving them between essentials/speed dial/colums
-# - visual: when dragging any object, the object is shown in its old position
+- ✓ *Fixed 2026-04-23* collection speed dial items can now be reordered by drag and drop — see [0.11.22]
+- ✓ *Fixed 2026-04-23* nav boards can be dragged onto the collection tab bar to add to the collection; tabs can be reordered within the bar; collection tabs can be dragged back to the nav to remove from collection — see [0.11.22]
+- ✓ *Fixed 2026-04-23* dragged element is now hidden (opacity 0) during the drag so only the preview clone is visible — see [0.11.22]
 - ✓ *Fixed 2026-04-20* — Visual: column preview clone stuck when dragging to empty speed-dial or essentials. Fixed by handling the empty speed-dial case in `handleSpeedDialContainerDragOver` and calling `removeDragPlaceholders()` on first entry into an essentials cell.
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover` — only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
 - Known limitation: dragging a bookmark folder from Firefox/Zen only imports the first bookmark, not the folder structure. The HTML DnD API only exposes `text/x-moz-url` / `text/uri-list` (single URL) for browser bookmark drags — folder structure is not accessible. Full folder import would require the Firefox extension to intercept the drag and relay the bookmark tree.
