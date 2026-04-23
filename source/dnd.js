@@ -103,6 +103,7 @@ function createDragPlaceholder(kind) {
     const board = state.boards.find(b => b.id === dragPayload.boardId);
     const el = document.createElement('div');
     el.className = 'nav-item drag-preview';
+    el.dataset.type = 'board';
     const info = document.createElement('div');
     info.className = 'nav-board-info';
     const lbl = document.createElement('div');

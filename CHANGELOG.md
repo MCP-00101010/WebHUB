@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.25] — 2026-04-23
+
+### Fixed
+
+- **Nav pane preview wrong font/color** — the synthetic nav item created for collection-tab → nav drags was missing `data-type="board"`, so the `[data-type="board"]` CSS rules (`font-size`, `font-family`, `font-weight`, `font-style`, `color`, `text-align`, `display: flex`, `align-items: center`) did not apply. Added `el.dataset.type = 'board'` to make the preview render identically to the dropped item.
+
+---
+
 ## [0.11.24] — 2026-04-23
 
 ### Fixed
