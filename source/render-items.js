@@ -38,17 +38,6 @@ function renderTagsInto(container, tagIds) {
   (tagIds || []).forEach(id => container.appendChild(makeTagChip(id)));
 }
 
-function createTagSection(labelText, tagIds) {
-  const section = document.createElement('div');
-  section.className = 'tag-section';
-  const lbl = document.createElement('span');
-  lbl.className = 'tag-section-label';
-  lbl.textContent = labelText;
-  section.appendChild(lbl);
-  (tagIds || []).forEach(id => section.appendChild(makeTagChip(id)));
-  return section;
-}
-
 function appendTagRow(grid, labelText, tagIds) {
   const lbl = document.createElement('span');
   lbl.className = 'item-tag-label';

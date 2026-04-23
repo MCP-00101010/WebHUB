@@ -5,6 +5,27 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.28] — 2026-04-23
+
+### Added
+
+- **Base tag suggestions** — tag autocomplete now includes a configurable default suggestion set without creating saved tags until a suggestion is committed.
+- **Extension status in About** — the About tab now shows extension/native-host connection state and lists available extension-backed features.
+
+### Changed
+
+- **Code quality cleanup** — centralised board creation, drag/drop area checks, drag decoration cleanup, and deep-clone handling; removed unused widget-picker UI/code and dead helper functions.
+- **Favicon cache trimming** — save operations now run the existing favicon cache trimmer before persistence.
+
+### Fixed
+
+- **Unsorted tag management** — Unsorted now uses the shared chip-input behavior, supports manual additions, deletes tags correctly, and refreshes the orphan counter after deletion.
+- **Create widget cancel** — cancelling the new-widget settings dialog no longer creates a widget.
+- **Folder internal reordering** — moving items within a folder no longer trips the self-subfolder safety check.
+- **Navpane bottom drops** — dragging below the final nav item now shows the preview at the bottom and inserts there reliably.
+
+---
+
 ## [0.11.27] — 2026-04-23
 
 ### Fixed

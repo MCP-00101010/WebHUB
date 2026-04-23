@@ -3,6 +3,12 @@ const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
 
 let isDirty = false;
 
+function cloneData(value) {
+  return typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
 const defaultSettings = {
   warnOnClose: false,
   confirmDeleteBoard: false,
@@ -48,7 +54,33 @@ const defaultSettings = {
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
   showEssentials: true,
-  essentialsDisplayCount: 10
+  essentialsDisplayCount: 10,
+  baseTagSuggestions: [
+    'work',
+    'personal',
+    'reference',
+    'research',
+    'reading',
+    'tools',
+    'docs',
+    'learning',
+    'project',
+    'archive',
+    'priority',
+    'later',
+    'finance',
+    'shopping',
+    'media',
+    'gaming',
+    'development',
+    'design',
+    'writing',
+    'health',
+    'travel',
+    'news',
+    'science',
+    'fiction'
+  ]
 };
 
 const defaultState = {
@@ -260,6 +292,7 @@ function loadState() {
 }
 
 function saveState() {
+  trimFaviconCache();
   const json = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, json);
   isDirty = true;
@@ -401,11 +434,6 @@ function deleteBoardAndNavItem(navItemId, boardId) {
   }
 }
 
-function syncBoardTitleInNav(boardId, title) {
-  const navItem = findNavBoardItem(boardId);
-  if (navItem) navItem.title = title;
-}
-
 // --- Board state ---
 
 function findBoardItemInList(list, itemId, parent = null) {
@@ -463,26 +491,35 @@ function addBoardItemToColumn(columnId, item) {
 
 // --- Create / add ---
 
-function createBoard(title) {
-  const id = `board-${Date.now()}`;
-  state.boards.push({
+function createBoardRecord(title, options = {}) {
+  const id = options.id || `board-${Date.now()}`;
+  const columnCount = options.columnCount || 3;
+  const columnTitles = options.columnTitles || [];
+  const columns = Array.from({ length: columnCount }, (_, i) => ({
+    id: `${id}-col-${i + 1}`,
+    title: columnTitles[i] || `Column ${i + 1}`,
+    items: []
+  }));
+  columns.push({ id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] });
+  return {
     id,
     title,
-    columnCount: 3,
+    columnCount,
     backgroundImage: '',
     containerOpacity: 100,
-    showSpeedDial: true,
+    showSpeedDial: options.showSpeedDial !== false,
     sharedTags: [],
     tags: [],
     inheritTags: true,
     speedDial: [],
-    columns: [
-      { id: `${id}-col-1`, title: 'Column 1', items: [] },
-      { id: `${id}-col-2`, title: 'Column 2', items: [] },
-      { id: `${id}-col-3`, title: 'Column 3', items: [] },
-      { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
-    ]
-  });
+    columns,
+    ...(options.extra || {})
+  };
+}
+
+function createBoard(title) {
+  const id = `board-${Date.now()}`;
+  state.boards.push(createBoardRecord(title, { id }));
   state.activeBoardId = id;
   state.navItems.push({ id: `nav-${id}`, type: 'board', title, boardId: id });
 }
@@ -521,31 +558,6 @@ function addBookmarkItem(type, title, columnId, options = {}) {
     item.autoRemoveTags = options.autoRemoveTags || false;
   }
   column.items.push(item);
-}
-
-function updateBoardSettings(title, columnCount) {
-  const board = getActiveBoard();
-  board.title = title;
-  const newCount = parseInt(columnCount, 10) || 3;
-  const regularCols = board.columns.filter(c => !c.isInbox);
-  const inboxCol = board.columns.find(c => c.isInbox);
-  if (newCount < regularCols.length) {
-    const removed = regularCols.slice(newCount);
-    const lastKept = regularCols[newCount - 1];
-    for (const col of removed) lastKept.items.push(...col.items);
-    board.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
-  } else {
-    while (regularCols.length < newCount) {
-      regularCols.push({
-        id: `col-${Date.now()}-${regularCols.length + 1}`,
-        title: `Column ${regularCols.length + 1}`,
-        items: []
-      });
-    }
-    board.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
-  }
-  board.columnCount = newCount;
-  syncBoardTitleInNav(board.id, board.title);
 }
 
 // --- Context-driven mutations (called from UI handlers) ---
@@ -634,20 +646,21 @@ function createCollection(title) {
 
 function createBoardInCollection(collection, title) {
   const id = `board-${Date.now()}`;
-  state.boards.push({
-    id, title, columnCount: 3, backgroundImage: '', containerOpacity: 100,
-    showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
-    columns: [
-      { id: `${id}-col-1`, title: 'Column 1', items: [] },
-      { id: `${id}-col-2`, title: 'Column 2', items: [] },
-      { id: `${id}-col-3`, title: 'Column 3', items: [] },
-      { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
-    ]
-  });
+  state.boards.push(createBoardRecord(title, { id }));
   if (!collection.boardIds) collection.boardIds = [];
   collection.boardIds.push(id);
   state.activeBoardId = id;
   state.activeCollectionId = collection.id;
+}
+
+function createBoardInFolder(folder, title) {
+  const id = `board-${Date.now()}`;
+  state.boards.push(createBoardRecord(title, { id }));
+  if (!folder.children) folder.children = [];
+  folder.children.push({ id: `nav-${Date.now()}`, type: 'board', title, boardId: id });
+  state.activeBoardId = id;
+  state.activeCollectionId = null;
+  return state.boards.find(b => b.id === id);
 }
 
 function trimEssentialsTail() {
@@ -723,20 +736,8 @@ function findDuplicateUrl(url) {
   return null;
 }
 
-function getKnownTags() {
-  return (state.tags || []).map(t => t.name).sort();
-}
-
-function getAllTagObjects() {
-  return state.tags || [];
-}
-
 function getBoardInbox(board) {
   return board?.columns.find(c => c.isInbox) || null;
-}
-
-function getBoardInboxCount(board) {
-  return getBoardInbox(board)?.items.length || 0;
 }
 
 function getBoardInboxCounts(board) {
@@ -756,23 +757,13 @@ function getOrCreateImportManagerBoard() {
   let board = getImportManagerBoard();
   if (!board) {
     const id = 'board-import-manager';
-    board = {
+    board = createBoardRecord('Import Manager', {
       id,
-      title: 'Import Manager',
-      isImportManager: true,
       columnCount: 1,
-      backgroundImage: '',
-      containerOpacity: 100,
+      columnTitles: ['Imports'],
       showSpeedDial: false,
-      sharedTags: [],
-      tags: [],
-      inheritTags: true,
-      speedDial: [],
-      columns: [
-        { id: `${id}-col-1`, title: 'Imports', items: [] },
-        { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
-      ]
-    };
+      extra: { isImportManager: true }
+    });
     state.boards.push(board);
   }
   return board;
@@ -800,11 +791,6 @@ function getImportManagerCounts() {
     bookmarks: cols.reduce((s, c) => s + countItemsRecursive(c.items, 'bookmark'), 0),
     folders:   cols.reduce((s, c) => s + countItemsRecursive(c.items, 'folder'), 0)
   };
-}
-
-function getImportManagerItemCount() {
-  const { bookmarks, folders } = getImportManagerCounts();
-  return bookmarks + folders;
 }
 
 function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {
@@ -841,7 +827,7 @@ function saveTrash() {
 }
 
 function pushToTrash(item, source) {
-  recentlyDeleted.unshift({ trashId: `trash-${Date.now()}`, item: JSON.parse(JSON.stringify(item)), source, deletedAt: Date.now() });
+  recentlyDeleted.unshift({ trashId: `trash-${Date.now()}`, item: cloneData(item), source, deletedAt: Date.now() });
   if (recentlyDeleted.length > MAX_TRASH_ITEMS) recentlyDeleted.length = MAX_TRASH_ITEMS;
   saveTrash();
 }
@@ -853,7 +839,7 @@ function restoreFromTrash(trashId) {
   recentlyDeleted.splice(idx, 1);
   saveTrash();
   if (source.area === 'essential') {
-    const restored = JSON.parse(JSON.stringify(item));
+    const restored = cloneData(item);
     while (state.essentials.length <= source.slot) state.essentials.push(null);
     if (!state.essentials[source.slot]) {
       state.essentials[source.slot] = restored;
@@ -865,17 +851,17 @@ function restoreFromTrash(trashId) {
     }
   } else if (source.area === 'speed-dial') {
     const board = state.boards.find(b => b.id === source.boardId) || state.boards.find(b => b.id === state.activeBoardId);
-    if (board) board.speedDial.push(JSON.parse(JSON.stringify(item)));
+    if (board) board.speedDial.push(cloneData(item));
   } else if (source.area === 'nav-board') {
-    if (item.board) state.boards.push(JSON.parse(JSON.stringify(item.board)));
-    const navItem = JSON.parse(JSON.stringify(item.navItem));
+    if (item.board) state.boards.push(cloneData(item.board));
+    const navItem = cloneData(item.navItem);
     if (source.parentId) {
       const pp = findNavItemPath(source.parentId);
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(navItem); return true; }
     }
     state.navItems.push(navItem);
   } else if (source.area === 'nav-item') {
-    const restored = JSON.parse(JSON.stringify(item));
+    const restored = cloneData(item);
     if (source.parentId) {
       const pp = findNavItemPath(source.parentId);
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(restored); return true; }
@@ -885,10 +871,10 @@ function restoreFromTrash(trashId) {
     const board = state.boards.find(b => b.id === source.boardId) || getActiveBoard();
     if (board) {
       const col = board.columns.find(c => c.id === source.columnId) || board.columns[0];
-      if (col) col.items.push(JSON.parse(JSON.stringify(item)));
+      if (col) col.items.push(cloneData(item));
     }
   } else if (source.area === 'collection') {
-    const restored = JSON.parse(JSON.stringify(item));
+    const restored = cloneData(item);
     state.navItems = state.navItems.filter(ni => !(ni.type === 'board' && (restored.boardIds || []).includes(ni.boardId)));
     state.navItems.push(restored);
   }

@@ -1277,22 +1277,7 @@ function renderFolderTabBar(folder) {
   addBtn.appendChild(icon('icon-board-add'));
   addBtn.addEventListener('click', () => {
     pushUndoSnapshot();
-    const id = `board-${Date.now()}`;
-    const newBoard = {
-      id, title: 'New Board', columnCount: 3, backgroundImage: '', containerOpacity: 100,
-      showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
-      columns: [
-        { id: `${id}-col-1`, title: 'Column 1', items: [] },
-        { id: `${id}-col-2`, title: 'Column 2', items: [] },
-        { id: `${id}-col-3`, title: 'Column 3', items: [] },
-        { id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] }
-      ]
-    };
-    state.boards.push(newBoard);
-    if (!folder.children) folder.children = [];
-    folder.children.push({ id: `nav-${Date.now()}`, type: 'board', title: 'New Board', boardId: id });
-    state.activeBoardId = id;
-    state.activeCollectionId = null;
+    createBoardInFolder(folder, 'New Board');
     renderAll();
     saveState();
     showBoardSettingsPanel(true);

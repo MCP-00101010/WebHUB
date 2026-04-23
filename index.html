@@ -194,7 +194,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.27</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.28</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -822,8 +822,17 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.27</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.28</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
+          <div class="settings-row">
+            <span>Extension</span>
+            <span id="aboutExtensionStatus" class="settings-muted">Checking...</span>
+          </div>
+          <div class="settings-row">
+            <span>Native host</span>
+            <span id="aboutNativeStatus" class="settings-muted">Checking...</span>
+          </div>
+          <p id="aboutExtensionFeatures" class="about-note">Extension features: checking...</p>
           <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
         </div>
 
@@ -892,16 +901,6 @@
       <div class="form-actions">
         <button type="button" id="wstgCancelBtn" class="secondary-btn">Cancel</button>
         <button type="button" id="wstgDoneBtn" class="primary-btn">Done</button>
-      </div>
-    </div>
-
-    <div id="widgetPickerPanel" class="settings-panel draggable hidden" style="width:min(400px,calc(100vw - 40px))">
-      <div class="settings-header">
-        <h3>Add Widget</h3>
-      </div>
-      <div id="wPickerList" class="widget-picker-list"></div>
-      <div class="form-actions">
-        <button type="button" id="wPickerCancelBtn" class="secondary-btn">Cancel</button>
       </div>
     </div>
 

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.27';
+const APP_VERSION = '0.11.28';
 
 let activeModal = null;
 let contextTarget = null;
@@ -302,7 +302,7 @@ function attachEventListeners() {
       for (const itemId of [...selectedItemIds]) {
         const found = findBoardItemInColumns(board, itemId);
         if (found?.item) {
-          pushToTrash(JSON.parse(JSON.stringify(found.item)), { area: 'board-item', boardId: board.id });
+          pushToTrash(cloneData(found.item), { area: 'board-item', boardId: board.id });
           found.list.splice(found.list.indexOf(found.item), 1);
         }
       }

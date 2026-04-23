@@ -134,7 +134,7 @@ function handleContextMenuAction(action) {
         ? `Delete folder "${name}" and all its contents?`
         : name ? `Delete "${name}"?` : 'Delete this item?';
       const captured = { ...contextTarget };
-      const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedItem = cloneData(contextTarget.item);
       const capturedBoardId = getActiveBoard()?.id;
       confirmDelete(key, label, () => {
         pushUndoSnapshot();
@@ -155,7 +155,7 @@ function handleContextMenuAction(action) {
       const navLabel = isNavBoard
         ? `Delete board "${navName}" and all its content?`
         : navName ? `Delete "${navName}"?` : 'Delete this item?';
-      const capturedNavItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedNavItem = cloneData(contextTarget.item);
       const capturedNavParentId = contextTarget.parentId || null;
       const capturedNavBoardId = navBoardId;
       const capturedNavItemId = contextTarget.itemId;
@@ -163,7 +163,7 @@ function handleContextMenuAction(action) {
         pushUndoSnapshot();
         if (isNavBoard) {
           const fullBoard = state.boards.find(b => b.id === capturedNavBoardId);
-          pushToTrash({ navItem: capturedNavItem, board: fullBoard ? JSON.parse(JSON.stringify(fullBoard)) : null }, { area: 'nav-board', parentId: capturedNavParentId });
+          pushToTrash({ navItem: capturedNavItem, board: fullBoard ? cloneData(fullBoard) : null }, { area: 'nav-board', parentId: capturedNavParentId });
           deleteBoardAndNavItem(capturedNavItemId, capturedNavBoardId);
         } else {
           pushToTrash(capturedNavItem, { area: 'nav-item', parentId: capturedNavParentId });
@@ -225,7 +225,7 @@ function handleContextMenuAction(action) {
         : `Delete collection "${coll.title}"?`;
       showConfirmDialog(msg, () => {
         pushUndoSnapshot();
-        pushToTrash(JSON.parse(JSON.stringify(coll)), { area: 'collection' });
+        pushToTrash(cloneData(coll), { area: 'collection' });
         for (const boardId of (coll.boardIds || [])) {
           const board = state.boards.find(b => b.id === boardId);
           if (board) state.navItems.push({ id: `nav-${boardId}`, type: 'board', title: board.title, boardId });
@@ -325,22 +325,7 @@ function handleContextMenuAction(action) {
       const folderForAdd = _findNavItem(contextTarget.folderId || contextTarget.itemId);
       if (!folderForAdd) break;
       pushUndoSnapshot();
-      const newId = `board-${Date.now()}`;
-      const newBoard = {
-        id: newId, title: 'New Board', columnCount: 3, backgroundImage: '', containerOpacity: 100,
-        showSpeedDial: true, sharedTags: [], tags: [], inheritTags: true, speedDial: [],
-        columns: [
-          { id: `${newId}-col-1`, title: 'Column 1', items: [] },
-          { id: `${newId}-col-2`, title: 'Column 2', items: [] },
-          { id: `${newId}-col-3`, title: 'Column 3', items: [] },
-          { id: `${newId}-inbox`, title: 'Inbox', isInbox: true, items: [] }
-        ]
-      };
-      state.boards.push(newBoard);
-      if (!folderForAdd.children) folderForAdd.children = [];
-      folderForAdd.children.push({ id: `nav-${Date.now()}`, type: 'board', title: 'New Board', boardId: newId });
-      state.activeBoardId = newId;
-      state.activeCollectionId = null;
+      createBoardInFolder(folderForAdd, 'New Board');
       renderAll(); saveState(); showBoardSettingsPanel(true);
       break;
     }
@@ -351,7 +336,7 @@ function handleContextMenuAction(action) {
       const srcColl = state.navItems.find(i => i.id === contextTarget.collectionId);
       if (srcColl) {
         pushUndoSnapshot();
-        const dup = { ...JSON.parse(JSON.stringify(contextTarget.item)), id: `bm-${Date.now()}` };
+        const dup = { ...cloneData(contextTarget.item), id: `bm-${Date.now()}` };
         const idx = srcColl.speedDial.findIndex(i => i.id === contextTarget.itemId);
         srcColl.speedDial.splice(idx + 1, 0, dup);
         renderAll(); saveState();
@@ -407,7 +392,7 @@ function handleContextMenuAction(action) {
     case 'deleteSpeedDial': {
       const sdItem = contextTarget.item;
       const sdId = contextTarget.itemId;
-      const capturedSdItem = JSON.parse(JSON.stringify(sdItem));
+      const capturedSdItem = cloneData(sdItem);
       const capturedSdBoardId = getActiveBoard()?.id;
       confirmDelete('confirmDeleteBookmark', `Delete "${sdItem?.title}"?`, () => {
         pushUndoSnapshot();
@@ -532,7 +517,7 @@ function handleContextMenuAction(action) {
     case 'deleteEssential': {
       const essSlot = contextTarget.slot;
       const essName = contextTarget.item?.title;
-      const capturedEssItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedEssItem = cloneData(contextTarget.item);
       confirmDelete('confirmDeleteBookmark', `Remove "${essName}"?`, () => {
         pushUndoSnapshot();
         pushToTrash(capturedEssItem, { area: 'essential', slot: essSlot });
@@ -585,22 +570,29 @@ function handleContextMenuAction(action) {
     default:
       if (action.startsWith('addWidget:')) {
         const type = action.slice('addWidget:'.length);
-        pushUndoSnapshot();
         const widget = _newWidgetState(type);
-        const board = getActiveBoard();
-        const col = board?.columns.find(c => c.id === contextTarget.columnId);
-        if (col) col.items.push(widget);
-        renderAll();
-        saveState();
-        openWidgetSettings(widget, () => { renderAll(); saveState(); });
+        const columnId = contextTarget.columnId;
+        openWidgetSettings(widget, null, {
+          deferUndo: true,
+          onDone: () => {
+            pushUndoSnapshot();
+            const board = getActiveBoard();
+            const col = board?.columns.find(c => c.id === columnId);
+            if (col) col.items.push(widget);
+            renderAll();
+          }
+        });
       } else if (action.startsWith('addNavWidget:')) {
         const type = action.slice('addNavWidget:'.length);
-        pushUndoSnapshot();
         const widget = _newWidgetState(type);
-        state.navItems.push(widget);
-        renderNav();
-        saveState();
-        openWidgetSettings(widget, () => { renderNav(); saveState(); });
+        openWidgetSettings(widget, null, {
+          deferUndo: true,
+          onDone: () => {
+            pushUndoSnapshot();
+            state.navItems.push(widget);
+            renderNav();
+          }
+        });
       } else if (action.startsWith('openInBoard:')) {
         const boardId = action.slice('openInBoard:'.length);
         state.activeBoardId = boardId;
@@ -625,7 +617,7 @@ function handleContextMenuAction(action) {
         const targetBoard = state.boards.find(b => b.id === targetBoardId);
         if (targetBoard && !targetBoard.locked && contextTarget?.item) {
           pushUndoSnapshot();
-          const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+          const capturedItem = cloneData(contextTarget.item);
           capturedItem.type = 'bookmark';
           if (!capturedItem.tags) capturedItem.tags = [];
           deleteBoardTarget(contextTarget);

@@ -342,6 +342,28 @@ function updateLastExportedLabel() {
   el.textContent = `Last exported: ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+async function updateAboutBridgeStatus() {
+  if (typeof bridge !== 'undefined') await bridge.whenReady;
+  const extensionEl = document.getElementById('aboutExtensionStatus');
+  const nativeEl = document.getElementById('aboutNativeStatus');
+  const featuresEl = document.getElementById('aboutExtensionFeatures');
+  if (!extensionEl || !nativeEl || !featuresEl) return;
+
+  const extensionReady = typeof bridge !== 'undefined' && bridge.isAvailable();
+  const nativeReady = extensionReady && bridge.nativeIsAvailable();
+  extensionEl.textContent = extensionReady ? 'Connected' : 'Not detected';
+  nativeEl.textContent = nativeReady ? 'Available' : (extensionReady ? 'Not available' : 'Not connected');
+
+  const features = [];
+  if (extensionReady) {
+    features.push('extension storage backup', 'send current tab to board inbox');
+    if (nativeReady) features.push('native JSON file sync', 'background image picker', 'theme file import/export');
+  }
+  featuresEl.textContent = features.length
+    ? `Extension features: ${features.join(', ')}.`
+    : 'Extension features: unavailable. The hub is running in localStorage-only mode.';
+}
+
 function showSettingsPanel(tab = 'general') {
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('settingsPanel');
@@ -396,6 +418,7 @@ function showSettingsPanel(tab = 'general') {
   updateEssentialsWarning();
   renderThemePicker();
   renderTagGroups();
+  updateAboutBridgeStatus();
 }
 
 function hideSettingsPanel() {
@@ -416,6 +439,18 @@ function setGroupLocked(block, locked) {
   block.querySelector('.tag-group-del-btn').disabled = locked;
   const textInput = block.querySelector('.chip-text-input');
   if (textInput) textInput.disabled = locked;
+}
+
+function deleteUnsortedTagById(tagId) {
+  const tag = getTagById(tagId);
+  if (!tag || tag.groupId) return;
+  confirmDelete('confirmDeleteTag', tagUsageMessage(tag.id, tag.name), () => {
+    pushUndoSnapshot();
+    deleteTag(tag.id);
+    saveState();
+    updateUndoRedoUI();
+    renderTagGroups();
+  });
 }
 
 let _tagSortMenu = null;
@@ -860,50 +895,66 @@ function renderTagGroups() {
 
   uBlock.appendChild(uHeader);
 
-  const chipRow = document.createElement('div');
-  chipRow.className = 'chip-input-wrapper tag-group-unsorted-chips';
-
   if (unsorted.length) {
-    unsorted.forEach(tag => {
-      const chip = document.createElement('span');
-      chip.className = 'tag-chip chip-live';
-      chip.dataset.value = tag.id;
-      const label = document.createElement('span');
-      label.textContent = tag.name;
-      chip.appendChild(label);
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'chip-remove-btn';
-      delBtn.textContent = '\u00d7';
-      delBtn.title = 'Delete tag';
-      delBtn.addEventListener('mousedown', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        confirmDelete('confirmDeleteTag', tagUsageMessage(tag.id, tag.name), () => {
-          pushUndoSnapshot();
-          deleteTag(tag.id);
-          saveState();
-          updateUndoRedoUI();
-          renderTagGroups();
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'text';
+    hiddenInput.value = unsorted.map(t => t.id).join(' ');
+    uBlock.appendChild(hiddenInput);
+    initChipInput(hiddenInput, {
+      noAutocomplete: true,
+      displayOf: id => getTagById(id)?.name || id,
+      resolveInput: typed => {
+        const lc = typed.toLowerCase();
+        const existing = (state.tags || []).find(t => t.name.toLowerCase() === lc && !t.groupId);
+        if (existing) return existing.id;
+        return createTag(typed, null, null).id;
+      }
+    });
+    const wrapper = uBlock.querySelector('.chip-input-wrapper');
+    if (wrapper) {
+      wrapper.classList.add('tag-group-unsorted-chips');
+      wrapper.querySelectorAll('.chip-live').forEach(chip => {
+        chip.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          showTagChipContextMenu(e.clientX, e.clientY, chip.dataset.value, null);
         });
       });
-      chip.appendChild(delBtn);
-      applyTagColor(chip, tag.id);
-      chip.addEventListener('contextmenu', e => {
-        e.preventDefault();
-        showTagChipContextMenu(e.clientX, e.clientY, tag.id, null);
+    }
+    let currentIds = new Set(unsorted.map(t => t.id));
+    hiddenInput.addEventListener('input', () => {
+      const nextIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
+      const removed = [...currentIds].filter(id => !nextIds.has(id));
+      const added = [...nextIds].filter(id => !currentIds.has(id));
+      if (removed.length) {
+        pushUndoSnapshot();
+        removed.forEach(deleteTag);
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+        return;
+      }
+      added.forEach(id => {
+        const tag = getTagById(id);
+        if (tag) tag.groupId = null;
       });
-      chipRow.appendChild(chip);
+      if (added.length) {
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+        return;
+      }
+      currentIds = nextIds;
     });
   } else {
+    const chipRow = document.createElement('div');
+    chipRow.className = 'chip-input-wrapper tag-group-unsorted-chips';
     const placeholder = document.createElement('span');
     placeholder.className = 'settings-muted';
     placeholder.style.fontSize = '0.8rem';
     placeholder.textContent = 'All tags are grouped.';
     chipRow.appendChild(placeholder);
+    uBlock.appendChild(chipRow);
   }
-
-  uBlock.appendChild(chipRow);
   list.appendChild(uBlock);
 }
 
