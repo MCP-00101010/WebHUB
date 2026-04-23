@@ -1133,6 +1133,20 @@ button {
 }
 .drag-preview * { pointer-events: none; }
 
+.dragging {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.tab-drop-indicator {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
 .speed-dial-placeholder {
   min-height: unset;
   width: 3px;

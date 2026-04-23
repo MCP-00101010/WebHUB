@@ -1067,6 +1067,61 @@ function renderCollectionTabBar(collection) {
   const tabBar = elements.collectionTabBar;
   tabBar.innerHTML = '';
 
+  // Reorder tabs within the collection or accept a nav board drop
+  const _tabDragOver = (e, refTab) => {
+    if (!dragPayload) return;
+    const isTabReorder = dragPayload.area === 'collection-tab' && dragPayload.collectionId === collection.id;
+    const isNavBoard = dragPayload.area === 'nav';
+    if (!isTabReorder && !isNavBoard) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (refTab || tabBar).getBoundingClientRect();
+    const pos = refTab && e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    const sentinel = refTab ? (pos === 'before' ? refTab : refTab.nextSibling) : null;
+    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+    const ind = document.createElement('div');
+    ind.className = 'tab-drop-indicator';
+    tabBar.insertBefore(ind, sentinel);
+  };
+  const _tabDrop = (e, refTab) => {
+    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+    if (!dragPayload) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = refTab?.getBoundingClientRect();
+    const pos = refTab && rect && e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    const refBoardId = refTab?.dataset.boardId;
+
+    if (dragPayload.area === 'collection-tab' && dragPayload.collectionId === collection.id) {
+      if (dragPayload.boardId === refBoardId) { dragPayload = null; return; }
+      pushUndoSnapshot();
+      const ids = collection.boardIds || [];
+      const fromIdx = ids.indexOf(dragPayload.boardId);
+      if (fromIdx === -1) { dragPayload = null; return; }
+      ids.splice(fromIdx, 1);
+      const toIdx = refBoardId ? ids.indexOf(refBoardId) : ids.length;
+      ids.splice(pos === 'after' && refBoardId ? toIdx + 1 : Math.max(0, toIdx), 0, dragPayload.boardId);
+      dragPayload = null; renderAll(); saveState(); return;
+    }
+    if (dragPayload.area === 'nav') {
+      const path = findNavItemPath(dragPayload.itemId);
+      if (!path || path.item.type !== 'board') { dragPayload = null; return; }
+      pushUndoSnapshot();
+      const removed = removeNavItemById(dragPayload.itemId);
+      if (removed?.boardId) {
+        if (!collection.boardIds) collection.boardIds = [];
+        const refIdx = refBoardId ? collection.boardIds.indexOf(refBoardId) : -1;
+        const insertAt = refIdx === -1 ? collection.boardIds.length : (pos === 'after' ? refIdx + 1 : refIdx);
+        collection.boardIds.splice(insertAt, 0, removed.boardId);
+        state.activeBoardId = removed.boardId;
+        state.activeCollectionId = collection.id;
+      }
+      dragPayload = null; renderAll(); saveState(); return;
+    }
+    dragPayload = null;
+  };
+
   (collection.boardIds || []).forEach(boardId => {
     const board = state.boards.find(b => b.id === boardId);
     if (!board) return;
@@ -1092,8 +1147,12 @@ function renderCollectionTabBar(collection) {
       dragPayload = { area: 'collection-tab', boardId, collectionId: collection.id };
       e.dataTransfer.setData('text/plain', boardId);
       e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => tab.classList.add('dragging'));
     });
-    tab.addEventListener('dragend', () => { dragPayload = null; });
+    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove()); });
+    tab.addEventListener('dragover', e => _tabDragOver(e, tab));
+    tab.addEventListener('dragleave', e => { if (!tab.contains(e.relatedTarget)) tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove()); });
+    tab.addEventListener('drop', e => _tabDrop(e, tab));
     tabBar.appendChild(tab);
   });
 
@@ -1116,6 +1175,20 @@ function renderCollectionTabBar(collection) {
     showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToCollection' }]);
   });
   tabBar.appendChild(addBtn);
+
+  // Accept nav board drops anywhere on the tab bar (between tabs or at the end)
+  tabBar.addEventListener('dragover', e => {
+    if (e.target.closest('.collection-tab')) return; // handled by individual tab
+    _tabDragOver(e, null);
+  });
+  tabBar.addEventListener('dragleave', e => {
+    if (tabBar.contains(e.relatedTarget)) return;
+    tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
+  });
+  tabBar.addEventListener('drop', e => {
+    if (e.target.closest('.collection-tab')) return;
+    _tabDrop(e, null);
+  });
 }
 
 function renderFolderTabBar(folder) {
@@ -1151,8 +1224,9 @@ function renderFolderTabBar(folder) {
       dragPayload = { area: 'folder-tab', navItemId: navItem.id, boardId: navItem.boardId, folderId: folder.id };
       e.dataTransfer.setData('text/plain', navItem.boardId || '');
       e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => tab.classList.add('dragging'));
     });
-    tab.addEventListener('dragend', () => { dragPayload = null; });
+    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
     tabBar.appendChild(tab);
   });
 

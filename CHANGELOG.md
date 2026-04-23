@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.22] — 2026-04-23
+
+### Fixed
+
+- **Collection speed dial reordering** — `handleSpeedDialItemDragOver/Drop` and `handleSpeedDialContainerDragOver` were missing `collection-speed-dial` in their area guards, so dragging to reorder items in the collection speed bar had no effect. All three guards and the item-drop handler now handle `collection-speed-dial`.
+- **Dragged element visible alongside preview clone** — elements that initiate a drag (board items, speed dial links, nav items, collection/folder tabs) now receive a `.dragging` class one animation frame after dragstart (after the drag image snapshot is captured), hiding the original. The class is removed when `removeDragPlaceholders` is called on dragend.
+
+### Added
+
+- **Collection tab bar DnD** — tabs in the collection tab bar can now be reordered by dragging. Nav board items can be dragged directly onto the collection tab bar to add them to the collection (with a vertical bar indicator showing the insertion point). The existing support for dragging a collection tab back onto a nav item to remove it from the collection now also shows a position preview and inserts at the correct position.
+
+---
+
 ## [0.11.21] — 2026-04-23
 
 ### Fixed

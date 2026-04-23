@@ -63,6 +63,7 @@ function getExternalDrop(event) {
 function removeDragPlaceholders() {
   _dropTarget = null;
   _dropPos    = null;
+  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
   document.querySelectorAll('.drag-placeholder, .drag-preview').forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
@@ -226,7 +227,7 @@ function applyDragImage(event, element) {
   document.body.appendChild(clone);
   const rect = element.getBoundingClientRect();
   event.dataTransfer.setDragImage(clone, event.clientX - rect.left, event.clientY - rect.top);
-  requestAnimationFrame(() => clone.remove());
+  requestAnimationFrame(() => { clone.remove(); element.classList.add('dragging'); });
 }
 
 // Shared extraction logic for folder header/container drops.
@@ -771,7 +772,7 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
 function handleSpeedDialItemDragOver(event, item) {
   if (getActiveBoard()?.locked) return;
   if (!dragPayload) return;
-  if (dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
+  if (dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -814,6 +815,17 @@ function handleSpeedDialItemDrop(event, targetItem) {
     if (!essItem.tags) essItem.tags = [];
     const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
     board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, essItem);
+  } else if (dragPayload.area === 'collection-speed-dial') {
+    const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+    if (!coll?.speedDial) { dragPayload = null; return; }
+    if (dragPayload.itemId === targetItem.id) { dragPayload = null; return; }
+    const draggedIdx = coll.speedDial.findIndex(i => i.id === dragPayload.itemId);
+    const targetIdx  = coll.speedDial.findIndex(i => i.id === targetItem.id);
+    if (draggedIdx === -1 || targetIdx === -1) { dragPayload = null; return; }
+    const [dragged] = coll.speedDial.splice(draggedIdx, 1);
+    let insertIdx = position === 'after' ? targetIdx + 1 : targetIdx;
+    if (draggedIdx < targetIdx) insertIdx -= 1;
+    coll.speedDial.splice(Math.max(0, insertIdx), 0, dragged);
   } else if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
     const dragged = removeBoardItemById(dragPayload.itemId);
     if (!dragged) { dragPayload = null; return; }
@@ -833,7 +845,7 @@ function handleSpeedDialItemDrop(event, targetItem) {
 
 function handleSpeedDialContainerDragOver(event) {
   if (getActiveBoard()?.locked) return;
-  if (dragPayload && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
+  if (dragPayload && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
 
@@ -953,6 +965,20 @@ function handleNavItemDragOver(event, item, parent) {
       event.currentTarget.classList.add('drop-target');
       return;
     }
+  }
+  // Accept collection-tab drags dropped onto a non-collection nav item (remove from collection → standalone)
+  if (dragPayload?.area === 'collection-tab' && item.type !== 'collection') {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    const element = event.currentTarget;
+    const rect = element.getBoundingClientRect();
+    const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+    if (_dropTarget === element && _dropPos === position) return;
+    _dropTarget = element; _dropPos = position;
+    element.dataset.dropPosition = position;
+    _moveNavPreview(element.parentElement, position === 'before' ? element : element.nextSibling);
+    return;
   }
   // Accept folder-tab drags (removing a board from a folder back to nav)
   if (dragPayload?.area === 'folder-tab') {
