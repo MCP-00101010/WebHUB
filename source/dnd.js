@@ -2,6 +2,17 @@ let dragPayload = null;
 let _dropTarget = null;
 let _dropPos    = null;
 
+const BOARD_DROP_AREAS = ['board', 'speed-dial', 'essential', 'collection-speed-dial'];
+
+function _isBoardDropArea(area = dragPayload?.area) {
+  return BOARD_DROP_AREAS.includes(area);
+}
+
+function _canDropOnBoard(allowNavWidget = false) {
+  if (!dragPayload) return false;
+  return _isBoardDropArea() || (allowNavWidget && dragPayload.area === 'nav' && _canDropAsColumnWidget());
+}
+
 function _canDropAsNavWidget() {
   if (!dragPayload || dragPayload.area !== 'board' || dragPayload.itemType !== 'widget') return false;
   return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('navpane');
@@ -63,7 +74,12 @@ function getExternalDrop(event) {
 function removeDragPlaceholders() {
   _dropTarget = null;
   _dropPos    = null;
-  document.querySelectorAll('.drag-placeholder, .drag-preview').forEach(el => el.remove());
+  _clearDropDecorations();
+}
+
+function _clearDropDecorations(removePreviews = true) {
+  const removable = removePreviews ? '.drag-placeholder, .drag-preview' : '.drag-placeholder';
+  document.querySelectorAll(removable).forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
     el.classList.remove('drop-position-before', 'drop-position-after');
@@ -200,12 +216,7 @@ function _renderCrossContextPreview(kind) {
 // Reposition existing nav preview clone in-place (no destroy/recreate → no flicker).
 // Falls back to animated insertion when no preview exists yet.
 function _moveNavPreview(parentEl, beforeEl) {
-  document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
-  document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
-    el.classList.remove('drop-position-before', 'drop-position-after');
-    el.removeAttribute('data-drop-position');
-  });
-  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  _clearDropDecorations(false);
   const existing = document.querySelector('.drag-preview');
   if (existing && existing.classList.contains('nav-item')) {
     parentEl.insertBefore(existing, beforeEl || null);
@@ -382,12 +393,7 @@ function handleEssentialSlotDrop(targetSlot) {
 // Reposition an existing board drag-preview without animation when staying in the
 // same container. Animates in a fresh preview only when entering a new container.
 function _moveBoardPreview(parentEl, beforeEl) {
-  document.querySelectorAll('.drag-placeholder').forEach(el => el.remove());
-  document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
-    el.classList.remove('drop-position-before', 'drop-position-after');
-    el.removeAttribute('data-drop-position');
-  });
-  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  _clearDropDecorations(false);
   const existing = document.querySelector('.drag-preview:not(.essential-slot-preview)');
   if (existing && existing.parentElement === parentEl) {
     parentEl.insertBefore(existing, beforeEl || null);
@@ -401,7 +407,7 @@ function _moveBoardPreview(parentEl, beforeEl) {
 // handlers. Keyed on the folder card element so any subelement of the folder top
 // section hits the same guard and does not re-trigger on micro-movements.
 function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
+  if (!_canDropOnBoard()) return;
   event.preventDefault();
   event.stopPropagation();
   if (_dropTarget === folderCardEl) return;
@@ -417,9 +423,8 @@ function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
 // --- Board item drag & drop ---
 
 function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, depth) {
-  if (!dragPayload) return;
   if (getActiveBoard()?.locked) return;
-  if (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
+  if (!_canDropOnBoard(true)) return;
   // Reject dragover when this item lives inside a locked folder (inherited lock).
   if (event.currentTarget.parentElement?.closest('.board-column-item.is-locked')) return;
 
@@ -453,7 +458,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   if (!dragPayload) return;
   if (getActiveBoard()?.locked) return;
   const isNavColWidget = dragPayload.area === 'nav' && _canDropAsColumnWidget();
-  if (!isNavColWidget && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial') return;
+  if (!isNavColWidget && !_isBoardDropArea()) return;
   if (dragPayload.itemId === targetItem.id) return;
   if (event.currentTarget.parentElement?.closest('.board-column-item.is-locked')) return;
 
@@ -537,7 +542,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 
 function handleBoardColumnDragOver(event) {
   if (getActiveBoard()?.locked) return;
-  if (dragPayload && dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'nav' && _canDropAsColumnWidget())) return;
+  if (dragPayload && !_canDropOnBoard(true)) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
@@ -597,7 +602,7 @@ function handleBoardColumnDrop(event, columnId) {
   }
 
   const isNavColWidget = dragPayload && dragPayload.area === 'nav' && _canDropAsColumnWidget();
-  if (!isNavColWidget && (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial'))) return;
+  if (!isNavColWidget && !_canDropOnBoard()) return;
   pushUndoSnapshot();
 
   const board = getActiveBoard();
@@ -659,8 +664,15 @@ function handleBoardFolderHeaderDragOver(event, folderCardEl, folderItem, column
   activateFolderDrop(event, folderCardEl, folderItem, columnId, depth);
 }
 
+function _isDroppingFolderIntoOwnDescendant(board, targetFolder) {
+  if (dragPayload?.itemType !== 'folder') return false;
+  if (dragPayload.itemId === targetFolder.id) return true;
+  const dragged = findBoardItemInColumns(board, dragPayload.itemId)?.item;
+  return dragged?.type === 'folder' && isDescendant(targetFolder.id, dragged);
+}
+
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
+  if (!_canDropOnBoard()) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   event.preventDefault();
@@ -672,13 +684,13 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
     showNotice('Folders can only be nested two levels deep.');
     dragPayload = null; return;
   }
-  if (isDescendant(dragPayload.itemId, folderItem)) {
+  const board = getActiveBoard();
+  if (_isDroppingFolderIntoOwnDescendant(board, folderItem)) {
     showNotice('Cannot move a folder into one of its own subfolders.');
     dragPayload = null; return;
   }
 
   pushUndoSnapshot();
-  const board = getActiveBoard();
   const dragged = _extractDraggedItem(board);
   if (!dragged) { dragPayload = null; return; }
 
@@ -692,7 +704,7 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
 
 function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
+  if (!_canDropOnBoard()) return;
   event.preventDefault();
   event.stopPropagation();
   event.dataTransfer.dropEffect = 'move';
@@ -738,7 +750,7 @@ function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, col
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
-  if (!dragPayload || (dragPayload.area !== 'board' && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial')) return;
+  if (!_canDropOnBoard()) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   event.preventDefault();
@@ -755,13 +767,14 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
     showNotice('Folders can only be nested two levels deep.');
     dragPayload = null; return;
   }
-  if (isDescendant(dragPayload.itemId, folderItem)) {
+
+  const board = getActiveBoard();
+  if (_isDroppingFolderIntoOwnDescendant(board, folderItem)) {
     showNotice('Cannot move a folder into one of its own subfolders.');
     dragPayload = null; return;
   }
 
   pushUndoSnapshot();
-  const board = getActiveBoard();
   const dragged = _extractDraggedItem(board);
   if (!dragged) { dragPayload = null; return; }
 
@@ -1192,12 +1205,15 @@ function handleNavListDragOver(event) {
   event.dataTransfer.dropEffect = 'move';
   event.stopPropagation();
   // If an item-level preview is already positioned, cursor is over the clone's
-  // transparent space — don't override preview position with end-of-list.
-  if (_dropTarget !== null && _dropTarget !== elements.navList) return;
+  // transparent space — don't override preview position unless the cursor has
+  // moved into the blank space below the final nav item.
+  const navItems = Array.from(elements.navList.querySelectorAll(':scope > .nav-item:not(.drag-preview)'));
+  const lastItem = navItems[navItems.length - 1] || null;
+  const afterLastItem = !lastItem || event.clientY > lastItem.getBoundingClientRect().bottom;
+  if (_dropTarget !== null && _dropTarget !== elements.navList && !afterLastItem) return;
   if (_dropTarget === elements.navList) return;
-  removeDragPlaceholders();
   _dropTarget = elements.navList; _dropPos = 'end';
-  _insertDragPreview(createDragPlaceholder('nav'), elements.navList, null);
+  _moveNavPreview(elements.navList, null);
 }
 
 function handleNavListDrop(event) {

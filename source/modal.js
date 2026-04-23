@@ -24,13 +24,6 @@ function getBoardInheritedTags() {
   return getBoardNavInheritedTags(board.id);
 }
 
-// --- Tag ID-mode chip input options ---
-
-function tagGroupLabel(tag) {
-  if (!tag) return null;
-  return (state.settings.tagGroups || []).find(g => g.id === tag.groupId)?.name || null;
-}
-
 function tagDisplayName(id) {
   const tag = getTagById(id);
   return tag ? tag.name : id;
@@ -129,14 +122,17 @@ function getTagSuggestions(partial, hiddenInput) {
   const lc = partial.toLowerCase();
   const seen = new Set();
   const results = [];
+  const addSuggestion = name => {
+    const nameLc = name.toLowerCase();
+    if (!nameLc.startsWith(lc) || nameLc === lc || seen.has(nameLc)) return;
+    seen.add(nameLc);
+    results.push(name);
+  };
   for (const t of (state.tags || [])) {
     if (currentIds.has(t.id)) continue;
-    const nameLc = t.name.toLowerCase();
-    if (!nameLc.startsWith(lc) || nameLc === lc) continue;
-    if (seen.has(t.name)) continue;
-    seen.add(t.name);
-    results.push(t.name);
+    addSuggestion(t.name);
   }
+  for (const name of (state.settings.baseTagSuggestions || [])) addSuggestion(name);
   return results;
 }
 
@@ -324,7 +320,7 @@ function handleModalSubmit(event) {
       const targetBoard = state.boards.find(b => b.id === elements.modalSelect.value);
       if (!targetBoard || !contextTarget?.item) break;
       const area = contextTarget.area;
-      const capturedItem = JSON.parse(JSON.stringify(contextTarget.item));
+      const capturedItem = cloneData(contextTarget.item);
       capturedItem.type = 'bookmark';
       if (!capturedItem.tags) capturedItem.tags = [];
       if (area === 'speed-dial-item') {

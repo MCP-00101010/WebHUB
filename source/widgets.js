@@ -33,7 +33,7 @@ function _newWidgetState(widgetType) {
     widgetType,
     title: '',
     config: { ...def.defaultConfig },
-    data: JSON.parse(JSON.stringify(def.defaultData))
+    data: cloneData(def.defaultData)
   };
 }
 
@@ -113,7 +113,7 @@ function createWidgetElement(widget, columnId) {
 
 let _wstgAbort = null;
 
-function openWidgetSettings(widget, onRefresh) {
+function openWidgetSettings(widget, onRefresh, options = {}) {
   if (_wstgAbort) _wstgAbort.abort();
   _wstgAbort = new AbortController();
   const sig = _wstgAbort.signal;
@@ -121,7 +121,7 @@ function openWidgetSettings(widget, onRefresh) {
   const def = WIDGET_REGISTRY[widget.widgetType];
   if (!def) return;
 
-  const savedConfig = JSON.parse(JSON.stringify(widget.config));
+  const savedConfig = cloneData(widget.config);
   const savedTitle  = widget.title;
 
   const panel      = document.getElementById('widgetSettingsPanel');
@@ -149,9 +149,10 @@ function openWidgetSettings(widget, onRefresh) {
   body.addEventListener('change', syncConfig, { signal: sig });
 
   document.getElementById('wstgDoneBtn').addEventListener('click', () => {
-    pushUndoSnapshot();
+    if (!options.deferUndo) pushUndoSnapshot();
     widget.title = titleInput.value.trim();
     syncConfig();
+    if (options.onDone) options.onDone(widget);
     panel.classList.add('hidden');
     elements.modalOverlay.classList.add('hidden');
     saveState();
@@ -162,56 +163,13 @@ function openWidgetSettings(widget, onRefresh) {
   document.getElementById('wstgCancelBtn').addEventListener('click', () => {
     widget.config = savedConfig;
     widget.title  = savedTitle;
+    if (options.onCancel) options.onCancel(widget);
     panel.classList.add('hidden');
     elements.modalOverlay.classList.add('hidden');
     if (onRefresh) onRefresh();
     _wstgAbort.abort();
   }, { signal: sig, once: true });
 }
-
-// --- Widget picker panel ---
-
-let _wPickerAbort = null;
-
-function openWidgetPicker(context, onSelect) {
-  if (_wPickerAbort) _wPickerAbort.abort();
-  _wPickerAbort = new AbortController();
-  const sig = _wPickerAbort.signal;
-
-  const available = Object.entries(WIDGET_REGISTRY)
-    .filter(([, def]) => def.allowedIn.includes(context));
-  if (!available.length) return;
-
-  const panel = document.getElementById('widgetPickerPanel');
-  const list  = document.getElementById('wPickerList');
-  list.innerHTML = '';
-
-  available.forEach(([type, def]) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'widget-picker-btn';
-    btn.innerHTML = `<span class="widget-picker-name">${def.name}</span><span class="widget-picker-desc">${def.description}</span>`;
-    btn.addEventListener('click', () => {
-      panel.classList.add('hidden');
-      elements.modalOverlay.classList.add('hidden');
-      _wPickerAbort.abort();
-      onSelect(type);
-    }, { once: true });
-    list.appendChild(btn);
-  });
-
-  document.getElementById('modalCard').classList.add('hidden');
-  panel.classList.remove('hidden');
-  elements.modalOverlay.classList.remove('hidden');
-  centerPanel(panel);
-
-  document.getElementById('wPickerCancelBtn').addEventListener('click', () => {
-    panel.classList.add('hidden');
-    elements.modalOverlay.classList.add('hidden');
-    _wPickerAbort.abort();
-  }, { signal: sig, once: true });
-}
-
 
 // ===========================================================================
 // Built-in widgets
