@@ -5,6 +5,20 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.30] — 2026-04-23
+
+### Added
+
+- **Tag Manager group creation from tags** — tag chip context menus can now create an inline unnamed group, move the selected tag into it, and focus the new group name field.
+- **Tag Manager drag and drop** — tags can now be dragged between groups and Unsorted, inserted at the cursor position, and reordered within a group using an in-row chip preview clone.
+- **Collapsible tag groups** — tag groups can now be collapsed and expanded to save space while keeping drop support on group headers.
+
+### Fixed
+
+- **Tag Manager delete confirmations** — deleting tag groups and deleting tags from any Tag Manager group now respect the tag-delete confirmation setting; deleting a group deletes its tags instead of moving them to Unsorted.
+
+---
+
 ## [0.11.28] — 2026-04-23
 
 ### Added

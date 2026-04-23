@@ -453,6 +453,91 @@ function deleteUnsortedTagById(tagId) {
   });
 }
 
+function confirmDeleteTags(tagIds, onConfirm) {
+  const tags = tagIds.map(getTagById).filter(Boolean);
+  if (!tags.length) return;
+  if (tags.length === 1) {
+    const tag = tags[0];
+    confirmDelete('confirmDeleteTag', tagUsageMessage(tag.id, tag.name), onConfirm);
+    return;
+  }
+  confirmDelete('confirmDeleteTag', `Delete ${tags.length} tags? This removes them from every item that uses them.`, onConfirm);
+}
+
+function confirmDeleteTagGroup(group, tagCount, onConfirm) {
+  const name = group.name || 'Group name';
+  const suffix = tagCount
+    ? ` This will also delete its ${tagCount} tag${tagCount === 1 ? '' : 's'} from every item that uses them.`
+    : '';
+  confirmDelete('confirmDeleteTag', `Delete tag group "${name}"?${suffix}`, onConfirm);
+}
+
+function deleteTagsWithConfirmation(tagIds) {
+  confirmDeleteTags(tagIds, () => {
+    pushUndoSnapshot();
+    tagIds.forEach(deleteTag);
+    saveState();
+    updateUndoRedoUI();
+    renderTagGroups();
+  });
+}
+
+function createTagGroupRecord(name = '') {
+  return {
+    id: `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    color: '#6d7cff',
+    locked: false,
+    collapsed: false
+  };
+}
+
+let _focusTagGroupId = null;
+
+function moveTagToGroup(tagId, targetGroupId, onDone = renderTagGroups) {
+  const tag = getTagById(tagId);
+  if (!tag || tag.groupId === targetGroupId) return;
+  const targetGroup = targetGroupId ? (state.settings.tagGroups || []).find(g => g.id === targetGroupId) : null;
+  if (targetGroupId && !targetGroup) return;
+
+  const conflict = targetGroupId
+    ? (state.tags || []).find(t => t.id !== tag.id && t.groupId === targetGroupId && t.name.toLowerCase() === tag.name.toLowerCase())
+    : null;
+
+  const finish = () => {
+    saveState();
+    updateUndoRedoUI();
+    onDone();
+  };
+
+  if (conflict) {
+    showConfirmDialog(`Group "${targetGroup.name || '(unnamed)'}" already has a tag named "${tag.name}".\nMerge into it? All references will be updated.`, () => {
+      pushUndoSnapshot();
+      mergeTags(tag.id, conflict.id);
+      finish();
+    }, 'Merge');
+    return;
+  }
+
+  pushUndoSnapshot();
+  tag.groupId = targetGroupId || null;
+  finish();
+}
+
+function createGroupAndMoveTag(tagId) {
+  const tag = getTagById(tagId);
+  if (!tag) return;
+  if (!state.settings.tagGroups) state.settings.tagGroups = [];
+  pushUndoSnapshot();
+  const group = createTagGroupRecord();
+  state.settings.tagGroups.push(group);
+  tag.groupId = group.id;
+  _focusTagGroupId = group.id;
+  saveState();
+  updateUndoRedoUI();
+  renderTagGroups();
+}
+
 let _tagSortMenu = null;
 
 function hideTagSortMenu() {
@@ -538,11 +623,7 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
     btn.textContent = '\u00a0Unsorted';
     btn.addEventListener('click', () => {
       hideTagChipMenu();
-      pushUndoSnapshot();
-      tag.groupId = null;
-      saveState();
-      updateUndoRedoUI();
-      renderTagGroups();
+      moveTagToGroup(tag.id, null);
     });
     menu.appendChild(btn);
   }
@@ -566,22 +647,7 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
       btn.appendChild(document.createTextNode(group.name || '(unnamed)'));
       btn.addEventListener('click', () => {
         hideTagChipMenu();
-        const conflict = (state.tags || []).find(t => t.id !== tag.id && t.groupId === group.id && t.name.toLowerCase() === tag.name.toLowerCase());
-        if (conflict) {
-          showConfirmDialog(`Group "${group.name || '(unnamed)'}" already has a tag named "${tag.name}".\nMerge into it? All references will be updated.`, () => {
-            pushUndoSnapshot();
-            mergeTags(tag.id, conflict.id);
-            saveState();
-            updateUndoRedoUI();
-            renderTagGroups();
-          }, 'Merge');
-          return;
-        }
-        pushUndoSnapshot();
-        tag.groupId = group.id;
-        saveState();
-        updateUndoRedoUI();
-        renderTagGroups();
+        moveTagToGroup(tag.id, group.id);
       });
       menu.appendChild(btn);
     });
@@ -590,6 +656,15 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
   const divider = document.createElement('div');
   divider.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
   menu.appendChild(divider);
+
+  const newGroupBtn = document.createElement('button');
+  newGroupBtn.textContent = 'New group from tag\u2026';
+  newGroupBtn.addEventListener('click', () => {
+    hideTagChipMenu();
+    createGroupAndMoveTag(tag.id);
+  });
+  menu.appendChild(newGroupBtn);
+
   const refBtn = document.createElement('button');
   refBtn.textContent = 'Find references\u2026';
   refBtn.addEventListener('click', () => { hideTagChipMenu(); openSearchModal({ tagId }); });
@@ -678,6 +753,10 @@ function tagGroupChipOpts(group) {
   return {
     noAutocomplete: true,
     displayOf: id => getTagById(id)?.name || id,
+    beforeRemove: id => {
+      deleteTagsWithConfirmation([id]);
+      return false;
+    },
     resolveInput: typed => {
       const lc = typed.toLowerCase();
       // Only reuse a tag already in this group — same name in another group is a separate tag
@@ -686,6 +765,203 @@ function tagGroupChipOpts(group) {
       return createTag(typed, null, null).id;
     }
   };
+}
+
+function getTagDragId(e) {
+  return e.dataTransfer?.getData('text/x-morpheus-tag-id') || e.dataTransfer?.getData('text/plain') || '';
+}
+
+let _tagDragPreview = null;
+let _tagDragSourceChip = null;
+
+function getTagGroupColor(groupId) {
+  if (!groupId) return 'var(--text-muted)';
+  return (state.settings.tagGroups || []).find(g => g.id === groupId)?.color || '#6d7cff';
+}
+
+function setTagDropPreviewColor(groupId) {
+  if (!_tagDragPreview) return;
+  const color = getTagGroupColor(groupId);
+  _tagDragPreview.style.background = groupId ? hexToRgba(color, 0.15) : 'var(--panel-muted)';
+  _tagDragPreview.style.color = color;
+  _tagDragPreview.style.borderColor = groupId ? color : 'var(--border)';
+}
+
+function createTagDropPreview(chip, groupId) {
+  removeTagDropPreview();
+  _tagDragPreview = chip.cloneNode(true);
+  _tagDragPreview.classList.remove('dragging');
+  _tagDragPreview.classList.add('tag-drag-preview', 'drag-preview');
+  _tagDragPreview.draggable = false;
+  setTagDropPreviewColor(groupId);
+  return _tagDragPreview;
+}
+
+function removeTagDropPreview() {
+  if (_tagDragPreview) {
+    _tagDragPreview.remove();
+    _tagDragPreview = null;
+  }
+}
+
+function useTransparentTagDragImage(e) {
+  const img = document.createElement('canvas');
+  img.width = 1;
+  img.height = 1;
+  e.dataTransfer.setDragImage(img, 0, 0);
+}
+
+function getTagDropBeforeChip(wrapper, e, dragTagId) {
+  const chips = Array.from(wrapper.querySelectorAll('.chip-live:not(.tag-drag-preview):not(.dragging)'))
+    .filter(chip => chip.dataset.value !== dragTagId);
+  for (const chip of chips) {
+    const rect = chip.getBoundingClientRect();
+    if (e.clientY < rect.top) return chip;
+    const inRow = e.clientY <= rect.bottom;
+    if (inRow && e.clientX < rect.left + rect.width / 2) return chip;
+  }
+  return null;
+}
+
+function placeTagDropPreview(targetEl, e, targetGroupId, dragTagId) {
+  if (!_tagDragPreview && _tagDragSourceChip) createTagDropPreview(_tagDragSourceChip, targetGroupId);
+  if (!_tagDragPreview) return null;
+  setTagDropPreviewColor(targetGroupId);
+
+  if (targetEl.classList.contains('chip-input-wrapper')) {
+    const beforeChip = getTagDropBeforeChip(targetEl, e, dragTagId);
+    const textInput = targetEl.querySelector('.chip-text-input');
+    targetEl.insertBefore(_tagDragPreview, beforeChip || textInput || null);
+    return beforeChip?.dataset.value || null;
+  }
+
+  const block = targetEl.closest('.tag-group-block');
+  if (!block) return null;
+  let collapsedPreviewRow = block.querySelector('.tag-collapsed-drop-preview');
+  if (!collapsedPreviewRow) {
+    collapsedPreviewRow = document.createElement('div');
+    collapsedPreviewRow.className = 'chip-input-wrapper tag-collapsed-drop-preview';
+    block.insertBefore(collapsedPreviewRow, targetEl.nextSibling);
+  }
+  collapsedPreviewRow.appendChild(_tagDragPreview);
+  return null;
+}
+
+function cleanupTagDragState() {
+  removeTagDropPreview();
+  document.querySelectorAll('.tag-drop-target').forEach(el => el.classList.remove('tag-drop-target'));
+  document.querySelectorAll('.tag-collapsed-drop-preview').forEach(el => el.remove());
+  _tagDragSourceChip = null;
+}
+
+function findLastTagIndexInGroup(groupId) {
+  for (let i = (state.tags || []).length - 1; i >= 0; i--) {
+    if ((state.tags[i].groupId || null) === (groupId || null)) return i;
+  }
+  return -1;
+}
+
+function moveTagToGroupAt(tagId, targetGroupId, beforeTagId) {
+  const tag = getTagById(tagId);
+  if (!tag) return;
+  const targetGroup = targetGroupId ? (state.settings.tagGroups || []).find(g => g.id === targetGroupId) : null;
+  if (targetGroupId && !targetGroup) return;
+  if (targetGroup?.locked) return;
+
+  const conflict = targetGroupId
+    ? (state.tags || []).find(t => t.id !== tag.id && t.groupId === targetGroupId && t.name.toLowerCase() === tag.name.toLowerCase())
+    : null;
+  if (conflict) {
+    showConfirmDialog(`Group "${targetGroup.name || '(unnamed)'}" already has a tag named "${tag.name}".\nMerge into it? All references will be updated.`, () => {
+      pushUndoSnapshot();
+      mergeTags(tag.id, conflict.id);
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+    }, 'Merge');
+    return;
+  }
+
+  const tags = state.tags || [];
+  const oldIndex = tags.findIndex(t => t.id === tagId);
+  if (oldIndex < 0) return;
+  pushUndoSnapshot();
+  const [moved] = tags.splice(oldIndex, 1);
+  moved.groupId = targetGroupId || null;
+  if (targetGroup) targetGroup.tagSort = null;
+
+  let insertIndex = beforeTagId ? tags.findIndex(t => t.id === beforeTagId) : -1;
+  if (insertIndex < 0) {
+    const lastTargetIndex = findLastTagIndexInGroup(targetGroupId);
+    insertIndex = lastTargetIndex >= 0 ? lastTargetIndex + 1 : tags.length;
+  }
+  tags.splice(insertIndex, 0, moved);
+  saveState();
+  updateUndoRedoUI();
+  renderTagGroups();
+}
+
+function attachTagChipInteractions(wrapper, sourceGroupId) {
+  const attach = chip => {
+    if (chip.dataset.tagInteractions) return;
+    chip.dataset.tagInteractions = '1';
+    chip.draggable = true;
+    chip.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const tagId = chip.dataset.value;
+      if (tagId) showTagChipContextMenu(e.clientX, e.clientY, tagId, sourceGroupId);
+    });
+    chip.addEventListener('dragstart', e => {
+      const tagId = chip.dataset.value;
+      if (!tagId) return;
+      const sourceGroup = sourceGroupId ? (state.settings.tagGroups || []).find(g => g.id === sourceGroupId) : null;
+      if (sourceGroup?.locked) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/x-morpheus-tag-id', tagId);
+      e.dataTransfer.setData('text/plain', tagId);
+      useTransparentTagDragImage(e);
+      _tagDragSourceChip = chip;
+      createTagDropPreview(chip, sourceGroupId);
+      chip.classList.add('dragging');
+    });
+    chip.addEventListener('dragend', () => {
+      chip.classList.remove('dragging');
+      cleanupTagDragState();
+    });
+  };
+  wrapper.querySelectorAll('.chip-live:not(.tag-drag-preview)').forEach(attach);
+  new MutationObserver(() => wrapper.querySelectorAll('.chip-live:not(.tag-drag-preview)').forEach(attach))
+    .observe(wrapper, { childList: true });
+}
+
+function configureTagDropTarget(wrapper, targetGroupId) {
+  wrapper.addEventListener('dragover', e => {
+    const tagId = getTagDragId(e);
+    const tag = getTagById(tagId);
+    if (!tag) return;
+    const targetGroup = targetGroupId ? (state.settings.tagGroups || []).find(g => g.id === targetGroupId) : null;
+    if (targetGroup?.locked) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    wrapper.classList.add('tag-drop-target');
+    placeTagDropPreview(wrapper, e, targetGroupId, tagId);
+  });
+  wrapper.addEventListener('dragleave', e => {
+    if (!wrapper.contains(e.relatedTarget)) wrapper.classList.remove('tag-drop-target');
+  });
+  wrapper.addEventListener('drop', e => {
+    const tagId = getTagDragId(e);
+    if (!tagId) return;
+    const beforeTagId = placeTagDropPreview(wrapper, e, targetGroupId, tagId);
+    e.preventDefault();
+    e.stopPropagation();
+    wrapper.classList.remove('tag-drop-target');
+    cleanupTagDragState();
+    moveTagToGroupAt(tagId, targetGroupId, beforeTagId);
+  });
 }
 
 function renderTagGroups() {
@@ -706,10 +982,23 @@ function renderTagGroups() {
   groups.forEach(group => {
     const block = document.createElement('div');
     block.className = 'tag-group-block';
+    block.classList.toggle('collapsed', !!group.collapsed);
+    block.dataset.groupId = group.id;
 
     // Header row
     const header = document.createElement('div');
     header.className = 'tag-group-header';
+
+    const collapseBtn = document.createElement('button');
+    collapseBtn.type = 'button';
+    collapseBtn.className = 'icon-btn tag-group-collapse-btn';
+    collapseBtn.title = group.collapsed ? 'Expand group' : 'Collapse group';
+    collapseBtn.innerHTML = '<svg width="12" height="12" aria-hidden="true"><use href="#icon-chevron-down"/></svg>';
+    collapseBtn.addEventListener('click', () => {
+      group.collapsed = !group.collapsed;
+      saveState();
+      renderTagGroups();
+    });
 
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
@@ -719,6 +1008,13 @@ function renderTagGroups() {
     nameInput.disabled = !!group.locked;
     nameInput.addEventListener('focus', () => pushUndoSnapshot());
     nameInput.addEventListener('input', () => { group.name = nameInput.value; saveState(); updateUndoRedoUI(); });
+    if (_focusTagGroupId === group.id) {
+      requestAnimationFrame(() => {
+        nameInput.focus();
+        nameInput.select();
+      });
+      _focusTagGroupId = null;
+    }
 
     // Sort button
     const sortBtn = document.createElement('button');
@@ -785,19 +1081,25 @@ function renderTagGroups() {
     delBtn.textContent = '×';
     delBtn.disabled = !!group.locked;
     delBtn.addEventListener('click', () => {
-      pushUndoSnapshot();
-      (state.tags || []).filter(t => t.groupId === group.id).forEach(t => { t.groupId = null; });
-      state.settings.tagGroups = state.settings.tagGroups.filter(g => g.id !== group.id);
-      saveState();
-      updateUndoRedoUI();
-      renderTagGroups();
+      const groupTagCount = (state.tags || []).filter(t => t.groupId === group.id).length;
+      confirmDeleteTagGroup(group, groupTagCount, () => {
+        pushUndoSnapshot();
+        const groupTagIds = (state.tags || []).filter(t => t.groupId === group.id).map(t => t.id);
+        groupTagIds.forEach(deleteTag);
+        state.settings.tagGroups = state.settings.tagGroups.filter(g => g.id !== group.id);
+        saveState();
+        updateUndoRedoUI();
+        renderTagGroups();
+      });
     });
 
+    header.appendChild(collapseBtn);
     header.appendChild(nameInput);
     header.appendChild(sortBtn);
     header.appendChild(colorWrap);
     header.appendChild(lockWrap);
     header.appendChild(delBtn);
+    if (group.collapsed) configureTagDropTarget(header, group.id);
 
     // Tag chip input — IDs stored in hidden input, names displayed as chips
     const groupTagObjs = (state.tags || []).filter(t => t.groupId === group.id);
@@ -809,55 +1111,49 @@ function renderTagGroups() {
     hiddenInput.value = sortedTagObjs.map(t => t.id).join(' ');
 
     block.appendChild(header);
-    block.appendChild(hiddenInput);
+    if (!group.collapsed) block.appendChild(hiddenInput);
     list.appendChild(block);
 
-    initChipInput(hiddenInput, tagGroupChipOpts(group));
+    if (!group.collapsed) {
+      initChipInput(hiddenInput, tagGroupChipOpts(group));
 
-    const wrapper = block.querySelector('.chip-input-wrapper');
-    if (wrapper) {
-      const color = group.color || '#6d7cff';
-      wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, color));
-      const observer = new MutationObserver(() => {
-        wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, group.color || '#6d7cff'));
-      });
-      observer.observe(wrapper, { childList: true });
-      if (group.locked) {
-        const textInput = wrapper.querySelector('.chip-text-input');
-        if (textInput) textInput.disabled = true;
+      const wrapper = block.querySelector('.chip-input-wrapper');
+      if (wrapper) {
+        const color = group.color || '#6d7cff';
+        wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, color));
+        const observer = new MutationObserver(() => {
+          wrapper.querySelectorAll('.chip-live').forEach(chip => applyGroupColor(chip, group.color || '#6d7cff'));
+        });
+        observer.observe(wrapper, { childList: true });
+        attachTagChipInteractions(wrapper, group.id);
+        configureTagDropTarget(wrapper, group.id);
+        if (group.locked) {
+          const textInput = wrapper.querySelector('.chip-text-input');
+          if (textInput) textInput.disabled = true;
+        }
       }
-    }
 
-    // Context menu on chips — use chip.dataset.value (the tag ID)
-    const attachChipCtx = chip => {
-      if (chip.dataset.ctx) return;
-      chip.dataset.ctx = '1';
-      chip.addEventListener('contextmenu', e => {
-        e.preventDefault();
-        const tagId = chip.dataset.value;
-        if (tagId) showTagChipContextMenu(e.clientX, e.clientY, tagId, group.id);
+      let currentIds = new Set(sortedTagObjs.map(t => t.id));
+      hiddenInput.addEventListener('input', () => {
+        const newIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
+        const removed = [...currentIds].filter(id => !newIds.has(id));
+        if (removed.length) {
+          hiddenInput.value = [...currentIds].join(' ');
+          deleteTagsWithConfirmation(removed);
+          return;
+        }
+        pushUndoSnapshot();
+        // Assign all chip IDs to this group
+        newIds.forEach(id => {
+          const tag = getTagById(id);
+          if (tag) tag.groupId = group.id;
+        });
+        saveState();
+        updateUndoRedoUI();
+        if (removed.length) renderTagGroups();
+        else currentIds = newIds;
       });
-    };
-    if (wrapper) {
-      wrapper.querySelectorAll('.chip-live').forEach(attachChipCtx);
-      new MutationObserver(() => wrapper.querySelectorAll('.chip-live').forEach(attachChipCtx))
-        .observe(wrapper, { childList: true });
     }
-
-    hiddenInput.addEventListener('input', () => {
-      pushUndoSnapshot();
-      const newIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
-      // Move removed tags to unsorted
-      (state.tags || []).filter(t => t.groupId === group.id && !newIds.has(t.id))
-        .forEach(t => { t.groupId = null; });
-      // Assign all chip IDs to this group
-      newIds.forEach(id => {
-        const tag = getTagById(id);
-        if (tag) tag.groupId = group.id;
-      });
-      saveState();
-      updateUndoRedoUI();
-    });
   });
 
   // --- Unsorted block (always shown) ---
@@ -895,66 +1191,59 @@ function renderTagGroups() {
 
   uBlock.appendChild(uHeader);
 
-  if (unsorted.length) {
-    const hiddenInput = document.createElement('input');
-    hiddenInput.type = 'text';
-    hiddenInput.value = unsorted.map(t => t.id).join(' ');
-    uBlock.appendChild(hiddenInput);
-    initChipInput(hiddenInput, {
-      noAutocomplete: true,
-      displayOf: id => getTagById(id)?.name || id,
-      resolveInput: typed => {
-        const lc = typed.toLowerCase();
-        const existing = (state.tags || []).find(t => t.name.toLowerCase() === lc && !t.groupId);
-        if (existing) return existing.id;
-        return createTag(typed, null, null).id;
-      }
-    });
-    const wrapper = uBlock.querySelector('.chip-input-wrapper');
-    if (wrapper) {
-      wrapper.classList.add('tag-group-unsorted-chips');
-      wrapper.querySelectorAll('.chip-live').forEach(chip => {
-        chip.addEventListener('contextmenu', e => {
-          e.preventDefault();
-          showTagChipContextMenu(e.clientX, e.clientY, chip.dataset.value, null);
-        });
-      });
+  const hiddenInput = document.createElement('input');
+  hiddenInput.type = 'text';
+  hiddenInput.placeholder = 'Add unsorted tags…';
+  hiddenInput.value = unsorted.map(t => t.id).join(' ');
+  uBlock.appendChild(hiddenInput);
+  initChipInput(hiddenInput, {
+    noAutocomplete: true,
+    displayOf: id => getTagById(id)?.name || id,
+    beforeRemove: id => {
+      deleteTagsWithConfirmation([id]);
+      return false;
+    },
+    resolveInput: typed => {
+      const lc = typed.toLowerCase();
+      const existing = (state.tags || []).find(t => t.name.toLowerCase() === lc && !t.groupId);
+      if (existing) return existing.id;
+      return createTag(typed, null, null).id;
     }
-    let currentIds = new Set(unsorted.map(t => t.id));
-    hiddenInput.addEventListener('input', () => {
-      const nextIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
-      const removed = [...currentIds].filter(id => !nextIds.has(id));
-      const added = [...nextIds].filter(id => !currentIds.has(id));
-      if (removed.length) {
-        pushUndoSnapshot();
-        removed.forEach(deleteTag);
-        saveState();
-        updateUndoRedoUI();
-        renderTagGroups();
-        return;
-      }
-      added.forEach(id => {
-        const tag = getTagById(id);
-        if (tag) tag.groupId = null;
-      });
-      if (added.length) {
-        saveState();
-        updateUndoRedoUI();
-        renderTagGroups();
-        return;
-      }
-      currentIds = nextIds;
-    });
-  } else {
-    const chipRow = document.createElement('div');
-    chipRow.className = 'chip-input-wrapper tag-group-unsorted-chips';
-    const placeholder = document.createElement('span');
-    placeholder.className = 'settings-muted';
-    placeholder.style.fontSize = '0.8rem';
-    placeholder.textContent = 'All tags are grouped.';
-    chipRow.appendChild(placeholder);
-    uBlock.appendChild(chipRow);
+  });
+  const wrapper = uBlock.querySelector('.chip-input-wrapper');
+  if (wrapper) {
+    wrapper.classList.add('tag-group-unsorted-chips');
+    attachTagChipInteractions(wrapper, null);
+    configureTagDropTarget(wrapper, null);
+    if (!unsorted.length) {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'settings-muted tag-group-empty-note';
+      placeholder.textContent = 'No unsorted tags.';
+      wrapper.insertBefore(placeholder, wrapper.querySelector('.chip-text-input'));
+    }
   }
+  let currentIds = new Set(unsorted.map(t => t.id));
+  hiddenInput.addEventListener('input', () => {
+    const nextIds = new Set(hiddenInput.value.trim().split(/\s+/).filter(Boolean));
+    const removed = [...currentIds].filter(id => !nextIds.has(id));
+    const added = [...nextIds].filter(id => !currentIds.has(id));
+    if (removed.length) {
+      hiddenInput.value = [...currentIds].join(' ');
+      deleteTagsWithConfirmation(removed);
+      return;
+    }
+    added.forEach(id => {
+      const tag = getTagById(id);
+      if (tag) tag.groupId = null;
+    });
+    if (added.length) {
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+      return;
+    }
+    currentIds = nextIds;
+  });
   list.appendChild(uBlock);
 }
 
@@ -980,7 +1269,10 @@ function attachSettingsListeners() {
   numSetting('stgBoardTitleFont', 'boardTitleFontSize', 14, 48);
   numSetting('stgHubNameFont',    'hubNameFontSize',    10, 48);
 
-  const boolSetting = (id, key) => document.getElementById(id).addEventListener('change', e => { state.settings[key] = e.target.checked; });
+  const boolSetting = (id, key) => document.getElementById(id).addEventListener('change', e => {
+    state.settings[key] = e.target.checked;
+    saveState();
+  });
   boolSetting('stgShowTags',                 'showTags');
   boolSetting('stgWarnOnClose',              'warnOnClose');
   boolSetting('stgConfirmDeleteBoard',       'confirmDeleteBoard');
@@ -1098,7 +1390,9 @@ function attachSettingsListeners() {
   document.getElementById('stgAddGroupBtn').addEventListener('click', () => {
     if (!state.settings.tagGroups) state.settings.tagGroups = [];
     pushUndoSnapshot();
-    state.settings.tagGroups.push({ id: 'grp-' + Date.now(), name: '', color: '#6d7cff', locked: false });
+    const group = createTagGroupRecord();
+    state.settings.tagGroups.push(group);
+    _focusTagGroupId = group.id;
     saveState();
     updateUndoRedoUI();
     renderTagGroups();

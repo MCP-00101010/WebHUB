@@ -4,9 +4,11 @@ function initChipInput(hiddenInput, opts = {}) {
 
   // opts.displayOf(value) → display label for a stored value (default: identity)
   // opts.resolveInput(typedText, textInput, hiddenInput) → stored value to commit (default: identity; returns null to skip)
+  // opts.beforeRemove(value, editMode, hiddenInput) → return false to cancel built-in removal
   // opts.noAutocomplete → suppress tag autocomplete (e.g. in tag manager group inputs)
   const displayOf    = opts.displayOf    || (v => v);
   const resolveInput = opts.resolveInput || (v => v);
+  const beforeRemove = opts.beforeRemove || (() => true);
 
   const container = document.createElement('div');
   container.className = 'chip-input-wrapper';
@@ -55,9 +57,10 @@ function initChipInput(hiddenInput, opts = {}) {
       btn.className = 'chip-remove-btn';
       btn.textContent = '×';
       btn.addEventListener('mousedown', e => { e.preventDefault(); removeChip(value, false); });
+      btn.addEventListener('click', e => e.stopPropagation());
       chip.appendChild(btn);
 
-      chip.addEventListener('click', e => { if (e.target !== btn) removeChip(value, true); });
+      chip.addEventListener('click', e => { e.stopPropagation(); if (e.target !== btn) removeChip(value, true); });
       container.insertBefore(chip, textInput);
     });
     textInput.placeholder = chips.length ? '' : placeholder;
@@ -84,6 +87,7 @@ function initChipInput(hiddenInput, opts = {}) {
   };
 
   function removeChip(value, editMode) {
+    if (beforeRemove(value, editMode, hiddenInput) === false) return;
     chips = chips.filter(v => v !== value);
     renderChips();
     syncBacking();

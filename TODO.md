@@ -73,7 +73,6 @@
 - ✓ *Completed 2026-04-20* Speed dial bookmarks: Duplicate and Refresh favicon added — see [0.11.22]
 - ✓ *Completed 2026-04-20* Essentials: Duplicate and Refresh favicon added — see [0.11.22]
 - ✓ *Completed 2026-04-20* Search results: tooltips and full context menus (Edit, Duplicate, Refresh favicon, Move to board, Open in board, Delete) — see [0.11.25]
-- Nav folders: "Add bookmark" not applicable (nav folders hold boards/sub-folders, not bookmarks); "Open all" could open all boards in folder — low priority
 
 ### Edit modal unification
 
@@ -92,44 +91,9 @@
 
 ## Tag Manager
 
-### Core panel
-
-- ✓ *Fixed 2026-04-23* delete buttons on unsorted tag chips now remove the tag
-- Tag Manager panel: list all known tags; click a tag to see which items carry it; rename/delete globally; assign to groups; drag tags between groups
-- Tag categories & colors: predefined tag groups (science, ratings, fiction-genres, etc.) each with an assigned color; tags inherit group color; tag category editor in settings
-- Per-item "ignore inheritance" toggle (deferred — implement once core inherit/auto-remove has been stable; edge case for children of an ignoring folder needs design)
-
-### Filtering & discovery
-
-- Sort tags by usage count (most-used first), name, or group
-- Search/filter the tag list as you type
-- Orphan tag detection — highlight tags with zero items; bulk-clean option to remove them all
-
-### Bulk operations
-
-- Replace — swap one tag for another across all items
-- Multi-select tags → batch delete or batch group-assign
-
-### Tag detail view
-
-- Click a tag → slide-in panel listing every item that carries it
-- From that panel: remove the tag from individual items, or navigate directly to the board the item lives in
-
-### Groups / categories
-
-- Collapse/expand groups in the tag list
-
-### Smart suggestions
-
-- When tagging a bookmark, suggest tags already common on other items in the same board
-
----
-
-## Action Plan
-
-Strategic implementation order based on dependency analysis.
-
----
+- ✓ *Completed 2026-04-23* Tag context menu can create a new group and move the tag into it.
+- ✓ *Completed 2026-04-23* Tags can be moved between groups and Unsorted, inserted at cursor position, and reordered within groups via drag and drop.
+- ✓ *Completed 2026-04-23* Tag groups can be collapsed/expanded to save screen space.
 
 ### Phase 1 — Polish & quick wins ✓ *Completed 2026-04-18*
 
