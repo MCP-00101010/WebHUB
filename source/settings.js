@@ -753,8 +753,8 @@ function tagGroupChipOpts(group) {
   return {
     noAutocomplete: true,
     displayOf: id => getTagById(id)?.name || id,
-    beforeRemove: id => {
-      deleteTagsWithConfirmation([id]);
+    beforeRemove: (id, editMode) => {
+      if (!editMode) deleteTagsWithConfirmation([id]);
       return false;
     },
     resolveInput: typed => {
@@ -906,6 +906,11 @@ function attachTagChipInteractions(wrapper, sourceGroupId) {
     if (chip.dataset.tagInteractions) return;
     chip.dataset.tagInteractions = '1';
     chip.draggable = true;
+    chip.addEventListener('mousedown', e => {
+      if (!e.target.closest('.chip-remove-btn')) return;
+      chip.draggable = false;
+      document.addEventListener('mouseup', () => { chip.draggable = true; }, { once: true });
+    }, true);
     chip.addEventListener('contextmenu', e => {
       e.preventDefault();
       const tagId = chip.dataset.value;
@@ -1199,8 +1204,8 @@ function renderTagGroups() {
   initChipInput(hiddenInput, {
     noAutocomplete: true,
     displayOf: id => getTagById(id)?.name || id,
-    beforeRemove: id => {
-      deleteTagsWithConfirmation([id]);
+    beforeRemove: (id, editMode) => {
+      if (!editMode) deleteTagsWithConfirmation([id]);
       return false;
     },
     resolveInput: typed => {

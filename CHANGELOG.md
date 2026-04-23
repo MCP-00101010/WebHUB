@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.31] — 2026-04-23
+
+### Fixed
+
+- **Tag Manager chip × button** — clicking × on tag chips now correctly deletes the tag; draggable parent chip no longer intercepts the mousedown via Firefox's drag machinery (capture-phase guard disables `draggable` for the duration of the click).
+- **Tag Manager chip label click** — clicking a chip's label in the Tag Manager no longer triggers deletion; `beforeRemove` now only acts on `editMode = false` (the × button path).
+
+---
+
 ## [0.11.30] — 2026-04-23
 
 ### Added
