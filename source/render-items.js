@@ -241,7 +241,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     applyDragImage(event, itemEl);
   });
 
-  itemEl.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
+  itemEl.addEventListener('dragend', () => { itemEl.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
 
   itemEl.addEventListener('dragover', event => handleBoardItemDragOver(event, item, columnId, parentFolder, depth));
   itemEl.addEventListener('dragleave', event => {

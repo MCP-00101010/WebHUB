@@ -617,6 +617,7 @@ function renderEssentials() {
         applyDragImage(event, link);
       });
       link.addEventListener('dragend', () => {
+        link.classList.remove('dragging');
         dragPayload = null;
         removeDragPlaceholders();
         document.querySelectorAll('.essential-slot.drop-target').forEach(el => el.classList.remove('drop-target'));
@@ -741,7 +742,7 @@ function createNavItem(item, depth = 0, parent = null) {
       e.dataTransfer.effectAllowed = 'move';
       applyDragImage(e, el);
     });
-    el.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
+    el.addEventListener('dragend', () => { el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
     el.addEventListener('dragover', e => handleNavItemDragOver(e, item, parent));
     el.addEventListener('dragleave', e => {
       if (el.contains(e.relatedTarget)) return;
@@ -898,6 +899,7 @@ function createNavItem(item, depth = 0, parent = null) {
   });
 
   el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
     dragPayload = null;
     removeDragPlaceholders();
     document.querySelectorAll('.nav-item.drop-target, .nav-item.drop-position-before, .nav-item.drop-position-after').forEach(n => {
@@ -1042,6 +1044,7 @@ function renderSpeedDial(source, isCollection = false) {
       applyDragImage(event, link);
     });
     link.addEventListener('dragend', () => {
+      link.classList.remove('dragging');
       dragPayload = null;
       removeDragPlaceholders();
     });
@@ -1178,7 +1181,7 @@ function renderCollectionTabBar(collection) {
       e.dataTransfer.effectAllowed = 'move';
       requestAnimationFrame(() => tab.classList.add('dragging'));
     });
-    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); _clearTabIndicator(); });
+    tab.addEventListener('dragend', () => { tab.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); _clearTabIndicator(); });
     tab.addEventListener('dragover', e => _tabDragOver(e, tab));
     tab.addEventListener('drop', e => _tabDrop(e, tab));
     tabBar.appendChild(tab);
@@ -1263,7 +1266,7 @@ function renderFolderTabBar(folder) {
       e.dataTransfer.effectAllowed = 'move';
       requestAnimationFrame(() => tab.classList.add('dragging'));
     });
-    tab.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
+    tab.addEventListener('dragend', () => { tab.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
     tabBar.appendChild(tab);
   });
 

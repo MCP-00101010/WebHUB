@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.27] — 2026-04-23
+
+### Fixed
+
+- **Source element unhiding on cursor move (all DnD areas)** — `removeDragPlaceholders()` was called on every `dragover` event to swap in the new placeholder, and it contained `querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'))`. This removed the hide-class from the source element on the very first cursor movement, making it reappear. Removed the blanket `.dragging` cleanup from `removeDragPlaceholders()` and instead each `dragend` handler now explicitly removes `.dragging` from the specific element it dragged (nav items, speed dial links, essentials, board items, widgets, tabs). The effect is now consistent across all DnD areas.
+
+---
+
 ## [0.11.26] — 2026-04-23
 
 ### Fixed

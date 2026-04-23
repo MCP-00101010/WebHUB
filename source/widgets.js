@@ -97,7 +97,7 @@ function createWidgetElement(widget, columnId) {
     e.dataTransfer.effectAllowed = 'move';
     applyDragImage(e, el);
   });
-  el.addEventListener('dragend', () => { dragPayload = null; removeDragPlaceholders(); });
+  el.addEventListener('dragend', () => { el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
   el.addEventListener('dragover', e => handleBoardItemDragOver(e, widget, columnId, null, 1));
   el.addEventListener('dragleave', e => {
     if (el.contains(e.relatedTarget)) return;

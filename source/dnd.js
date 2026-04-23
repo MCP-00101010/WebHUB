@@ -63,7 +63,6 @@ function getExternalDrop(event) {
 function removeDragPlaceholders() {
   _dropTarget = null;
   _dropPos    = null;
-  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
   document.querySelectorAll('.drag-placeholder, .drag-preview').forEach(el => el.remove());
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
