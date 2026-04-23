@@ -84,7 +84,7 @@ function createDragPlaceholder(kind) {
     if (sourceEl) {
       const clone = sourceEl.cloneNode(true);
       clone.classList.add('drag-preview');
-      clone.classList.remove('selected', 'drop-position-before', 'drop-position-after');
+      clone.classList.remove('selected', 'drop-position-before', 'drop-position-after', 'dragging');
       clone.removeAttribute('draggable');
       clone.removeAttribute('data-drop-position');
       if (kind === 'speed-dial') clone.dataset.previewAxis = 'h';

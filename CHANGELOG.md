@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.26] — 2026-04-23
+
+### Fixed
+
+- **Gap where dragged item was** — `.dragging` used `opacity: 0` which hid the element visually but kept it in the layout flow, leaving a blank space. Changed to `display: none !important` so the element is fully removed from the layout.
+- **Column preview clone invisible** — `createDragPlaceholder` clones the source element after `.dragging` is applied, so the clone inherited the class. With `display: none !important` on `.dragging`, the clone was invisible even after `drag-preview` was added. Added `'dragging'` to the `classList.remove` call so clones always start visible.
+
+---
+
 ## [0.11.25] — 2026-04-23
 
 ### Fixed

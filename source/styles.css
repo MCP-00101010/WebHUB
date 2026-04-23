@@ -1134,8 +1134,7 @@ button {
 .drag-preview * { pointer-events: none; }
 
 .dragging {
-  opacity: 0 !important;
-  pointer-events: none;
+  display: none !important;
 }
 
 .tab-drop-indicator {
