@@ -1080,9 +1080,23 @@ function renderCollectionTabBar(collection) {
     const pos = refTab && e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
     const sentinel = refTab ? (pos === 'before' ? refTab : refTab.nextSibling) : null;
     tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());
-    const ind = document.createElement('div');
-    ind.className = 'tab-drop-indicator';
-    tabBar.insertBefore(ind, sentinel);
+    let ghost;
+    if (isTabReorder) {
+      const srcTab = tabBar.querySelector(`.collection-tab[data-board-id="${CSS.escape(dragPayload.boardId)}"]`);
+      if (srcTab) { ghost = srcTab.cloneNode(true); ghost.removeAttribute('draggable'); }
+    }
+    if (!ghost) {
+      ghost = document.createElement('div');
+      if (isNavBoard && dragPayload.itemId) {
+        const navPath = findNavItemPath(dragPayload.itemId);
+        const board = navPath?.item?.boardId ? state.boards.find(b => b.id === navPath.item.boardId) : null;
+        const lbl = document.createElement('span');
+        lbl.textContent = board?.title || navPath?.item?.title || 'Board';
+        ghost.appendChild(lbl);
+      }
+    }
+    ghost.className = 'collection-tab tab-drop-indicator';
+    tabBar.insertBefore(ghost, sentinel);
   };
   const _tabDrop = (e, refTab) => {
     tabBar.querySelectorAll('.tab-drop-indicator').forEach(el => el.remove());

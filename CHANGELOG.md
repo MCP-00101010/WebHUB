@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.23] — 2026-04-23
+
+### Fixed
+
+- **Collection tab bar drag indicator** — `_tabDragOver` was inserting a 3px vertical bar (`div.tab-drop-indicator`) as the drop indicator. It now inserts a ghost tab clone (for reorders, a clone of the dragged tab; for nav board drops, a new tab div with the board title). CSS updated to override the thin-bar styles on `.collection-tab.tab-drop-indicator`.
+- **Nav preview clone for collection-tab drags** — `createDragPlaceholder('nav')` only checked `dragPayload.itemId` and fell back to a dashed placeholder when dragging a collection tab (which sets `boardId`, not `itemId`). A new branch synthesises a nav board preview element from the board title before reaching the fallback.
+- **Drop from collection tab bar to empty nav space** — `handleNavListDragOver` blocked `collection-tab` drags (preventing `preventDefault` from being called on empty nav space, so the drop event never fired). Added `collection-tab` to the allowed areas. `handleNavListDrop` now has a `collection-tab` branch that removes the board from the collection and inserts a new nav item at the drop position, matching the logic already present in `handleNavDrop`.
+
+---
+
 ## [0.11.22] — 2026-04-23
 
 ### Fixed

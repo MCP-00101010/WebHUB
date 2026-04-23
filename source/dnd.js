@@ -98,6 +98,20 @@ function createDragPlaceholder(kind) {
     const fresh = _renderCrossContextPreview(kind);
     if (fresh) return fresh;
   }
+  // collection-tab → nav: build a nav board item preview from the board title
+  if (kind === 'nav' && dragPayload?.area === 'collection-tab' && dragPayload?.boardId) {
+    const board = state.boards.find(b => b.id === dragPayload.boardId);
+    const el = document.createElement('div');
+    el.className = 'nav-item drag-preview';
+    const info = document.createElement('div');
+    info.className = 'nav-board-info';
+    const lbl = document.createElement('div');
+    lbl.className = 'nav-board-title';
+    lbl.textContent = board?.title || 'Untitled Board';
+    info.appendChild(lbl);
+    el.appendChild(info);
+    return el;
+  }
   const placeholder = document.createElement('div');
   placeholder.className = `drag-placeholder ${kind}-placeholder`;
   return placeholder;
@@ -1165,7 +1179,7 @@ function handleNavDrop(event, targetItem, parent) {
 
 function handleNavListDragOver(event) {
   if (!dragPayload) return;
-  if (dragPayload.area !== 'nav' && dragPayload.area !== 'folder-tab' && !_canDropAsNavWidget()) return;
+  if (dragPayload.area !== 'nav' && dragPayload.area !== 'folder-tab' && dragPayload.area !== 'collection-tab' && !_canDropAsNavWidget()) return;
   // Always accept the drop so the browser fires the drop event even when the
   // cursor is over the preview clone's transparent space.
   event.preventDefault();
@@ -1225,6 +1239,44 @@ function handleNavListDrop(event) {
         }
       } else {
         state.navItems.push(navItem);
+      }
+    }
+    dragPayload = null; renderAll(); saveState(); return;
+  }
+
+  // Collection tab dropped onto empty nav list space (remove from collection → insert into nav)
+  if (dragPayload.area === 'collection-tab') {
+    const srcColl = state.navItems.find(i => i.id === dragPayload.collectionId);
+    if (!srcColl) { dragPayload = null; return; }
+    pushUndoSnapshot();
+    const boardId = dragPayload.boardId;
+    srcColl.boardIds = (srcColl.boardIds || []).filter(id => id !== boardId);
+    const board = state.boards.find(b => b.id === boardId);
+    if (board) {
+      if (srcColl.autoRemoveTags && srcColl.sharedTags?.length) {
+        const toStrip = new Set(srcColl.sharedTags);
+        board.tags = (board.tags || []).filter(t => !toStrip.has(t));
+      }
+      const navItem = { id: `nav-${boardId}`, type: 'board', title: board.title, boardId };
+      if (savedTarget && savedTarget !== elements.navList && savedTarget.dataset.id) {
+        const targetPath = findNavItemPath(savedTarget.dataset.id);
+        const position = savedPos || 'before';
+        if (targetPath) {
+          const ti = targetPath.list.findIndex(i => i.id === savedTarget.dataset.id);
+          targetPath.list.splice(Math.max(0, position === 'after' ? ti + 1 : ti), 0, navItem);
+        } else {
+          state.navItems.push(navItem);
+        }
+      } else {
+        state.navItems.push(navItem);
+      }
+    }
+    if (state.activeBoardId === boardId) {
+      if (srcColl.boardIds.length) {
+        state.activeBoardId = srcColl.boardIds[0];
+        state.activeCollectionId = srcColl.id;
+      } else {
+        state.activeCollectionId = null;
       }
     }
     dragPayload = null; renderAll(); saveState(); return;

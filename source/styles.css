@@ -1147,6 +1147,15 @@ button {
   pointer-events: none;
 }
 
+.collection-tab.tab-drop-indicator {
+  width: auto;
+  background: transparent;
+  border-radius: unset;
+  opacity: 0.5;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 .speed-dial-placeholder {
   min-height: unset;
   width: 3px;
