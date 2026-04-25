@@ -16,6 +16,19 @@ const defaultSettings = {
   confirmDeleteFolder: false,
   confirmDeleteTitleDivider: false,
   confirmDeleteTag: false,
+  globalFontScale: 'medium',
+  globalFontColor: '#e5e7eb',
+  globalFontColorFromTheme: true,
+  showAdvancedStyleSettings: false,
+  styleOverrides: {
+    hubName: false,
+    boardTitle: false,
+    board: false,
+    bookmark: false,
+    folder: false,
+    collection: false,
+    title: false
+  },
   bookmarkFontSize: 14,
   bookmarkFontFamily: '',
   bookmarkBold: false, bookmarkItalic: false, bookmarkUnderline: false,
@@ -128,6 +141,22 @@ const defaultState = {
 };
 
 let state = loadState();
+
+function migrateStyleSettings(settings) {
+  if (!settings.styleOverrides) settings.styleOverrides = cloneData(defaultSettings.styleOverrides);
+  else settings.styleOverrides = { ...defaultSettings.styleOverrides, ...settings.styleOverrides };
+  if (settings.styleOverridesMigrated) return;
+
+  const differs = (key, fallback) => settings[key] !== undefined && settings[key] !== fallback;
+  settings.styleOverrides.hubName = differs('hubNameFontSize', 18) || !!settings.hubNameFontFamily || !!settings.hubNameBold || !!settings.hubNameItalic || !!settings.hubNameUnderline || differs('hubNameTextAlign', 'left') || !!settings.hubNameColor;
+  settings.styleOverrides.boardTitle = differs('boardTitleFontSize', 22) || !!settings.boardTitleFontFamily || !!settings.boardTitleBold || !!settings.boardTitleItalic || !!settings.boardTitleUnderline || differs('boardTitleTextAlign', 'left') || !!settings.boardTitleColor;
+  settings.styleOverrides.board = differs('boardFontSize', 14) || !!settings.boardFontFamily || !!settings.boardBold || !!settings.boardItalic || !!settings.boardUnderline || differs('boardTextAlign', 'left') || !!settings.boardColor;
+  settings.styleOverrides.bookmark = differs('bookmarkFontSize', 14) || !!settings.bookmarkFontFamily || !!settings.bookmarkBold || !!settings.bookmarkItalic || !!settings.bookmarkUnderline || differs('bookmarkTextAlign', 'left') || !!settings.bookmarkColor;
+  settings.styleOverrides.folder = differs('folderFontSize', 15) || !!settings.folderFontFamily || !!settings.folderBold || !!settings.folderItalic || !!settings.folderUnderline || differs('folderTextAlign', 'left') || !!settings.folderColor;
+  settings.styleOverrides.collection = differs('collectionFontSize', 15) || !!settings.collectionFontFamily || !!settings.collectionBold || !!settings.collectionItalic || !!settings.collectionUnderline || differs('collectionTextAlign', 'left') || !!settings.collectionColor;
+  settings.styleOverrides.title = differs('titleFontSize', 12) || differs('titleLineThickness', 1) || !!settings.titleLineColor || differs('titleLineStyle', 'solid') || !!settings.titleFontFamily || !!settings.titleBold || !!settings.titleItalic || !!settings.titleUnderline || !!settings.titleColor;
+  settings.styleOverridesMigrated = true;
+}
 
 function migrateItems(items) {
   for (const item of (items || [])) {
@@ -266,6 +295,7 @@ function loadState() {
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
+    migrateStyleSettings(parsed.settings);
     // Tag ID migration — must run before essentials migration (which also has tags)
     migrateToIdTags(parsed);
     parsed.tags = parsed.tags || [];

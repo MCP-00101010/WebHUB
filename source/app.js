@@ -271,6 +271,9 @@ function centerPanel(panel) {
 
 function attachEventListeners() {
   document.getElementById('aboutBtn').addEventListener('click', () => showSettingsPanel('about'));
+  elements.quickSearchBtn?.addEventListener('click', () => openSearchModal({}));
+  elements.quickTagManagerBtn?.addEventListener('click', () => showSettingsPanel('tag-manager'));
+  elements.quickSettingsBtn?.addEventListener('click', () => showSettingsPanel('general'));
   document.getElementById('trashBtn').addEventListener('click', showTrashPanel);
   document.getElementById('trashCloseBtn').addEventListener('click', hideTrashPanel);
   document.getElementById('trashClearAllBtn').addEventListener('click', () => {
@@ -413,31 +416,6 @@ function attachEventListeners() {
     }
   });
 
-  document.getElementById('searchInput').addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    const q = e.target.value.trim();
-    e.target.value = '';
-    elements.searchFilterBar.classList.add('hidden');
-    elements.searchFilterBtn.classList.remove('open');
-    openSearchModal({ query: q });
-  });
-
-  elements.searchFilterBtn.addEventListener('click', () => {
-    const isOpen = !elements.searchFilterBar.classList.contains('hidden');
-    elements.searchFilterBar.classList.toggle('hidden', isOpen);
-    elements.searchFilterBtn.classList.toggle('open', !isOpen);
-  });
-
-  elements.searchFilterBar.addEventListener('click', e => {
-    const chip = e.target.closest('.search-filter-chip');
-    if (!chip) return;
-    const key = chip.dataset.filter;
-    if (!(key in searchFilters)) return;
-    searchFilters[key] = !searchFilters[key];
-    chip.classList.toggle('active', searchFilters[key]);
-    _updateSearchFilterBtn();
-  });
-
   document.getElementById('searchModalCloseBtn').addEventListener('click', closeSearchModal);
 
   document.getElementById('searchModalInput').addEventListener('input', () => {
@@ -445,12 +423,6 @@ function attachEventListeners() {
     if (q || activeTagFilters.size > 0) renderSearchResults();
     else elements.searchModalResults.innerHTML = '';
   });
-
-  function _updateSearchFilterBtn() {
-    const isDefault = searchFilters.name && searchFilters.url &&
-      searchFilters.typeBookmark && searchFilters.typeFolder && searchFilters.typeBoard;
-    elements.searchFilterBtn.classList.toggle('has-active', !isDefault);
-  }
 
   document.getElementById('searchModal').addEventListener('click', e => {
     // filter chips (Name, URL, Show types)
@@ -467,7 +439,6 @@ function attachEventListeners() {
       }
       searchFilters[key] = !searchFilters[key];
       chip.classList.toggle('active', searchFilters[key]);
-      _updateSearchFilterBtn();
       const q = elements.searchModalInput.value.trim();
       if (q || activeTagFilters.size > 0) renderSearchResults();
       return;

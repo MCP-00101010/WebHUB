@@ -21,9 +21,9 @@ const elements = {
   modalSelect: document.getElementById('modalSelect'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
   contextMenu: document.getElementById('contextMenu'),
-  searchInput: document.getElementById('searchInput'),
-  searchFilterBtn: document.getElementById('searchFilterBtn'),
-  searchFilterBar: document.getElementById('searchFilterBar'),
+  quickSearchBtn: document.getElementById('quickSearchBtn'),
+  quickTagManagerBtn: document.getElementById('quickTagManagerBtn'),
+  quickSettingsBtn: document.getElementById('quickSettingsBtn'),
   searchModal: document.getElementById('searchModal'),
   searchModalInput: document.getElementById('searchModalInput'),
   searchModalResults: document.getElementById('searchModalResults'),
@@ -71,6 +71,22 @@ function setFavicon(img, item, sz) {
   tryNext();
 }
 
+function createCountChip(value, title, variant = 'bookmark') {
+  const chip = document.createElement('span');
+  chip.className = `count-chip count-chip--${variant}`;
+  chip.textContent = value;
+  chip.title = title;
+  return chip;
+}
+
+function renderCountChipsInto(container, counts, options = {}) {
+  if (!container) return;
+  const { bookmarks = 0, folders = 0 } = counts || {};
+  const showZero = options.showZero === true;
+  if (bookmarks > 0 || showZero) container.appendChild(createCountChip(bookmarks, options.bookmarkTitle || 'Bookmarks', 'bookmark'));
+  if (folders > 0 || showZero) container.appendChild(createCountChip(folders, options.folderTitle || 'Folders', 'folder'));
+}
+
 function buildTooltip(item, board = null) {
   const parts = [item.title || 'Untitled'];
   if (item.url) parts.push(item.url);
@@ -86,73 +102,90 @@ function buildTooltip(item, board = null) {
 function applySettings() {
   const s = state.settings;
   const r = document.documentElement.style;
-  r.setProperty('--board-font-size', `${s.boardFontSize}px`);
-  r.setProperty('--bookmark-font-size', `${s.bookmarkFontSize}px`);
-  r.setProperty('--folder-font-size', `${s.folderFontSize}px`);
-  r.setProperty('--title-font-size', `${s.titleFontSize}px`);
-  r.setProperty('--title-line-thickness', `${s.titleLineThickness}px`);
-  r.setProperty('--board-title-font-size', `${s.boardTitleFontSize}px`);
+  const overrides = s.styleOverrides || {};
+  const fontPresets = {
+    small: { base: 12, hub: 16, boardTitle: 18, nav: 13, collection: 14, title: 11 },
+    medium: { base: 14, hub: 18, boardTitle: 22, nav: 14, collection: 15, title: 12 },
+    large: { base: 16, hub: 21, boardTitle: 26, nav: 16, collection: 17, title: 14 }
+  };
+  const preset = fontPresets[s.globalFontScale || 'medium'] || fontPresets.medium;
+  const globalColor = s.globalFontColorFromTheme === false
+    ? (s.globalFontColor || '#e5e7eb')
+    : 'var(--accent)';
+  const globalMutedColor = s.globalFontColorFromTheme === false
+    ? (s.globalFontColor || '#e5e7eb')
+    : 'var(--accent)';
+  const sectionColor = (section, key, fallback = globalColor) => overrides[section] ? (s[key] || fallback) : fallback;
+  const sectionSize = (section, key, fallback) => overrides[section] ? (s[key] || fallback) : fallback;
+
+  r.setProperty('--board-font-size', `${sectionSize('board', 'boardFontSize', preset.nav)}px`);
+  r.setProperty('--bookmark-font-size', `${sectionSize('bookmark', 'bookmarkFontSize', preset.base)}px`);
+  r.setProperty('--folder-font-size', `${sectionSize('folder', 'folderFontSize', preset.nav + 1)}px`);
+  r.setProperty('--title-font-size', `${sectionSize('title', 'titleFontSize', preset.title)}px`);
+  r.setProperty('--title-line-thickness', `${overrides.title ? s.titleLineThickness : 1}px`);
+  r.setProperty('--board-title-font-size', `${sectionSize('boardTitle', 'boardTitleFontSize', preset.boardTitle)}px`);
   r.setProperty('--tags-display', s.showTags ? 'flex' : 'none');
   r.setProperty('--tags-grid-display', s.showTags ? 'grid' : 'none');
 
-  const ff = (key) => s[key] || 'inherit';
-  const fw = (key, def = 'normal') => s[key] ? 'bold' : def;
-  const fi = (key) => s[key] ? 'italic' : 'normal';
-  const td = (key) => s[key] ? 'underline' : 'none';
+  const ff = (section, key) => overrides[section] ? (s[key] || 'inherit') : 'inherit';
+  const fw = (section, key, def = 'normal') => overrides[section] ? (s[key] ? 'bold' : def) : def;
+  const fi = (section, key) => overrides[section] && s[key] ? 'italic' : 'normal';
+  const td = (section, key) => overrides[section] && s[key] ? 'underline' : 'none';
+  const align = (section, key) => overrides[section] ? (s[key] || 'left') : 'left';
 
-  r.setProperty('--bookmark-font-family',        ff('bookmarkFontFamily'));
-  r.setProperty('--bookmark-font-weight',         fw('bookmarkBold'));
-  r.setProperty('--bookmark-font-style',          fi('bookmarkItalic'));
-  r.setProperty('--bookmark-text-decoration',     td('bookmarkUnderline'));
+  r.setProperty('--bookmark-font-family',        ff('bookmark', 'bookmarkFontFamily'));
+  r.setProperty('--bookmark-font-weight',         fw('bookmark', 'bookmarkBold'));
+  r.setProperty('--bookmark-font-style',          fi('bookmark', 'bookmarkItalic'));
+  r.setProperty('--bookmark-text-decoration',     td('bookmark', 'bookmarkUnderline'));
 
-  r.setProperty('--folder-font-family',           ff('folderFontFamily'));
-  r.setProperty('--folder-font-weight',           fw('folderBold', '600'));
-  r.setProperty('--folder-font-style',            fi('folderItalic'));
-  r.setProperty('--folder-text-decoration',       td('folderUnderline'));
+  r.setProperty('--folder-font-family',           ff('folder', 'folderFontFamily'));
+  r.setProperty('--folder-font-weight',           fw('folder', 'folderBold', '600'));
+  r.setProperty('--folder-font-style',            fi('folder', 'folderItalic'));
+  r.setProperty('--folder-text-decoration',       td('folder', 'folderUnderline'));
 
-  r.setProperty('--collection-font-size',         `${s.collectionFontSize || 15}px`);
-  r.setProperty('--collection-font-family',       ff('collectionFontFamily'));
-  r.setProperty('--collection-font-weight',       fw('collectionBold', '600'));
-  r.setProperty('--collection-font-style',        fi('collectionItalic'));
-  r.setProperty('--collection-text-decoration',   td('collectionUnderline'));
+  r.setProperty('--collection-font-size',         `${sectionSize('collection', 'collectionFontSize', preset.collection)}px`);
+  r.setProperty('--collection-font-family',       ff('collection', 'collectionFontFamily'));
+  r.setProperty('--collection-font-weight',       fw('collection', 'collectionBold', '600'));
+  r.setProperty('--collection-font-style',        fi('collection', 'collectionItalic'));
+  r.setProperty('--collection-text-decoration',   td('collection', 'collectionUnderline'));
 
-  r.setProperty('--title-font-family',            ff('titleFontFamily'));
-  r.setProperty('--title-font-weight',            fw('titleBold', '600'));
-  r.setProperty('--title-font-style',             fi('titleItalic'));
-  r.setProperty('--title-text-decoration',        td('titleUnderline'));
+  r.setProperty('--title-font-family',            ff('title', 'titleFontFamily'));
+  r.setProperty('--title-font-weight',            fw('title', 'titleBold', '600'));
+  r.setProperty('--title-font-style',             fi('title', 'titleItalic'));
+  r.setProperty('--title-text-decoration',        td('title', 'titleUnderline'));
 
-  r.setProperty('--hub-name-font-size',           `${s.hubNameFontSize || 18}px`);
-  r.setProperty('--hub-name-font-family',         ff('hubNameFontFamily'));
-  r.setProperty('--hub-name-font-weight',         fw('hubNameBold'));
-  r.setProperty('--hub-name-font-style',          fi('hubNameItalic'));
-  r.setProperty('--hub-name-text-decoration',     td('hubNameUnderline'));
+  r.setProperty('--hub-name-font-size',           `${sectionSize('hubName', 'hubNameFontSize', preset.hub)}px`);
+  r.setProperty('--hub-name-font-family',         ff('hubName', 'hubNameFontFamily'));
+  r.setProperty('--hub-name-font-weight',         fw('hubName', 'hubNameBold'));
+  r.setProperty('--hub-name-font-style',          fi('hubName', 'hubNameItalic'));
+  r.setProperty('--hub-name-text-decoration',     td('hubName', 'hubNameUnderline'));
 
-  r.setProperty('--board-title-font-family',      ff('boardTitleFontFamily'));
-  r.setProperty('--board-title-font-weight',      fw('boardTitleBold', '600'));
-  r.setProperty('--board-title-font-style',       fi('boardTitleItalic'));
-  r.setProperty('--board-title-text-decoration',  td('boardTitleUnderline'));
+  r.setProperty('--board-title-font-family',      ff('boardTitle', 'boardTitleFontFamily'));
+  r.setProperty('--board-title-font-weight',      fw('boardTitle', 'boardTitleBold', '600'));
+  r.setProperty('--board-title-font-style',       fi('boardTitle', 'boardTitleItalic'));
+  r.setProperty('--board-title-text-decoration',  td('boardTitle', 'boardTitleUnderline'));
 
-  r.setProperty('--board-font-family',            ff('boardFontFamily'));
-  r.setProperty('--board-font-weight',            fw('boardBold'));
-  r.setProperty('--board-font-style',             fi('boardItalic'));
-  r.setProperty('--board-text-decoration',        td('boardUnderline'));
+  r.setProperty('--board-font-family',            ff('board', 'boardFontFamily'));
+  r.setProperty('--board-font-weight',            fw('board', 'boardBold'));
+  r.setProperty('--board-font-style',             fi('board', 'boardItalic'));
+  r.setProperty('--board-text-decoration',        td('board', 'boardUnderline'));
 
-  r.setProperty('--hub-name-text-align',          s.hubNameTextAlign    || 'left');
-  r.setProperty('--board-title-text-align',       s.boardTitleTextAlign || 'left');
-  r.setProperty('--board-text-align',             s.boardTextAlign      || 'left');
-  r.setProperty('--bookmark-text-align',          s.bookmarkTextAlign   || 'left');
-  r.setProperty('--folder-text-align',            s.folderTextAlign     || 'left');
-  r.setProperty('--collection-text-align',        s.collectionTextAlign || 'left');
+  r.setProperty('--hub-name-text-align',          align('hubName', 'hubNameTextAlign'));
+  r.setProperty('--board-title-text-align',       align('boardTitle', 'boardTitleTextAlign'));
+  r.setProperty('--board-text-align',             align('board', 'boardTextAlign'));
+  r.setProperty('--bookmark-text-align',          align('bookmark', 'bookmarkTextAlign'));
+  r.setProperty('--folder-text-align',            align('folder', 'folderTextAlign'));
+  r.setProperty('--collection-text-align',        align('collection', 'collectionTextAlign'));
 
-  r.setProperty('--hub-name-color',               s.hubNameColor    || 'var(--text)');
-  r.setProperty('--board-title-color',            s.boardTitleColor || 'var(--text)');
-  r.setProperty('--board-color',                  s.boardColor      || 'var(--text)');
-  r.setProperty('--bookmark-color',               s.bookmarkColor   || 'var(--text)');
-  r.setProperty('--folder-color',                 s.folderColor     || 'var(--text)');
-  r.setProperty('--collection-color',             s.collectionColor || 'var(--text)');
-  r.setProperty('--title-color',                  s.titleColor      || 'var(--text-muted)');
-  r.setProperty('--title-line-color',             s.titleLineColor  || 'rgba(255,255,255,0.12)');
-  r.setProperty('--title-line-style',             s.titleLineStyle  || 'solid');
+  r.setProperty('--hub-name-color',               sectionColor('hubName', 'hubNameColor'));
+  r.setProperty('--board-title-color',            sectionColor('boardTitle', 'boardTitleColor'));
+  r.setProperty('--board-color',                  sectionColor('board', 'boardColor'));
+  r.setProperty('--bookmark-color',               sectionColor('bookmark', 'bookmarkColor'));
+  r.setProperty('--folder-color',                 sectionColor('folder', 'folderColor'));
+  r.setProperty('--collection-color',             sectionColor('collection', 'collectionColor'));
+  r.setProperty('--title-color',                  sectionColor('title', 'titleColor', globalMutedColor));
+  r.setProperty('--title-line-color',             overrides.title ? (s.titleLineColor || 'rgba(255,255,255,0.12)') : globalColor);
+  r.setProperty('--title-line-style',             overrides.title ? (s.titleLineStyle || 'solid') : 'solid');
 
   const sdSizes = { small: '34px', medium: '44px', large: '56px' };
   r.setProperty('--speed-link-size', sdSizes[s.speedDialIconSize] || '44px');
@@ -175,7 +208,11 @@ function updateInboxBadge() {
   const count = bookmarks + folders;
   const badge = document.getElementById('inboxBadge');
   if (badge) {
-    badge.textContent = count;
+    badge.innerHTML = '';
+    renderCountChipsInto(badge, { bookmarks, folders }, {
+      bookmarkTitle: 'Bookmarks in inbox',
+      folderTitle: 'Folders in inbox'
+    });
     badge.classList.toggle('hidden', count === 0);
   }
 }
@@ -189,8 +226,8 @@ function renderInboxPanel() {
   const { bookmarks, folders } = getBoardInboxCounts(board);
   const bmEl = document.getElementById('inboxPanelBmCount');
   const flEl = document.getElementById('inboxPanelFlCount');
-  if (bmEl) { bmEl.textContent = bookmarks; bmEl.classList.toggle('hidden', bookmarks === 0); }
-  if (flEl) { flEl.textContent = folders; flEl.classList.toggle('hidden', folders === 0); }
+  if (bmEl) { bmEl.textContent = bookmarks; bmEl.className = 'count-chip count-chip--bookmark'; bmEl.classList.toggle('hidden', bookmarks === 0); }
+  if (flEl) { flEl.textContent = folders; flEl.className = 'count-chip count-chip--folder'; flEl.classList.toggle('hidden', folders === 0); }
   updateInboxBadge();
   if (!inbox?.items.length) {
     const empty = document.createElement('div');
@@ -681,21 +718,19 @@ function createImportManagerNavItem(board) {
   el.dataset.type = 'board';
 
   const label = document.createElement('div');
+  label.className = 'nav-board-title';
   label.textContent = board.title;
-  el.appendChild(label);
+  const info = document.createElement('div');
+  info.className = 'nav-board-info';
+  info.appendChild(label);
+  el.appendChild(info);
 
   const { bookmarks, folders } = getImportManagerCounts();
   if (bookmarks > 0 || folders > 0) {
-    const bmBadge = document.createElement('span');
-    bmBadge.className = 'nav-inbox-badge';
-    bmBadge.title = 'Bookmarks';
-    bmBadge.textContent = bookmarks;
-    el.appendChild(bmBadge);
-    const folderBadge = document.createElement('span');
-    folderBadge.className = 'nav-inbox-badge nav-inbox-badge--folder';
-    folderBadge.title = 'Folders';
-    folderBadge.textContent = folders;
-    el.appendChild(folderBadge);
+    const chips = document.createElement('span');
+    chips.className = 'count-chip-row nav-count-chips';
+    renderCountChipsInto(chips, { bookmarks, folders });
+    el.appendChild(chips);
   }
 
   el.addEventListener('click', () => {
@@ -849,16 +884,13 @@ function createNavItem(item, depth = 0, parent = null) {
     }
     const { bookmarks: ibm, folders: ifl } = getBoardInboxCounts(board);
     if (ibm + ifl > 0) {
-      const bmBadge = document.createElement('span');
-      bmBadge.className = 'nav-inbox-badge';
-      bmBadge.title = 'Bookmarks in inbox';
-      bmBadge.textContent = ibm;
-      el.appendChild(bmBadge);
-      const flBadge = document.createElement('span');
-      flBadge.className = 'nav-inbox-badge nav-inbox-badge--folder';
-      flBadge.title = 'Folders in inbox';
-      flBadge.textContent = ifl;
-      el.appendChild(flBadge);
+      const chips = document.createElement('span');
+      chips.className = 'count-chip-row nav-count-chips';
+      renderCountChipsInto(chips, { bookmarks: ibm, folders: ifl }, {
+        bookmarkTitle: 'Bookmarks in inbox',
+        folderTitle: 'Folders in inbox'
+      });
+      el.appendChild(chips);
     }
     if (board?.locked) el.classList.add('board-locked');
     const lockBtn = document.createElement('button');
@@ -949,12 +981,15 @@ function renderBoard() {
   const tabBar = elements.collectionTabBar;
   if (collection) {
     tabBar.classList.remove('hidden');
+    elements.mainPanel.classList.add('has-context-tabs');
     renderCollectionTabBar(collection);
   } else if (folder) {
     tabBar.classList.remove('hidden');
+    elements.mainPanel.classList.add('has-context-tabs');
     renderFolderTabBar(folder);
   } else {
     tabBar.classList.add('hidden');
+    elements.mainPanel.classList.remove('has-context-tabs');
   }
 
   if (!board) {
@@ -1161,8 +1196,19 @@ function renderCollectionTabBar(collection) {
     tab.className = 'collection-tab' + (boardId === state.activeBoardId ? ' active' : '');
     tab.dataset.boardId = boardId;
     const tabLabel = document.createElement('span');
+    tabLabel.className = 'collection-tab-label';
     tabLabel.textContent = board.title || 'Untitled Board';
     tab.appendChild(tabLabel);
+    const counts = getBoardInboxCounts(board);
+    if (counts.bookmarks + counts.folders > 0) {
+      const chips = document.createElement('span');
+      chips.className = 'count-chip-row collection-tab-counts';
+      renderCountChipsInto(chips, counts, {
+        bookmarkTitle: 'Bookmarks in inbox',
+        folderTitle: 'Folders in inbox'
+      });
+      tab.appendChild(chips);
+    }
     tab.addEventListener('click', () => {
       state.activeBoardId = boardId;
       renderAll();
@@ -1243,8 +1289,21 @@ function renderFolderTabBar(folder) {
     tab.dataset.boardId = navItem.boardId || '';
     tab.dataset.navItemId = navItem.id;
     const tabLabel = document.createElement('span');
+    tabLabel.className = 'collection-tab-label';
     tabLabel.textContent = board?.title || navItem.title || 'Untitled Board';
     tab.appendChild(tabLabel);
+    if (board) {
+      const counts = getBoardInboxCounts(board);
+      if (counts.bookmarks + counts.folders > 0) {
+        const chips = document.createElement('span');
+        chips.className = 'count-chip-row collection-tab-counts';
+        renderCountChipsInto(chips, counts, {
+          bookmarkTitle: 'Bookmarks in inbox',
+          folderTitle: 'Folders in inbox'
+        });
+        tab.appendChild(chips);
+      }
+    }
     if (board?.locked) tab.classList.add('tab-locked');
     tab.addEventListener('click', () => {
       if (!navItem.boardId) return;

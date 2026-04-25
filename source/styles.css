@@ -415,12 +415,12 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-muted);
-  padding: 4px 8px;
+  padding: 3px 7px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  min-height: 31px;
+  gap: 3px;
+  min-height: 28px;
   cursor: text;
 }
 .chip-input-wrapper:focus-within {
@@ -435,7 +435,7 @@ button {
   outline: none;
   flex: 1;
   min-width: 80px;
-  padding: 2px;
+  padding: 1px 2px;
 }
 .chip-live {
   display: inline-flex;
@@ -546,20 +546,41 @@ button {
 
 .inbox-badge {
   position: absolute;
-  top: 1px;
-  right: 1px;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.count-chip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
   font-size: 0.6rem;
   font-weight: 700;
-  border-radius: 8px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
+  line-height: 1;
+}
+
+.count-chip--folder {
+  background: var(--text-muted);
+  color: var(--bg);
 }
 
 .nav-item[data-type="board"] {
@@ -622,18 +643,12 @@ button {
 }
 
 .nav-inbox-badge {
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.6rem;
-  font-weight: 700;
-  border-radius: 8px;
-  padding: 1px 5px;
   margin-left: auto;
-  flex-shrink: 0;
 }
 
-.nav-inbox-badge--folder {
-  background: var(--text-muted);
+.nav-count-chips {
+  margin-left: auto;
+  padding-left: 8px;
 }
 
 .nav-import-manager {
@@ -742,6 +757,11 @@ button {
   border-radius: var(--radius);
 }
 
+.main-panel.has-context-tabs .board-header {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .board-title-group {
   flex: 1;
 }
@@ -837,16 +857,19 @@ button {
 .collection-tab-bar {
   display: flex;
   flex-direction: row;
-  align-items: stretch;
+  align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  gap: 2px;
-  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: rgba(var(--panel-r), var(--panel-g), var(--panel-b), var(--container-alpha, 1));
+  gap: 6px;
+  padding: 7px 12px 9px;
   flex-shrink: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  margin-top: -12px;
 }
 
 .collection-tab-bar.hidden {
@@ -856,16 +879,22 @@ button {
 .collection-tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 5px 9px;
   cursor: pointer;
-  border-bottom: 3px solid transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
   white-space: nowrap;
-  font-size: 0.85rem;
+  font-size: var(--board-font-size);
+  font-family: var(--board-font-family);
+  font-weight: var(--board-font-weight);
+  font-style: var(--board-font-style);
+  text-decoration: var(--board-text-decoration);
+  text-align: var(--board-text-align);
   color: var(--text-muted);
   user-select: none;
   flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .collection-tab:hover {
@@ -873,9 +902,20 @@ button {
 }
 
 .collection-tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
+  color: var(--board-color);
+  background: var(--accent-selected);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.collection-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.collection-tab-counts {
+  gap: 4px;
 }
 
 .collection-tab-icon {
@@ -887,16 +927,22 @@ button {
 .collection-tab-add {
   display: flex;
   align-items: center;
-  padding: 8px 10px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   cursor: pointer;
   color: var(--text-muted);
-  opacity: 0.5;
-  transition: opacity 0.15s;
+  background: var(--surface-1);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
   flex-shrink: 0;
 }
 
 .collection-tab-add:hover {
-  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-2);
 }
 
 .collection-tab.tab-locked {
@@ -1357,24 +1403,26 @@ button {
   border-radius: 8px;
   background: var(--panel-muted);
   color: var(--text);
-  padding: 6px 10px;
+  min-height: 28px;
+  padding: 3px 7px;
   font: inherit;
   font-size: 0.82rem;
+  line-height: 1.2;
 }
 
 .tag-readonly-field {
   width: 100%;
+  min-height: 28px;
   min-width: 0;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel-muted);
-  padding: 6px 10px;
+  padding: 3px 7px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  min-height: 31px;
 }
 
 .tag-toggle-row {
@@ -1726,10 +1774,54 @@ button {
   gap: 6px;
 }
 
-.search-input-row {
+.sidebar-action-row {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.style-global-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+}
+
+.style-global-section .settings-section-label,
+.style-global-section .settings-warning {
+  grid-column: 1 / -1;
+}
+
+.style-advanced-section--disabled > :not(.settings-section-label) {
+  opacity: 0.45;
+}
+
+.settings-override-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-override-toggle input {
+  accent-color: var(--accent);
+}
+
+.sidebar-action-btn {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.sidebar-action-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .search-filter-btn {
@@ -3008,6 +3100,14 @@ button {
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
+}
+
+.tag-group-add-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: 1px solid var(--border);
 }
 
 .tag-group-block {

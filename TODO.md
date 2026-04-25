@@ -4,21 +4,10 @@
 
 - Auto-export on a schedule, such as a daily JSON backup written to Downloads.
 
-## Customization
-
-- Simplify Customization. Change Style settings modal:
-    - create a global settings section on top. it needs options for font sizes (small, medium, large - give it sensible presets. Hub Name, Board Names, Collection Names should just be slighly larger.) & font color. 
-    - add a toggle to get font color from theme settings - overrides global font color if enabled.
-    - move all other style settings related options into an "advanced settings" section below global settings. add a toggle to "show advanced settings" in global settings.
-    - add a checkbox to every advanced settings section next to their name, when activated these settings override global settings.
- 
-
 ## Widgets
 
 - Weather widget with current conditions and configurable location.
 - News feed / RSS widget that fetches and displays headlines from a feed URL.
-- Search bar widget for search engines.
-- Search bar widgets for specific sites such as Amazon, eBay, Reddit, etc.
 
 ## Drag and Drop
 

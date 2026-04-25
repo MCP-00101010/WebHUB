@@ -317,6 +317,8 @@ const FONT_OPTIONS = [
   { value: 'Consolas, monospace', label: 'Consolas' },
 ];
 
+const STYLE_SECTIONS = ['hubName', 'boardTitle', 'board', 'bookmark', 'folder', 'collection', 'title'];
+
 function populateFontSelects() {
   ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgCollectionFamily','stgTitleFamily'].forEach(id => {
     const sel = document.getElementById(id);
@@ -326,6 +328,34 @@ function populateFontSelects() {
       opt.style.fontFamily = value || 'inherit';
       sel.appendChild(opt);
     });
+  });
+}
+
+function ensureStyleSettings() {
+  if (!state.settings.styleOverrides) state.settings.styleOverrides = {};
+  STYLE_SECTIONS.forEach(section => {
+    if (state.settings.styleOverrides[section] !== true) state.settings.styleOverrides[section] = false;
+  });
+  if (!state.settings.globalFontScale) state.settings.globalFontScale = 'medium';
+  if (!state.settings.globalFontColor) state.settings.globalFontColor = '#e5e7eb';
+  if (state.settings.globalFontColorFromTheme === undefined) state.settings.globalFontColorFromTheme = true;
+  if (state.settings.showAdvancedStyleSettings === undefined) state.settings.showAdvancedStyleSettings = false;
+}
+
+function updateStyleAdvancedUI() {
+  ensureStyleSettings();
+  document.querySelectorAll('.style-advanced-section').forEach(section => {
+    section.classList.toggle('hidden', !state.settings.showAdvancedStyleSettings);
+    const key = section.dataset.styleSection;
+    const enabled = !!state.settings.styleOverrides[key];
+    section.classList.toggle('style-advanced-section--disabled', !enabled);
+    section.querySelectorAll('input, select, button').forEach(control => {
+      if (control.matches('[data-style-override]')) return;
+      control.disabled = !enabled;
+    });
+  });
+  document.querySelectorAll('[data-style-override]').forEach(input => {
+    input.checked = !!state.settings.styleOverrides[input.dataset.styleOverride];
   });
 }
 
@@ -372,13 +402,21 @@ function showSettingsPanel(tab = 'general') {
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('stgDragHandle'));
   const targetTab = panel.querySelector(`.settings-tab[data-tab="${tab}"]`);
+  const body = panel.querySelector('.settings-body[data-active-tab]');
   if (targetTab) {
     panel.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t === targetTab));
-    const body = panel.querySelector('.settings-body[data-active-tab]');
-    if (body) body.dataset.activeTab = tab;
+  } else {
+    panel.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
   }
+  if (body && panel.querySelector(`[data-tab="${tab}"]`)) body.dataset.activeTab = tab;
   const s = state.settings;
+  ensureStyleSettings();
   document.getElementById('stgHubName').value = state.hubName || '';
+  document.querySelectorAll(`input[name="stgGlobalFontScale"]`).forEach(r => { r.checked = r.value === (s.globalFontScale || 'medium'); });
+  document.getElementById('stgGlobalFontColor').value = s.globalFontColor || '#e5e7eb';
+  document.getElementById('stgGlobalThemeColor').checked = s.globalFontColorFromTheme !== false;
+  document.getElementById('stgGlobalFontColor').disabled = s.globalFontColorFromTheme !== false;
+  document.getElementById('stgShowAdvancedStyle').checked = !!s.showAdvancedStyleSettings;
   document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;
   document.getElementById('stgShowTags').checked = s.showTags;
   document.getElementById('stgWarnOnClose').checked = s.warnOnClose;
@@ -416,6 +454,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
   updateLastExportedLabel();
   updateEssentialsWarning();
+  updateStyleAdvancedUI();
   renderThemePicker();
   renderTagGroups();
   updateAboutBridgeStatus();
@@ -1323,6 +1362,35 @@ function attachSettingsListeners() {
     state.hubName = e.target.value || 'Morpheus WebHub';
     elements.hubNameEl.textContent = state.hubName;
     document.title = state.hubName;
+  });
+
+  document.querySelectorAll('input[name="stgGlobalFontScale"]').forEach(radio => {
+    radio.addEventListener('change', e => {
+      state.settings.globalFontScale = e.target.value;
+      applySettings();
+    });
+  });
+  document.getElementById('stgGlobalFontColor').addEventListener('input', e => {
+    state.settings.globalFontColor = e.target.value;
+    applySettings();
+  });
+  document.getElementById('stgGlobalThemeColor').addEventListener('change', e => {
+    state.settings.globalFontColorFromTheme = e.target.checked;
+    document.getElementById('stgGlobalFontColor').disabled = e.target.checked;
+    applySettings();
+  });
+  document.getElementById('stgShowAdvancedStyle').addEventListener('change', e => {
+    state.settings.showAdvancedStyleSettings = e.target.checked;
+    updateStyleAdvancedUI();
+    saveState();
+  });
+  document.querySelectorAll('[data-style-override]').forEach(input => {
+    input.addEventListener('change', e => {
+      ensureStyleSettings();
+      state.settings.styleOverrides[e.target.dataset.styleOverride] = e.target.checked;
+      updateStyleAdvancedUI();
+      applySettings();
+    });
   });
 
   const numSetting = (id, key, min, max) => {
