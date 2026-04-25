@@ -5,6 +5,36 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.33] — 2026-04-25
+
+### Added
+
+- **Speed dial slot grid** — speed dial is now a fixed-slot grid (default 8, configurable 1–48) instead of a free list; empty slots show as dashed cells and accept drops. Board settings and collection edit modal both expose a Slots input.
+- **Board icon in nav** — board items in the sidebar now show a small grid icon (tinted accent when active), matching the collection icon treatment.
+- **Inbox dot indicators** — collection tabs, folder headers, and nav board items now display a small accent dot when any contained board has inbox items, replacing the previous count chips.
+- **`findCollectionById` helper** — centralized lookup via `findNavItemPath` so nested collections are found correctly everywhere.
+- **Slot-based speed dial helpers** — `normalizeSpeedDialSlots`, `getSpeedDialSlotCount`, `firstEmptySpeedDialSlot`, `findSpeedDialSlot`, `setSpeedDialSlot`, `removeSpeedDialItemById` added to state.js.
+
+### Changed
+
+- **Board title display** — when a collection is active the main title bar now shows only the collection title; folder context shows only the board title.
+- **Delete collection** — now deletes contained boards outright (with trash restore support) instead of scattering them back to the nav.
+- **Speed dial drag image** — `applyDragImage` now preserves the source element's exact pixel dimensions and fixes img sizing inside the clone.
+- **Essentials slot drop** — filled essential slots no longer accept drops.
+- **Import manager board** — inbox button is hidden (not just disabled) when the import manager board is active; clicking the inbox button while on the import manager is a no-op.
+
+### Fixed
+
+- **Delete board from collection/folder** — now pushes the board to trash with restore support (`collection-board` / `folder-board` areas).
+- **Restore collection from trash** — now re-adds all contained boards to state, not just the nav item.
+- **Null slot guards** — null entries in `speedDial` arrays no longer crash search, tag merge, `findDuplicateUrl`, or migration loops.
+- **`addSpeedDialBookmark`** — uses `contextTarget.collectionId` when set, and places the new item in the correct slot.
+- **Duplicate speed dial item** — uses `firstEmptySpeedDialSlot` instead of `splice`, so it respects the slot grid.
+- **Collection speed dial edit** — editing a bookmark in a collection speed dial now correctly looks up the item from the collection, not the active board.
+- **Edit essential bookmark** — `setEssential` now accepts a `replace` flag so editing an existing slot works correctly.
+
+---
+
 ## [0.11.32] — 2026-04-25
 
 ### Fixed

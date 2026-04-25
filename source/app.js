@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.32';
+const APP_VERSION = '0.11.33';
 
 let activeModal = null;
 let contextTarget = null;
@@ -169,6 +169,8 @@ function formatTimeSince(ts) {
 function getTrashItemLabel(entry) {
   const a = entry.source?.area;
   if (a === 'nav-board') return 'Board';
+  if (a === 'collection-board') return 'Board';
+  if (a === 'folder-board') return 'Board';
   if (a === 'nav-item') {
     const t = entry.item?.type;
     return t === 'folder' ? 'Nav folder' : t === 'title' ? 'Nav title' : 'Nav item';
@@ -196,7 +198,7 @@ function renderTrashPanel() {
   clearBtn.disabled = false;
   list.innerHTML = '';
   for (const entry of recentlyDeleted) {
-    const name = entry.item?.title || entry.item?.navItem?.title || '(untitled)';
+    const name = entry.item?.title || entry.item?.collection?.title || entry.item?.navItem?.title || entry.item?.board?.title || '(untitled)';
     const div = document.createElement('div');
     div.className = 'trash-item';
     div.innerHTML = `
@@ -360,6 +362,7 @@ function attachEventListeners() {
     }
   });
   elements.modalForm.addEventListener('submit', handleModalSubmit);
+  document.getElementById('modalSpeedDialSlots')?.addEventListener('input', handleModalSpeedDialSlotsInput);
   elements.modalInput2.addEventListener('input', () => {
     if (activeModal !== 'addBookmark') return;
     const url = elements.modalInput2.value.trim();

@@ -193,6 +193,11 @@ function showModal(type, options = {}) {
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   document.getElementById('modalSharedTagsRow').classList.toggle('hidden', !options.showSharedTags);
+  const speedDialSlotsRow = document.getElementById('modalSpeedDialSlotsRow');
+  if (speedDialSlotsRow) {
+    speedDialSlotsRow.classList.toggle('hidden', !options.showSpeedDialSlots);
+    document.getElementById('modalSpeedDialSlots').value = options.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT;
+  }
   const sharedTagsOptsEl = document.getElementById('modalSharedTagsOptions');
   if (sharedTagsOptsEl) {
     sharedTagsOptsEl.classList.toggle('hidden', !options.showSharedTagsOptions);
@@ -224,6 +229,32 @@ function showModal(type, options = {}) {
   else if (options.showSelect) elements.modalSelect.focus();
 }
 
+function applyModalCollectionSpeedDialSlots() {
+  if (activeModal !== 'editCollection') return null;
+  const slotsInput = document.getElementById('modalSpeedDialSlots');
+  const slotsRow = document.getElementById('modalSpeedDialSlotsRow');
+  if (!slotsInput || slotsRow?.classList.contains('hidden')) return null;
+  const coll = contextTarget?.collectionId
+    ? findCollectionById(contextTarget.collectionId)
+    : findCollectionById(state.activeCollectionId);
+  if (!coll) return null;
+  normalizeSpeedDialSlots(coll);
+  const requested = Math.max(1, Math.min(48, parseInt(slotsInput.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+  const lastFilled = coll.speedDial.reduce((idx, item, i) => item ? i : idx, -1);
+  coll.speedDialSlotCount = Math.max(requested, lastFilled + 1, 1);
+  slotsInput.value = coll.speedDialSlotCount;
+  return coll;
+}
+
+function handleModalSpeedDialSlotsInput() {
+  const coll = applyModalCollectionSpeedDialSlots();
+  if (!coll) return;
+  if (state.activeCollectionId === coll.id || findBoardCollection(state.activeBoardId)?.id === coll.id) {
+    renderBoard();
+  }
+  saveState();
+}
+
 function hideModal() {
   activeModal = null;
   document.getElementById('modalCard').classList.add('hidden');
@@ -232,6 +263,7 @@ function hideModal() {
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
   document.getElementById('modalSharedTagsOptions')?.classList.add('hidden');
+  document.getElementById('modalSpeedDialSlotsRow')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
@@ -253,7 +285,7 @@ function handleModalSubmit(event) {
   switch (activeModal) {
     case 'addBookmark': {
       const fc = contextTarget?.faviconCache || '';
-      if (area === 'speed-dial' || area === 'speed-dial-item') {
+      if (area === 'speed-dial' || area === 'speed-dial-item' || area === 'collection-speed-dial') {
         addSpeedDialBookmark(value1, value2, tags, fc);
       } else if (area === 'essential') {
         if (!setEssential(contextTarget.slot, value1, value2, tags, fc)) return;
@@ -271,10 +303,15 @@ function handleModalSubmit(event) {
       if (area === 'speed-dial-item') {
         if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
         const board = getActiveBoard();
-        const sdItem = board.speedDial.find(i => i.id === contextTarget?.itemId);
+        const sdItem = board.speedDial.find(i => i?.id === contextTarget?.itemId);
+        if (sdItem) { if (normalizeUrl(value2) !== sdItem.url) sdItem.faviconCache = ''; sdItem.title = value1; sdItem.url = normalizeUrl(value2); sdItem.tags = tags; }
+      } else if (area === 'collection-speed-dial') {
+        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
+        const coll = findCollectionById(contextTarget.collectionId);
+        const sdItem = coll?.speedDial.find(i => i?.id === contextTarget?.itemId);
         if (sdItem) { if (normalizeUrl(value2) !== sdItem.url) sdItem.faviconCache = ''; sdItem.title = value1; sdItem.url = normalizeUrl(value2); sdItem.tags = tags; }
       } else if (area === 'essential') {
-        if (!setEssential(contextTarget.slot, value1, value2, tags)) return;
+        if (!setEssential(contextTarget.slot, value1, value2, tags, '', true)) return;
         hideModal(); renderEssentials(); saveState(); return;
       } else {
         editBookmarkContext(value1, value2, tags, contextTarget);
@@ -297,16 +334,17 @@ function handleModalSubmit(event) {
       renameContextItem(value1, contextTarget);
       break;
     case 'renameCollection': {
-      const coll = state.navItems.find(i => i.id === state.activeCollectionId);
+      const coll = findCollectionById(state.activeCollectionId);
       if (coll && value1.trim()) coll.title = value1.trim();
       break;
     }
     case 'editCollection': {
       const coll = contextTarget?.collectionId
-        ? state.navItems.find(i => i.id === contextTarget.collectionId)
-        : state.navItems.find(i => i.id === state.activeCollectionId);
+        ? findCollectionById(contextTarget.collectionId)
+        : findCollectionById(state.activeCollectionId);
       if (!coll) break;
       if (value1.trim()) coll.title = value1.trim();
+      applyModalCollectionSpeedDialSlots();
       coll.tags = tags;
       coll.sharedTags = sharedTagsFromModal;
       const sharedTagsOptsEl2 = document.getElementById('modalSharedTagsOptions');
@@ -325,11 +363,11 @@ function handleModalSubmit(event) {
       if (area === 'speed-dial-item') {
         capturedItem.type = 'bookmark';
         const board = getActiveBoard();
-        board.speedDial = board.speedDial.filter(i => i.id !== contextTarget.itemId);
+        removeSpeedDialItemById(board, contextTarget.itemId);
       } else if (area === 'collection-speed-dial') {
         capturedItem.type = 'bookmark';
-        const coll = state.navItems.find(i => i.id === contextTarget.collectionId);
-        if (coll) coll.speedDial = (coll.speedDial || []).filter(i => i.id !== contextTarget.itemId);
+        const coll = findCollectionById(contextTarget.collectionId);
+        if (coll) removeSpeedDialItemById(coll, contextTarget.itemId);
       } else if (area === 'essential') {
         capturedItem.type = 'bookmark';
         removeEssential(contextTarget.slot);

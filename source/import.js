@@ -31,6 +31,7 @@ function hideInboxPanel() {
 
 function attachInboxListeners() {
   document.getElementById('inboxBtn').addEventListener('click', () => {
+    if (getActiveBoard()?.isImportManager) return;
     if (inboxPanelOpen) hideInboxPanel(); else showInboxPanel();
   });
   document.getElementById('inboxPanelClose').addEventListener('click', hideInboxPanel);

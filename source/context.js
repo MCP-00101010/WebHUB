@@ -189,7 +189,8 @@ function handleContextMenuAction(action) {
       saveState();
       showModal('editCollection', {
         title: 'New Collection', placeholder1: 'Collection Name', value1: '',
-        showTags: true, showSharedTags: true, showSharedTagsOptions: true
+        showTags: true, showSharedTags: true, showSharedTagsOptions: true,
+        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(findCollectionById(state.activeCollectionId))
       });
       break;
     case 'editCollection': {
@@ -199,6 +200,7 @@ function handleContextMenuAction(action) {
       showModal('editCollection', {
         title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
         showTags: true, showSharedTags: true, showSharedTagsOptions: true,
+        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(coll),
         inheritTags: coll.inheritTags !== false,
         autoRemoveTags: coll.autoRemoveTags === true,
         value3: (coll.tags || []).join(' '),
@@ -207,7 +209,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addBoardToCollection': {
-      const coll = contextTarget.item || state.navItems.find(i => i.id === contextTarget.collectionId);
+      const coll = contextTarget.item || findCollectionById(contextTarget.collectionId);
       if (!coll) break;
       pushUndoSnapshot();
       createBoardInCollection(coll, 'New Board');
@@ -221,19 +223,19 @@ function handleContextMenuAction(action) {
       if (!coll) break;
       const boardCount = (coll.boardIds || []).length;
       const msg = boardCount
-        ? `Delete collection "${coll.title}"? Its ${boardCount} board${boardCount > 1 ? 's' : ''} will be moved back to the nav.`
+        ? `Delete collection "${coll.title}" and its ${boardCount} board${boardCount > 1 ? 's' : ''}?`
         : `Delete collection "${coll.title}"?`;
       showConfirmDialog(msg, () => {
         pushUndoSnapshot();
-        pushToTrash(cloneData(coll), { area: 'collection' });
-        for (const boardId of (coll.boardIds || [])) {
-          const board = state.boards.find(b => b.id === boardId);
-          if (board) state.navItems.push({ id: `nav-${boardId}`, type: 'board', title: board.title, boardId });
-        }
+        const boardIds = new Set(coll.boardIds || []);
+        const boards = state.boards.filter(b => boardIds.has(b.id)).map(b => cloneData(b));
+        pushToTrash({ collection: cloneData(coll), boards }, { area: 'collection' });
         removeNavItemById(coll.id);
-        if (state.activeCollectionId === coll.id) {
+        state.boards = state.boards.filter(b => !boardIds.has(b.id));
+        if (state.activeCollectionId === coll.id || boardIds.has(state.activeBoardId)) {
+          const next = findNextNavBoard(state.navItems);
           state.activeCollectionId = null;
-          state.activeBoardId = coll.boardIds[0] || state.activeBoardId;
+          state.activeBoardId = next ? next.boardId : null;
         }
         renderAll(); saveState(); updateTrashBadge();
       }, 'Delete');
@@ -250,7 +252,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'removeFromCollection': {
-      const coll = state.navItems.find(i => i.id === contextTarget.collectionId);
+      const coll = findCollectionById(contextTarget.collectionId);
       if (!coll) break;
       pushUndoSnapshot();
       coll.boardIds = (coll.boardIds || []).filter(id => id !== contextTarget.boardId);
@@ -270,14 +272,17 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'deleteBoardFromCollection': {
-      const coll = state.navItems.find(i => i.id === contextTarget.collectionId);
+      const coll = findCollectionById(contextTarget.collectionId);
       const board = state.boards.find(b => b.id === contextTarget.boardId);
       if (!coll || !board) break;
-      confirmDelete('confirmDeleteBoard', `Delete board "${board.title}"? This cannot be undone.`, () => {
+      const boardId = contextTarget.boardId;
+      const collectionId = contextTarget.collectionId;
+      confirmDelete('confirmDeleteBoard', `Delete board "${board.title}" and all its content?`, () => {
         pushUndoSnapshot();
-        coll.boardIds = (coll.boardIds || []).filter(id => id !== contextTarget.boardId);
-        state.boards = state.boards.filter(b => b.id !== contextTarget.boardId);
-        if (state.activeBoardId === contextTarget.boardId) {
+        pushToTrash({ board: cloneData(board) }, { area: 'collection-board', collectionId });
+        coll.boardIds = (coll.boardIds || []).filter(id => id !== boardId);
+        state.boards = state.boards.filter(b => b.id !== boardId);
+        if (state.activeBoardId === boardId) {
           state.activeBoardId = coll.boardIds[0] || null;
           if (!coll.boardIds.length) state.activeCollectionId = null;
         }
@@ -309,11 +314,16 @@ function handleContextMenuAction(action) {
       const folderItem2 = _findNavItem(contextTarget.folderId);
       const board2 = state.boards.find(b => b.id === contextTarget.boardId);
       if (!folderItem2 || !board2) break;
-      confirmDelete('confirmDeleteBoard', `Delete board "${board2.title}"? This cannot be undone.`, () => {
+      const navItemId = contextTarget.navItemId;
+      const boardId = contextTarget.boardId;
+      const folderId = contextTarget.folderId;
+      const navItem = (folderItem2.children || []).find(c => c.id === navItemId);
+      confirmDelete('confirmDeleteBoard', `Delete board "${board2.title}" and all its content?`, () => {
         pushUndoSnapshot();
-        folderItem2.children = (folderItem2.children || []).filter(c => c.id !== contextTarget.navItemId);
-        state.boards = state.boards.filter(b => b.id !== contextTarget.boardId);
-        if (state.activeBoardId === contextTarget.boardId) {
+        pushToTrash({ navItem: navItem ? cloneData(navItem) : null, board: cloneData(board2) }, { area: 'folder-board', folderId });
+        folderItem2.children = (folderItem2.children || []).filter(c => c.id !== navItemId);
+        state.boards = state.boards.filter(b => b.id !== boardId);
+        if (state.activeBoardId === boardId) {
           const sibling = (folderItem2.children || []).find(c => c.type === 'board' && c.boardId);
           state.activeBoardId = sibling?.boardId || null;
         }
@@ -333,12 +343,12 @@ function handleContextMenuAction(action) {
       showModal('editBookmark', { item: contextTarget.item, area: 'collection-speed-dial', collectionId: contextTarget.collectionId });
       break;
     case 'duplicateCollectionSpeedDial': {
-      const srcColl = state.navItems.find(i => i.id === contextTarget.collectionId);
+      const srcColl = findCollectionById(contextTarget.collectionId);
       if (srcColl) {
         pushUndoSnapshot();
         const dup = { ...cloneData(contextTarget.item), id: `bm-${Date.now()}` };
-        const idx = srcColl.speedDial.findIndex(i => i.id === contextTarget.itemId);
-        srcColl.speedDial.splice(idx + 1, 0, dup);
+        const slot = firstEmptySpeedDialSlot(srcColl);
+        if (slot === -1 || !setSpeedDialSlot(srcColl, slot, dup)) alert('No empty speed dial slot available.');
         renderAll(); saveState();
       }
       break;
@@ -349,10 +359,10 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'deleteCollectionSpeedDial': {
-      const srcColl = state.navItems.find(i => i.id === contextTarget.collectionId);
+      const srcColl = findCollectionById(contextTarget.collectionId);
       if (srcColl) {
         pushUndoSnapshot();
-        srcColl.speedDial = srcColl.speedDial.filter(i => i.id !== contextTarget.itemId);
+        removeSpeedDialItemById(srcColl, contextTarget.itemId);
         renderAll(); saveState();
       }
       break;
@@ -396,9 +406,9 @@ function handleContextMenuAction(action) {
       const capturedSdBoardId = getActiveBoard()?.id;
       confirmDelete('confirmDeleteBookmark', `Delete "${sdItem?.title}"?`, () => {
         pushUndoSnapshot();
-        pushToTrash(capturedSdItem, { area: 'speed-dial', boardId: capturedSdBoardId });
+        pushToTrash(capturedSdItem, { area: 'speed-dial', boardId: capturedSdBoardId, slot: contextTarget.slot });
         const board = getActiveBoard();
-        board.speedDial = board.speedDial.filter(i => i.id !== sdId);
+        removeSpeedDialItemById(board, sdId);
         renderAll();
         saveState();
         updateTrashBadge();
@@ -453,7 +463,7 @@ function handleContextMenuAction(action) {
       const area = contextTarget.area;
       if (area === 'speed-dial-item') {
         const board = getActiveBoard();
-        const sdItem = board?.speedDial.find(i => i.id === contextTarget.itemId);
+        const sdItem = board?.speedDial.find(i => i?.id === contextTarget.itemId);
         if (sdItem) { sdItem.faviconCache = ''; renderAll(); saveState(); }
       } else if (area === 'essential') {
         const essItem = state.essentials[contextTarget.slot];
@@ -468,11 +478,12 @@ function handleContextMenuAction(action) {
       const area = contextTarget.area;
       if (area === 'speed-dial-item') {
         const board = getActiveBoard();
-        const sdIdx = board?.speedDial.findIndex(i => i.id === contextTarget.itemId);
+        const sdIdx = findSpeedDialSlot(board, contextTarget.itemId);
         if (sdIdx !== -1) {
           pushUndoSnapshot();
           const copy = { ...board.speedDial[sdIdx], id: `bm-${Date.now()}`, title: board.speedDial[sdIdx].title + ' (copy)', faviconCache: '' };
-          board.speedDial.splice(sdIdx + 1, 0, copy);
+          const slot = firstEmptySpeedDialSlot(board);
+          if (slot === -1 || !setSpeedDialSlot(board, slot, copy)) alert('No empty speed dial slot available.');
           renderAll(); saveState();
         }
       } else if (area === 'essential') {
@@ -733,8 +744,8 @@ function handleFolderTabContextMenu(event, navItem, folder) {
   showContextMenu(event.clientX, event.clientY, options);
 }
 
-function handleCollectionSpeedDialContextMenu(event, item, collection) {
-  contextTarget = { area: 'collection-speed-dial', itemId: item.id, collectionId: collection.id, item };
+function handleCollectionSpeedDialContextMenu(event, item, collection, slot = findSpeedDialSlot(collection, item.id)) {
+  contextTarget = { area: 'collection-speed-dial', itemId: item.id, collectionId: collection.id, slot, item };
   const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
   showContextMenu(event.clientX, event.clientY, [
     { label: 'Edit bookmark', action: 'editCollectionSpeedDial' },
@@ -759,9 +770,9 @@ function handleEssentialContextMenu(event, slot, item) {
   showContextMenu(event.clientX, event.clientY, options);
 }
 
-function handleSpeedDialContextMenu(event, item) {
+function handleSpeedDialContextMenu(event, item, slot = findSpeedDialSlot(getActiveBoard(), item.id)) {
   if (getActiveBoard()?.locked) return;
-  contextTarget = { area: 'speed-dial-item', itemId: item.id, item };
+  contextTarget = { area: 'speed-dial-item', itemId: item.id, slot, item };
   const cab = getActiveBoard();
   const boards = state.boards.filter(b => !b.isImportManager && !b.locked);
   const canMove = boards.length > 0;

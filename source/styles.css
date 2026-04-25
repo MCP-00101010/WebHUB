@@ -220,6 +220,12 @@ button {
   object-fit: contain;
 }
 
+.essential-slot-preview .external-slot-preview-icon {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
 .essential-slot a {
   width: 100%;
   height: 100%;
@@ -596,10 +602,32 @@ button {
   gap: 4px;
 }
 
+.nav-item-inbox-indicator {
+  align-self: flex-start;
+}
+
+.nav-folder-inbox-indicator,
+.collection-tab .collection-tab-inbox-indicator {
+  transform: translateY(-2px);
+}
+
+.collection-tab .collection-tab-inbox-indicator {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.nav-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .nav-board-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .nav-board-tags {
@@ -624,7 +652,8 @@ button {
   color: var(--collection-color);
 }
 
-.nav-collection-icon {
+.nav-collection-icon,
+.nav-board-icon {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
@@ -633,12 +662,17 @@ button {
   align-items: center;
 }
 
-.nav-collection-icon svg {
+.nav-collection-icon svg,
+.nav-board-icon svg {
   width: 14px;
   height: 14px;
 }
 
 .nav-item.nav-collection-item.is-active .nav-collection-icon {
+  color: var(--accent);
+}
+
+.nav-item[data-type="board"].active .nav-board-icon {
   color: var(--accent);
 }
 
@@ -891,14 +925,14 @@ button {
   font-style: var(--board-font-style);
   text-decoration: var(--board-text-decoration);
   text-align: var(--board-text-align);
-  color: var(--text-muted);
+  color: var(--board-color);
   user-select: none;
   flex-shrink: 0;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .collection-tab:hover {
-  color: var(--text);
+  color: var(--board-color);
 }
 
 .collection-tab.active {
@@ -914,8 +948,13 @@ button {
   max-width: 220px;
 }
 
-.collection-tab-counts {
-  gap: 4px;
+.collection-tab-inbox-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  flex-shrink: 0;
 }
 
 .collection-tab-icon {
@@ -979,19 +1018,39 @@ button {
   border-radius: var(--radius);
 }
 
+.speed-slot {
+  width: var(--speed-link-size, 44px);
+  height: var(--speed-link-size, 44px);
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  position: relative;
+}
+
+.speed-slot.empty {
+  border-style: dashed;
+  border-color: var(--surface-2);
+}
+
+.speed-slot.filled:hover {
+  background: var(--surface-2);
+}
+
 .speed-dial-add-btn {
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .speed-link {
-  width: var(--speed-link-size, 44px);
-  height: var(--speed-link-size, 44px);
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
-  background: var(--surface-1);
   border-radius: 12px;
-  border: 1px solid var(--border);
+  background: transparent;
+  border: none;
   color: var(--text);
   text-decoration: none;
   padding: 6px;

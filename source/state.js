@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'morpheus-webhub-state';
 const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_SPEED_DIAL_SLOT_COUNT = 8;
 
 let isDirty = false;
 
@@ -175,6 +176,13 @@ function migrateItems(items) {
     }
     if (item.type === 'collection') {
       if (!item.speedDial) item.speedDial = [];
+      normalizeSpeedDialSlots(item);
+      for (const sd of item.speedDial) {
+        if (!sd) continue;
+        if (!sd.type) sd.type = 'bookmark';
+        if (!sd.tags) sd.tags = [];
+        if (sd.faviconCache === undefined) sd.faviconCache = '';
+      }
       if (!item.tags) item.tags = [];
       if (!item.sharedTags) item.sharedTags = [];
       if (!item.boardIds) item.boardIds = [];
@@ -240,6 +248,7 @@ function migrateToIdTags(parsed) {
     if (Array.isArray(item.tags))       item.tags       = item.tags.map(t => getOrCreate(t));
     if (Array.isArray(item.sharedTags)) item.sharedTags = item.sharedTags.map(t => getOrCreate(t));
     if (item.children) item.children.forEach(migrateItemTags);
+    if (item.type === 'collection') (item.speedDial || []).forEach(migrateItemTags);
   }
 
   for (const board of (parsed.boards || [])) {
@@ -273,6 +282,7 @@ function loadState() {
       if (board.backgroundImage === undefined) board.backgroundImage = '';
       if (board.containerOpacity === undefined) board.containerOpacity = 100;
       if (board.showSpeedDial === undefined) board.showSpeedDial = true;
+      normalizeSpeedDialSlots(board);
       if (!board.sharedTags) board.sharedTags = [];
       if (board.labels && !board.tags) board.tags = board.labels;
       delete board.labels;
@@ -282,6 +292,7 @@ function loadState() {
         board.columns.push({ id: `${board.id}-inbox`, title: 'Inbox', isInbox: true, items: [] });
       }
       for (const item of (board.speedDial || [])) {
+        if (!item) continue;
         if (!item.type) item.type = 'bookmark';
         if (!item.tags) item.tags = [];
         if (item.faviconCache === undefined) item.faviconCache = '';
@@ -373,6 +384,11 @@ function findNavItemPath(itemId, list = state.navItems, parent = null) {
     }
   }
   return null;
+}
+
+function findCollectionById(collectionId) {
+  const path = findNavItemPath(collectionId);
+  return path?.item?.type === 'collection' ? path.item : null;
 }
 
 function findNavBoardItem(boardId, list = state.navItems) {
@@ -541,6 +557,7 @@ function createBoardRecord(title, options = {}) {
     sharedTags: [],
     tags: [],
     inheritTags: true,
+    speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
     speedDial: [],
     columns,
     ...(options.extra || {})
@@ -569,11 +586,17 @@ function addBookmark(title, url, columnId, tags = [], faviconCache = '') {
 
 function addSpeedDialBookmark(title, url, tags = [], faviconCache = '') {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
-  const collection = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+  const collection = contextTarget?.collectionId
+    ? findCollectionById(contextTarget.collectionId)
+    : state.activeCollectionId
+      ? findCollectionById(state.activeCollectionId)
+      : null;
   const target = collection || getActiveBoard();
   if (!target) return;
-  if (!target.speedDial) target.speedDial = [];
-  target.speedDial.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache });
+  const slot = Number.isInteger(contextTarget?.slot) ? contextTarget.slot : firstEmptySpeedDialSlot(target);
+  if (!setSpeedDialSlot(target, slot, { id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache })) {
+    alert('That speed dial slot is already occupied.');
+  }
 }
 
 function addBookmarkItem(type, title, columnId, options = {}) {
@@ -668,7 +691,7 @@ function findBoardFolder(boardId) {
 
 function createCollection(title) {
   const id = `col-${Date.now()}`;
-  const navItem = { id, type: 'collection', title, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
+  const navItem = { id, type: 'collection', title, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
   state.navItems.push(navItem);
   state.activeCollectionId = id;
   return navItem;
@@ -697,8 +720,50 @@ function trimEssentialsTail() {
   while (state.essentials.length > 0 && !state.essentials[state.essentials.length - 1]) state.essentials.pop();
 }
 
-function setEssential(slot, title, url, tags = [], faviconCache = '') {
+function normalizeSpeedDialSlots(target) {
+  if (!target) return;
+  if (!Array.isArray(target.speedDial)) target.speedDial = [];
+  const currentLength = target.speedDial.length;
+  const fallbackCount = Math.max(DEFAULT_SPEED_DIAL_SLOT_COUNT, currentLength);
+  target.speedDialSlotCount = Math.max(1, Math.min(48, parseInt(target.speedDialSlotCount, 10) || fallbackCount));
+  if (target.speedDialSlotCount < currentLength) target.speedDialSlotCount = currentLength;
+}
+
+function getSpeedDialSlotCount(target) {
+  normalizeSpeedDialSlots(target);
+  return target?.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT;
+}
+
+function firstEmptySpeedDialSlot(target) {
+  const count = getSpeedDialSlotCount(target);
+  for (let slot = 0; slot < count; slot++) if (!target.speedDial[slot]) return slot;
+  return -1;
+}
+
+function findSpeedDialSlot(target, itemId) {
+  normalizeSpeedDialSlots(target);
+  return (target?.speedDial || []).findIndex(item => item?.id === itemId);
+}
+
+function setSpeedDialSlot(target, slot, item) {
+  normalizeSpeedDialSlots(target);
+  if (!target || slot < 0 || slot >= getSpeedDialSlotCount(target) || target.speedDial[slot]) return false;
+  while (target.speedDial.length <= slot) target.speedDial.push(null);
+  target.speedDial[slot] = item;
+  return true;
+}
+
+function removeSpeedDialItemById(target, itemId) {
+  const slot = findSpeedDialSlot(target, itemId);
+  if (slot === -1) return null;
+  const item = target.speedDial[slot];
+  target.speedDial[slot] = null;
+  return item;
+}
+
+function setEssential(slot, title, url, tags = [], faviconCache = '', replace = false) {
   if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
+  if (state.essentials[slot] && !replace) { alert('That essentials slot is already occupied.'); return false; }
   const item = { id: `id-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache };
   while (state.essentials.length < slot) state.essentials.push(null);
   state.essentials[slot] = item;
@@ -756,6 +821,7 @@ function findDuplicateUrl(url) {
   }
   for (const board of state.boards) {
     for (const sd of board.speedDial) {
+      if (!sd) continue;
       if (sd.url === normalized) return { item: sd, location: `${board.title} (Speed Dial)` };
     }
     for (const col of board.columns) {
@@ -881,7 +947,13 @@ function restoreFromTrash(trashId) {
     }
   } else if (source.area === 'speed-dial') {
     const board = state.boards.find(b => b.id === source.boardId) || state.boards.find(b => b.id === state.activeBoardId);
-    if (board) board.speedDial.push(cloneData(item));
+    if (board) {
+      const slot = source.slot ?? firstEmptySpeedDialSlot(board);
+      if (!setSpeedDialSlot(board, slot, cloneData(item))) {
+        const fallback = firstEmptySpeedDialSlot(board);
+        if (fallback !== -1) setSpeedDialSlot(board, fallback, cloneData(item));
+      }
+    }
   } else if (source.area === 'nav-board') {
     if (item.board) state.boards.push(cloneData(item.board));
     const navItem = cloneData(item.navItem);
@@ -890,6 +962,31 @@ function restoreFromTrash(trashId) {
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(navItem); return true; }
     }
     state.navItems.push(navItem);
+  } else if (source.area === 'collection-board') {
+    if (item.board && !state.boards.some(b => b.id === item.board.id)) state.boards.push(cloneData(item.board));
+    const coll = findCollectionById(source.collectionId);
+    if (coll && item.board) {
+      coll.boardIds = coll.boardIds || [];
+      if (!coll.boardIds.includes(item.board.id)) coll.boardIds.push(item.board.id);
+    } else if (item.board) {
+      state.navItems.push({ id: `nav-${item.board.id}`, type: 'board', title: item.board.title, boardId: item.board.id });
+    }
+  } else if (source.area === 'folder-board') {
+    if (item.board && !state.boards.some(b => b.id === item.board.id)) state.boards.push(cloneData(item.board));
+    const navItem = item.navItem
+      ? cloneData(item.navItem)
+      : item.board
+        ? { id: `nav-${item.board.id}`, type: 'board', title: item.board.title, boardId: item.board.id }
+        : null;
+    if (navItem) {
+      const pp = findNavItemPath(source.folderId);
+      if (pp?.item?.type === 'folder') {
+        pp.item.children = pp.item.children || [];
+        if (!pp.item.children.some(c => c.id === navItem.id || c.boardId === navItem.boardId)) pp.item.children.push(navItem);
+      } else if (!state.navItems.some(ni => ni.id === navItem.id || ni.boardId === navItem.boardId)) {
+        state.navItems.push(navItem);
+      }
+    }
   } else if (source.area === 'nav-item') {
     const restored = cloneData(item);
     if (source.parentId) {
@@ -904,7 +1001,10 @@ function restoreFromTrash(trashId) {
       if (col) col.items.push(cloneData(item));
     }
   } else if (source.area === 'collection') {
-    const restored = cloneData(item);
+    const restored = cloneData(item.collection || item);
+    for (const board of (item.boards || [])) {
+      if (!state.boards.some(b => b.id === board.id)) state.boards.push(cloneData(board));
+    }
     state.navItems = state.navItems.filter(ni => !(ni.type === 'board' && (restored.boardIds || []).includes(ni.boardId)));
     state.navItems.push(restored);
   }
@@ -920,7 +1020,7 @@ function cleanTrashAfterRestore() {
   walkNav(state.navItems);
   const prev = recentlyDeleted.length;
   recentlyDeleted = recentlyDeleted.filter(e => {
-    const id = e.item?.board?.id ?? e.item?.id;
+    const id = e.item?.board?.id ?? e.item?.collection?.id ?? e.item?.id;
     return !liveIds.has(id);
   });
   if (recentlyDeleted.length !== prev) saveTrash();

@@ -67,6 +67,13 @@
         <rect x="13" y="13" width="8" height="8" rx="1.5"/>
       </symbol>
 
+      <!-- 3-tile grid (Board) -->
+      <symbol id="icon-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3"  y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="13" y="3"  width="8" height="8" rx="1.5"/>
+        <rect x="3"  y="13" width="8" height="8" rx="1.5"/>
+      </symbol>
+
       <!-- Gear / cog (Feather Icons style) -->
       <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
@@ -197,7 +204,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.32</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.33</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -281,6 +288,10 @@
                   <span class="toggle-track"></span>
                 </label>
               </div>
+            </div>
+            <div class="tag-field-row hidden" id="modalSpeedDialSlotsRow">
+              <label for="modalSpeedDialSlots">Slots</label>
+              <input id="modalSpeedDialSlots" type="number" min="1" max="48" class="settings-text-input" />
             </div>
             <div class="tag-field-row hidden" id="modalInheritedTagsRow">
               <label>Inherited</label>
@@ -376,6 +387,10 @@
               <input id="bstgShowSpeedDial" type="checkbox" checked />
               <span class="toggle-track"></span>
             </label>
+          </div>
+          <div class="settings-row">
+            <span>Slots</span>
+            <input id="bstgSpeedDialSlots" type="number" min="1" max="48" class="settings-text-input" />
           </div>
           <p id="bstgCollectionSpeedDialNote" class="settings-warning hidden">
             This board's speed dial is hidden while the board belongs to a collection.
@@ -864,7 +879,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.32</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.33</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>

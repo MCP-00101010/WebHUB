@@ -24,10 +24,12 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
+  document.getElementById('bstgSpeedDialSlots').value = getSpeedDialSlotCount(board);
   const inCollection = !!findBoardCollection(board.id);
   const sdNote = document.getElementById('bstgCollectionSpeedDialNote');
   if (sdNote) sdNote.classList.toggle('hidden', !inCollection);
   document.getElementById('bstgShowSpeedDial').disabled = inCollection;
+  document.getElementById('bstgSpeedDialSlots').disabled = inCollection;
   document.getElementById('bstgTags').value = (board.tags || []).join(' ');
   document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
   document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
@@ -51,7 +53,7 @@ function hideBoardSettingsPanel() {
     const navItem = _findNavBoardItem(state.navItems, board.id);
     if (navItem) navItem.title = board.title;
     if (!elements.collectionTabBar.classList.contains('hidden')) {
-      const coll = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+      const coll = state.activeCollectionId ? findCollectionById(state.activeCollectionId) : null;
       if (coll) renderCollectionTabBar(coll);
       else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
     }
@@ -94,7 +96,7 @@ function attachBoardSettingsListeners() {
     renderNav();
     // Refresh tab bar if visible (collection or folder context)
     if (!elements.collectionTabBar.classList.contains('hidden')) {
-      const coll = state.activeCollectionId ? state.navItems.find(i => i.id === state.activeCollectionId) : null;
+      const coll = state.activeCollectionId ? findCollectionById(state.activeCollectionId) : null;
       if (coll) renderCollectionTabBar(coll);
       else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
     }
@@ -185,6 +187,17 @@ function attachBoardSettingsListeners() {
     const board = getActiveBoard();
     if (!board) return;
     board.showSpeedDial = e.target.checked;
+    renderBoard();
+  });
+
+  document.getElementById('bstgSpeedDialSlots').addEventListener('input', e => {
+    const board = getActiveBoard();
+    if (!board) return;
+    normalizeSpeedDialSlots(board);
+    const requested = Math.max(1, Math.min(48, parseInt(e.target.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+    const lastFilled = board.speedDial.reduce((idx, item, i) => item ? i : idx, -1);
+    board.speedDialSlotCount = Math.max(requested, lastFilled + 1, 1);
+    e.target.value = board.speedDialSlotCount;
     renderBoard();
   });
 
@@ -760,6 +773,7 @@ function mergeTags(sourceId, targetId) {
   const replaceIn = list => {
     if (!list) return;
     for (const item of list) {
+      if (!item) continue;
       const replaceField = field => {
         if (!item[field]) return;
         if (!item[field].includes(sourceId)) return;

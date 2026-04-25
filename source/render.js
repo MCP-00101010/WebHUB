@@ -87,6 +87,44 @@ function renderCountChipsInto(container, counts, options = {}) {
   if (folders > 0 || showZero) container.appendChild(createCountChip(folders, options.folderTitle || 'Folders', 'folder'));
 }
 
+function getNavFolderInboxCounts(folder) {
+  const totals = { bookmarks: 0, folders: 0 };
+  const seenBoardIds = new Set();
+  const addBoard = boardId => {
+    if (!boardId || seenBoardIds.has(boardId)) return;
+    seenBoardIds.add(boardId);
+    const counts = getBoardInboxCounts(state.boards.find(b => b.id === boardId));
+    totals.bookmarks += counts.bookmarks;
+    totals.folders += counts.folders;
+  };
+  const walk = items => {
+    for (const item of (items || [])) {
+      if (item.type === 'board') {
+        addBoard(item.boardId);
+      } else if (item.type === 'collection') {
+        (item.boardIds || []).forEach(addBoard);
+      } else if (item.type === 'folder') {
+        walk(item.children);
+      }
+    }
+  };
+  walk(folder?.children);
+  return totals;
+}
+
+function getCollectionInboxCounts(collection) {
+  const totals = { bookmarks: 0, folders: 0 };
+  const seenBoardIds = new Set();
+  for (const boardId of (collection?.boardIds || [])) {
+    if (!boardId || seenBoardIds.has(boardId)) continue;
+    seenBoardIds.add(boardId);
+    const counts = getBoardInboxCounts(state.boards.find(b => b.id === boardId));
+    totals.bookmarks += counts.bookmarks;
+    totals.folders += counts.folders;
+  }
+  return totals;
+}
+
 function buildTooltip(item, board = null) {
   const parts = [item.title || 'Untitled'];
   if (item.url) parts.push(item.url);
@@ -359,7 +397,7 @@ function renderSearchResults() {
   });
   for (const board of state.boards) {
     if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
-    board.speedDial.filter(i => matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
+    board.speedDial.filter(i => i && matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
     board.columns.filter(c => !c.isInbox).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
   }
 
@@ -672,13 +710,14 @@ function renderEssentials() {
     cell.addEventListener('dragover', event => {
       if (!dragPayload && !isExternalDrag(event)) return;
       if (dragPayload?.area === 'essential' && dragPayload.slot === slot) return;
+      if (item) return;
       if (dragPayload?.area === 'nav') return;
       event.preventDefault();
       event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
       if (!cell.classList.contains('drop-target')) {
         removeDragPlaceholders();
         cell.classList.add('drop-target');
-        const preview = createEssentialSlotPreview();
+        const preview = dragPayload ? createEssentialSlotPreview() : createExternalSlotPreview();
         if (preview) cell.appendChild(preview);
       }
     });
@@ -687,6 +726,7 @@ function renderEssentials() {
       cell.querySelectorAll('.drag-preview').forEach(el => el.remove());
     });
     cell.addEventListener('drop', event => {
+      if (item) { event.preventDefault(); event.stopPropagation(); return; }
       event.preventDefault();
       event.stopPropagation();
       cell.classList.remove('drop-target');
@@ -716,6 +756,11 @@ function createImportManagerNavItem(board) {
   const el = document.createElement('div');
   el.className = 'nav-item nav-import-manager';
   el.dataset.type = 'board';
+
+  const boardIcon = document.createElement('span');
+  boardIcon.className = 'nav-board-icon';
+  boardIcon.appendChild(icon('icon-board'));
+  el.appendChild(boardIcon);
 
   const label = document.createElement('div');
   label.className = 'nav-board-title';
@@ -804,10 +849,20 @@ function createNavItem(item, depth = 0, parent = null) {
     el.appendChild(collIcon);
     const info = document.createElement('div');
     info.className = 'nav-board-info';
+    const titleRow = document.createElement('div');
+    titleRow.className = 'nav-title-row';
     const label = document.createElement('div');
     label.className = 'nav-board-title';
     label.textContent = item.title || 'Untitled Collection';
-    info.appendChild(label);
+    titleRow.appendChild(label);
+    const collectionInboxCounts = getCollectionInboxCounts(item);
+    if (collectionInboxCounts.bookmarks + collectionInboxCounts.folders > 0) {
+      const indicator = document.createElement('span');
+      indicator.className = 'collection-tab-inbox-indicator nav-item-inbox-indicator';
+      indicator.title = 'Contained board inbox has items';
+      titleRow.appendChild(indicator);
+    }
+    info.appendChild(titleRow);
     if (item.tags?.length) {
       const tagsEl = document.createElement('div');
       tagsEl.className = 'nav-board-tags';
@@ -855,16 +910,30 @@ function createNavItem(item, depth = 0, parent = null) {
 
     header.appendChild(collapseBtn);
     header.appendChild(titleDiv);
+    const folderInboxCounts = getNavFolderInboxCounts(item);
+    if (folderInboxCounts.bookmarks + folderInboxCounts.folders > 0) {
+      const indicator = document.createElement('span');
+      indicator.className = 'collection-tab-inbox-indicator nav-folder-inbox-indicator';
+      indicator.title = 'Contained board inbox has items';
+      header.appendChild(indicator);
+    }
     el.appendChild(header);
   } else if (item.type !== 'collection') {
     if (item.type !== 'title' || item.title) {
       if (item.type === 'board') {
+        const boardIcon = document.createElement('span');
+        boardIcon.className = 'nav-board-icon';
+        boardIcon.appendChild(icon('icon-board'));
+        el.appendChild(boardIcon);
         const info = document.createElement('div');
         info.className = 'nav-board-info';
+        const titleRow = document.createElement('div');
+        titleRow.className = 'nav-title-row';
         const label = document.createElement('div');
         label.className = 'nav-board-title';
         label.textContent = item.title || 'Untitled Board';
-        info.appendChild(label);
+        titleRow.appendChild(label);
+        info.appendChild(titleRow);
         el.appendChild(info);
       } else {
         const label = document.createElement('div');
@@ -884,13 +953,10 @@ function createNavItem(item, depth = 0, parent = null) {
     }
     const { bookmarks: ibm, folders: ifl } = getBoardInboxCounts(board);
     if (ibm + ifl > 0) {
-      const chips = document.createElement('span');
-      chips.className = 'count-chip-row nav-count-chips';
-      renderCountChipsInto(chips, { bookmarks: ibm, folders: ifl }, {
-        bookmarkTitle: 'Bookmarks in inbox',
-        folderTitle: 'Folders in inbox'
-      });
-      el.appendChild(chips);
+      const indicator = document.createElement('span');
+      indicator.className = 'collection-tab-inbox-indicator nav-item-inbox-indicator';
+      indicator.title = 'Inbox has items';
+      el.querySelector('.nav-title-row')?.appendChild(indicator);
     }
     if (board?.locked) el.classList.add('board-locked');
     const lockBtn = document.createElement('button');
@@ -972,7 +1038,7 @@ function applyBoardBackground(board) {
 
 function renderBoard() {
   const collection = state.activeCollectionId
-    ? state.navItems.find(i => i.id === state.activeCollectionId) || findBoardCollection(state.activeBoardId)
+    ? findCollectionById(state.activeCollectionId) || findBoardCollection(state.activeBoardId)
     : null;
   const folder = !collection ? findBoardFolder(state.activeBoardId) : null;
   const board = getActiveBoard();
@@ -1019,15 +1085,17 @@ function renderBoard() {
 
   elements.mainPanel.classList.remove('no-board');
   elements.boardTitle.textContent = collection
-    ? `${collection.title} — ${board.title}`
+    ? collection.title
     : folder
-      ? `${folder.title} — ${board.title}`
+      ? board.title
       : board.title;
   elements.bookmarkColumns.style.setProperty('--columns', board.columnCount);
   applyBoardBackground(board);
   elements.boardSettingsBtn.disabled = !!board.locked;
-  elements.inboxBtn.disabled = !!board.locked;
-  if (board.locked && typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
+  const inboxUnavailable = !!board.locked || !!board.isImportManager;
+  elements.inboxBtn.disabled = inboxUnavailable;
+  elements.inboxBtn.classList.toggle('hidden', !!board.isImportManager);
+  if (inboxUnavailable && typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
 
   const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
   if (collection) {
@@ -1045,10 +1113,45 @@ function renderBoard() {
 function renderSpeedDial(source, isCollection = false) {
   const board = isCollection ? null : source;
   elements.speedDial.innerHTML = '';
-  source.speedDial.forEach(item => {
+  normalizeSpeedDialSlots(source);
+  const slotCount = getSpeedDialSlotCount(source);
+  for (let slot = 0; slot < slotCount; slot++) {
+    const item = source.speedDial[slot] || null;
+    const cell = document.createElement('div');
+    cell.className = `speed-slot ${item ? 'filled' : 'empty'}`;
+    cell.dataset.slot = slot;
+    cell.addEventListener('contextmenu', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (item) {
+        if (isCollection) handleCollectionSpeedDialContextMenu(event, item, source, slot);
+        else if (!getActiveBoard()?.locked) handleSpeedDialContextMenu(event, item, slot);
+      } else {
+        if (!isCollection && getActiveBoard()?.locked) return;
+        contextTarget = isCollection
+          ? { area: 'collection-speed-dial', collectionId: source.id, slot }
+          : { area: 'speed-dial', slot };
+        showContextMenu(event.clientX, event.clientY, [
+          { label: 'Add bookmark', action: 'addSpeedDialBookmark' }
+        ]);
+      }
+    });
+    cell.addEventListener('dragover', event => handleSpeedDialSlotDragOver(event, source, slot, isCollection));
+    cell.addEventListener('dragleave', () => {
+      cell.classList.remove('drop-target');
+      cell.querySelectorAll('.drag-preview').forEach(el => el.remove());
+    });
+    cell.addEventListener('drop', event => handleSpeedDialSlotDrop(event, source, slot, isCollection));
+
+    if (!item) {
+      elements.speedDial.appendChild(cell);
+      continue;
+    }
+
     const link = document.createElement('a');
     link.className = 'speed-link';
     link.dataset.itemId = item.id;
+    link.dataset.slot = slot;
     link.href = item.url || '#';
     link.target = '_blank';
     link.rel = 'noreferrer noopener';
@@ -1072,8 +1175,8 @@ function renderSpeedDial(source, isCollection = false) {
       if (!isCollection && board?.locked) { event.preventDefault(); return; }
       event.stopPropagation();
       dragPayload = isCollection
-        ? { area: 'collection-speed-dial', itemId: item.id, collectionId: source.id }
-        : { area: 'speed-dial', itemId: item.id };
+        ? { area: 'collection-speed-dial', itemId: item.id, collectionId: source.id, slot }
+        : { area: 'speed-dial', itemId: item.id, slot };
       event.dataTransfer.setData('text/plain', item.id);
       event.dataTransfer.effectAllowed = 'move';
       applyDragImage(event, link);
@@ -1083,22 +1186,9 @@ function renderSpeedDial(source, isCollection = false) {
       dragPayload = null;
       removeDragPlaceholders();
     });
-    link.addEventListener('contextmenu', event => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (isCollection) handleCollectionSpeedDialContextMenu(event, item, source);
-      else if (!getActiveBoard()?.locked) handleSpeedDialContextMenu(event, item);
-    });
-    link.addEventListener('dragover', event => handleSpeedDialItemDragOver(event, item));
-    link.addEventListener('dragleave', event => {
-      if (link.contains(event.relatedTarget)) return;
-      link.classList.remove('drop-position-before', 'drop-position-after');
-      link.removeAttribute('data-drop-position');
-    });
-    link.addEventListener('drop', event => handleSpeedDialItemDrop(event, item));
-
-    elements.speedDial.appendChild(link);
-  });
+    cell.appendChild(link);
+    elements.speedDial.appendChild(cell);
+  }
 }
 
 function renderCollectionTabBar(collection) {
@@ -1201,13 +1291,10 @@ function renderCollectionTabBar(collection) {
     tab.appendChild(tabLabel);
     const counts = getBoardInboxCounts(board);
     if (counts.bookmarks + counts.folders > 0) {
-      const chips = document.createElement('span');
-      chips.className = 'count-chip-row collection-tab-counts';
-      renderCountChipsInto(chips, counts, {
-        bookmarkTitle: 'Bookmarks in inbox',
-        folderTitle: 'Folders in inbox'
-      });
-      tab.appendChild(chips);
+      const indicator = document.createElement('span');
+      indicator.className = 'collection-tab-inbox-indicator';
+      indicator.title = 'Inbox has items';
+      tab.appendChild(indicator);
     }
     tab.addEventListener('click', () => {
       state.activeBoardId = boardId;
@@ -1295,13 +1382,10 @@ function renderFolderTabBar(folder) {
     if (board) {
       const counts = getBoardInboxCounts(board);
       if (counts.bookmarks + counts.folders > 0) {
-        const chips = document.createElement('span');
-        chips.className = 'count-chip-row collection-tab-counts';
-        renderCountChipsInto(chips, counts, {
-          bookmarkTitle: 'Bookmarks in inbox',
-          folderTitle: 'Folders in inbox'
-        });
-        tab.appendChild(chips);
+        const indicator = document.createElement('span');
+        indicator.className = 'collection-tab-inbox-indicator';
+        indicator.title = 'Inbox has items';
+        tab.appendChild(indicator);
       }
     }
     if (board?.locked) tab.classList.add('tab-locked');

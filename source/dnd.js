@@ -145,13 +145,13 @@ function _renderCrossContextPreview(kind) {
   if (kind === 'board') {
     let item = null;
     if (dragPayload.area === 'speed-dial') {
-      item = board?.speedDial.find(i => i.id === dragPayload.itemId);
+      item = board?.speedDial.find(i => i?.id === dragPayload.itemId);
     } else if (dragPayload.area === 'essential') {
       item = state.essentials.find?.(i => i?.id === dragPayload.itemId)
           ?? (dragPayload.slot != null ? state.essentials[dragPayload.slot] : null);
     } else if (dragPayload.area === 'collection-speed-dial') {
-      const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
-      item = coll?.speedDial?.find(i => i.id === dragPayload.itemId) ?? null;
+      const coll = findCollectionById(dragPayload.collectionId);
+      item = coll?.speedDial?.find(i => i?.id === dragPayload.itemId) ?? null;
     } else if (dragPayload.area === 'nav') {
       const p = findNavItemPath(dragPayload.itemId);
       item = p?.list.find(i => i.id === dragPayload.itemId);
@@ -254,9 +254,17 @@ function _insertDragPreview(clone, parent, beforeEl) {
 
 function applyDragImage(event, element) {
   const clone = element.cloneNode(true);
-  clone.style.cssText = 'position:fixed;top:-9999px;left:-9999px;margin:0;';
-  document.body.appendChild(clone);
   const rect = element.getBoundingClientRect();
+  clone.style.cssText = `position:fixed;top:-9999px;left:-9999px;margin:0;width:${rect.width}px;height:${rect.height}px;`;
+  clone.querySelectorAll('img').forEach(img => {
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '100%';
+    img.style.objectFit = 'contain';
+    img.style.display = 'block';
+  });
+  document.body.appendChild(clone);
   event.dataTransfer.setDragImage(clone, event.clientX - rect.left, event.clientY - rect.top);
   requestAnimationFrame(() => { clone.remove(); element.classList.add('dragging'); });
 }
@@ -274,9 +282,8 @@ function _extractDraggedItem(board) {
     return dragged;
   }
   if (dragPayload.area === 'speed-dial') {
-    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (sdIdx === -1) return null;
-    const [dragged] = board.speedDial.splice(sdIdx, 1);
+    const dragged = removeSpeedDialItemById(board, dragPayload.itemId);
+    if (!dragged) return null;
     dragged.type = 'bookmark';
     if (!dragged.tags) dragged.tags = [];
     return dragged;
@@ -294,11 +301,10 @@ function _extractDraggedItem(board) {
 }
 
 function _extractCollectionSpeedDialItem() {
-  const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+  const coll = findCollectionById(dragPayload.collectionId);
   if (!coll) return null;
-  const idx = (coll.speedDial || []).findIndex(i => i.id === dragPayload.itemId);
-  if (idx === -1) return null;
-  const [item] = coll.speedDial.splice(idx, 1);
+  const item = removeSpeedDialItemById(coll, dragPayload.itemId);
+  if (!item) return null;
   item.type = 'bookmark';
   if (!item.tags) item.tags = [];
   return item;
@@ -311,12 +317,12 @@ function createEssentialSlotPreview() {
   if (dragPayload.area === 'board') {
     item = findBoardItemInColumns(board, dragPayload.itemId)?.item;
   } else if (dragPayload.area === 'speed-dial') {
-    item = board?.speedDial.find(i => i.id === dragPayload.itemId);
+    item = board?.speedDial.find(i => i?.id === dragPayload.itemId);
   } else if (dragPayload.area === 'essential') {
     item = state.essentials[dragPayload.slot];
   } else if (dragPayload.area === 'collection-speed-dial') {
-    const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
-    item = coll?.speedDial?.find(i => i.id === dragPayload.itemId) ?? null;
+    const coll = findCollectionById(dragPayload.collectionId);
+    item = coll?.speedDial?.find(i => i?.id === dragPayload.itemId) ?? null;
   }
   if (!item) return null;
   const wrapper = document.createElement('div');
@@ -332,6 +338,22 @@ function createEssentialSlotPreview() {
     fb.className = 'essential-slot-fallback';
     fb.textContent = item.title ? item.title[0].toUpperCase() : '?';
     wrapper.appendChild(fb);
+  }
+  return wrapper;
+}
+
+function createExternalSlotPreview() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'drag-preview essential-slot-preview';
+  const previewIcon = typeof icon === 'function' ? icon('icon-bookmark-add') : null;
+  if (previewIcon) {
+    previewIcon.classList.add('external-slot-preview-icon');
+    wrapper.appendChild(previewIcon);
+  } else {
+    const fallback = document.createElement('span');
+    fallback.className = 'essential-slot-fallback';
+    fallback.textContent = '+';
+    wrapper.appendChild(fallback);
   }
   return wrapper;
 }
@@ -352,33 +374,23 @@ function handleEssentialSlotDrop(targetSlot) {
     state.essentials[srcSlot] = null;
     trimEssentialsTail();
   } else if (dragPayload.area === 'speed-dial') {
-    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (sdIdx === -1) { dragPayload = null; return; }
-    const [item] = board.speedDial.splice(sdIdx, 1);
+    const item = removeSpeedDialItemById(board, dragPayload.itemId);
+    if (!item) { dragPayload = null; return; }
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
-    const existing = state.essentials[targetSlot];
-    if (existing) board.speedDial.push(existing);
-    while (state.essentials.length < targetSlot) state.essentials.push(null);
+    while (state.essentials.length <= targetSlot) state.essentials.push(null);
     state.essentials[targetSlot] = item;
   } else if (dragPayload.area === 'board') {
     const item = removeBoardItemById(dragPayload.itemId);
     if (!item) { dragPayload = null; return; }
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
-    const existing = state.essentials[targetSlot];
-    if (existing) addBoardItemToColumn(dragPayload.sourceColumnId || board.columns[0].id, existing);
-    while (state.essentials.length < targetSlot) state.essentials.push(null);
+    while (state.essentials.length <= targetSlot) state.essentials.push(null);
     state.essentials[targetSlot] = item;
   } else if (dragPayload.area === 'collection-speed-dial') {
     const item = _extractCollectionSpeedDialItem();
     if (!item) { dragPayload = null; return; }
-    const existing = state.essentials[targetSlot];
-    if (existing) {
-      const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
-      if (coll) { if (!coll.speedDial) coll.speedDial = []; coll.speedDial.push(existing); }
-    }
-    while (state.essentials.length < targetSlot) state.essentials.push(null);
+    while (state.essentials.length <= targetSlot) state.essentials.push(null);
     state.essentials[targetSlot] = item;
   } else {
     dragPayload = null;
@@ -488,9 +500,8 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential' || dragPayload.area === 'collection-speed-dial') {
     let extracted;
     if (dragPayload.area === 'speed-dial') {
-      const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-      if (sdIdx === -1) { dragPayload = null; return; }
-      [extracted] = board.speedDial.splice(sdIdx, 1);
+      extracted = removeSpeedDialItemById(board, dragPayload.itemId);
+      if (!extracted) { dragPayload = null; return; }
     } else if (dragPayload.area === 'collection-speed-dial') {
       extracted = _extractCollectionSpeedDialItem();
       if (!extracted) { dragPayload = null; return; }
@@ -633,9 +644,8 @@ function handleBoardColumnDrop(event, columnId) {
       draggedItem.tags = (draggedItem.tags || []).filter(t => !oldParent.sharedTags.includes(t));
     }
   } else if (dragPayload.area === 'speed-dial') {
-    const sdIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (sdIdx === -1) { dragPayload = null; return; }
-    [draggedItem] = board.speedDial.splice(sdIdx, 1);
+    draggedItem = removeSpeedDialItemById(board, dragPayload.itemId);
+    if (!draggedItem) { dragPayload = null; return; }
     draggedItem.type = 'bookmark';
     if (!draggedItem.tags) draggedItem.tags = [];
   } else if (dragPayload.area === 'collection-speed-dial') {
@@ -802,7 +812,85 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
 
 // --- Speed dial drag & drop ---
 
+function _speedDialAreaAllowed(area) {
+  return area === 'speed-dial' || area === 'essential' || area === 'collection-speed-dial' || (area === 'board' && dragPayload.itemType === 'bookmark');
+}
+
+function handleSpeedDialSlotDragOver(event, target, slot, isCollection = false) {
+  if (!isCollection && getActiveBoard()?.locked) return;
+  if (target?.speedDial?.[slot]) return;
+  if (!dragPayload && !isExternalDrag(event)) return;
+  if (dragPayload && !_speedDialAreaAllowed(dragPayload.area)) return;
+  if (dragPayload?.area === (isCollection ? 'collection-speed-dial' : 'speed-dial') && dragPayload.slot === slot) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
+  const cell = event.currentTarget;
+  if (!cell.classList.contains('drop-target')) {
+    removeDragPlaceholders();
+    cell.classList.add('drop-target');
+    const preview = dragPayload ? createEssentialSlotPreview() : createExternalSlotPreview();
+    if (preview) cell.appendChild(preview);
+  }
+}
+
+function _takeSpeedDialDragItem(target, slot, isCollection) {
+  if (dragPayload.area === 'essential') {
+    const item = state.essentials[dragPayload.slot];
+    if (!item) return null;
+    state.essentials[dragPayload.slot] = null;
+    trimEssentialsTail();
+    item.type = 'bookmark';
+    if (!item.tags) item.tags = [];
+    return item;
+  }
+  if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
+    const item = removeBoardItemById(dragPayload.itemId);
+    if (!item) return null;
+    item.type = 'bookmark';
+    if (!item.tags) item.tags = [];
+    return item;
+  }
+  const source = dragPayload.area === 'collection-speed-dial'
+    ? findCollectionById(dragPayload.collectionId)
+    : getActiveBoard();
+  if (!source) return null;
+  if (source === target && dragPayload.slot === slot) return null;
+  return removeSpeedDialItemById(source, dragPayload.itemId);
+}
+
+function handleSpeedDialSlotDrop(event, target, slot, isCollection = false) {
+  if (!isCollection && getActiveBoard()?.locked) return;
+  if (target?.speedDial?.[slot]) { event.preventDefault(); event.stopPropagation(); return; }
+  event.preventDefault();
+  event.stopPropagation();
+  event.currentTarget.classList.remove('drop-target');
+  event.currentTarget.querySelectorAll('.drag-preview').forEach(el => el.remove());
+  if (isExternalDrag(event)) {
+    const ext = getExternalDrop(event);
+    if (ext) openExternalBookmarkModal(ext.url, ext.title, {
+      area: isCollection ? 'collection-speed-dial' : 'speed-dial',
+      collectionId: isCollection ? target.id : null,
+      slot
+    }, ext.faviconCache);
+    return;
+  }
+  if (!dragPayload || !_speedDialAreaAllowed(dragPayload.area)) return;
+  pushUndoSnapshot();
+  const item = _takeSpeedDialDragItem(target, slot, isCollection);
+  if (!item || !setSpeedDialSlot(target, slot, item)) {
+    dragPayload = null;
+    renderAll();
+    saveState();
+    return;
+  }
+  dragPayload = null;
+  renderAll();
+  saveState();
+}
+
 function handleSpeedDialItemDragOver(event, item) {
+  return;
   if (getActiveBoard()?.locked) return;
   if (!dragPayload) return;
   if (dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
@@ -822,6 +910,7 @@ function handleSpeedDialItemDragOver(event, item) {
 }
 
 function handleSpeedDialItemDrop(event, targetItem) {
+  return;
   if (!dragPayload || getActiveBoard()?.locked) return;
   event.preventDefault();
   event.stopPropagation();
@@ -849,7 +938,7 @@ function handleSpeedDialItemDrop(event, targetItem) {
     const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
     board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, essItem);
   } else if (dragPayload.area === 'collection-speed-dial') {
-    const coll = state.navItems.find(i => i.id === dragPayload.collectionId);
+    const coll = findCollectionById(dragPayload.collectionId);
     if (!coll?.speedDial) { dragPayload = null; return; }
     if (dragPayload.itemId === targetItem.id) { dragPayload = null; return; }
     const draggedIdx = coll.speedDial.findIndex(i => i.id === dragPayload.itemId);
@@ -877,98 +966,11 @@ function handleSpeedDialItemDrop(event, targetItem) {
 }
 
 function handleSpeedDialContainerDragOver(event) {
-  if (getActiveBoard()?.locked) return;
-  if (dragPayload && dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && dragPayload.area !== 'collection-speed-dial' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-
-  const linkEls = Array.from(elements.speedDial.querySelectorAll('.speed-link:not(.drag-preview)'));
-  if (linkEls.length === 0) {
-    if (_dropTarget === elements.speedDial && _dropPos === 'end') return;
-    removeDragPlaceholders();
-    _dropTarget = elements.speedDial;
-    _dropPos = 'end';
-    _insertDragPreview(createDragPlaceholder('speed-dial'), elements.speedDial, null);
-    return;
-  }
-
-  let nearestEl = linkEls[linkEls.length - 1];
-  let nearestPos = 'after';
-  for (const el of linkEls) {
-    const rect = el.getBoundingClientRect();
-    if (event.clientX <= rect.right) {
-      nearestEl = el;
-      nearestPos = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-      break;
-    }
-  }
-
-  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
-  removeDragPlaceholders();
-  _dropTarget = nearestEl; _dropPos = nearestPos;
-  nearestEl.dataset.dropPosition = nearestPos;
-  _insertDragPreview(createDragPlaceholder('speed-dial'), nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
+  return;
 }
 
 function handleSpeedDialContainerDrop(event) {
-  event.preventDefault();
-  if (getActiveBoard()?.locked) { removeDragPlaceholders(); return; }
-  if (isExternalDrag(event)) {
-    removeDragPlaceholders();
-    const ext = getExternalDrop(event);
-    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial' }, ext.faviconCache);
-    return;
-  }
-  if (!dragPayload) return;
-
-  // When a collection is active, drops go to the collection's speed dial
-  const activeCollection = state.activeCollectionId
-    ? state.navItems.find(i => i.id === state.activeCollectionId)
-    : null;
-  const board = activeCollection ? null : getActiveBoard();
-  const speedDialTarget = activeCollection || board;
-  if (!speedDialTarget) { removeDragPlaceholders(); return; }
-  if (!speedDialTarget.speedDial) speedDialTarget.speedDial = [];
-
-  pushUndoSnapshot();
-  const refEl  = _dropTarget;
-  const refPos = _dropPos;
-  let stateInsertIndex = speedDialTarget.speedDial.length;
-  if (refEl?.dataset.itemId) {
-    const refIdx = speedDialTarget.speedDial.findIndex(i => i.id === refEl.dataset.itemId);
-    if (refIdx !== -1) stateInsertIndex = refPos === 'after' ? refIdx + 1 : refIdx;
-  }
-
-  removeDragPlaceholders();
-
-  const sdArea = activeCollection ? 'collection-speed-dial' : 'speed-dial';
-  if (dragPayload.area === sdArea || dragPayload.area === 'speed-dial') {
-    const origIdx = speedDialTarget.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    if (origIdx === -1) { dragPayload = null; return; }
-    const [dragged] = speedDialTarget.speedDial.splice(origIdx, 1);
-    if (origIdx < stateInsertIndex) stateInsertIndex -= 1;
-    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, dragged);
-  } else if (dragPayload.area === 'essential') {
-    const essItem = state.essentials[dragPayload.slot];
-    if (!essItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    essItem.type = 'bookmark';
-    if (!essItem.tags) essItem.tags = [];
-    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, essItem);
-  } else if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
-    const dragged = removeBoardItemById(dragPayload.itemId);
-    if (!dragged) { dragPayload = null; return; }
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-    speedDialTarget.speedDial.splice(Math.max(0, Math.min(stateInsertIndex, speedDialTarget.speedDial.length)), 0, dragged);
-  } else {
-    dragPayload = null;
-    return;
-  }
-
-  dragPayload = null;
-  renderAll();
-  saveState();
+  return;
 }
 
 // --- Nav drag & drop ---
@@ -1074,8 +1076,8 @@ function handleNavDrop(event, targetItem, parent) {
     } else if (dragPayload.area === 'nav') {
       dragged = removeNavItemById(dragPayload.itemId);
     } else if (dragPayload.area === 'speed-dial') {
-      const idx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-      if (idx !== -1) { [dragged] = board.speedDial.splice(idx, 1); dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
+      dragged = removeSpeedDialItemById(board, dragPayload.itemId);
+      if (dragged) { dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
     } else if (dragPayload.area === 'essential') {
       dragged = state.essentials[dragPayload.slot];
       if (dragged) { state.essentials[dragPayload.slot] = null; trimEssentialsTail(); dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
@@ -1086,7 +1088,7 @@ function handleNavDrop(event, targetItem, parent) {
   }
   // Collection tab dragged back to nav
   if (dragPayload?.area === 'collection-tab') {
-    const srcColl = state.navItems.find(i => i.id === dragPayload.collectionId);
+    const srcColl = findCollectionById(dragPayload.collectionId);
     if (!srcColl) { dragPayload = null; return; }
     removeDragPlaceholders();
     pushUndoSnapshot();
@@ -1268,7 +1270,7 @@ function handleNavListDrop(event) {
 
   // Collection tab dropped onto empty nav list space (remove from collection → insert into nav)
   if (dragPayload.area === 'collection-tab') {
-    const srcColl = state.navItems.find(i => i.id === dragPayload.collectionId);
+    const srcColl = findCollectionById(dragPayload.collectionId);
     if (!srcColl) { dragPayload = null; return; }
     pushUndoSnapshot();
     const boardId = dragPayload.boardId;
