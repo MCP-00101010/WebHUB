@@ -33,7 +33,7 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgTags').value = (board.tags || []).join(' ');
   document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
   document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
-  document.getElementById('bstgAutoRemove').checked = board.autoRemoveTags === true;
+  document.getElementById('bstgAutoRemove').checked = isNew ? true : board.autoRemoveTags === true;
   const bstgInherited = getBoardInheritedTags();
   const bstgInheritedRow = document.getElementById('bstgInheritedTagsRow');
   const bstgInheritedSpan = document.getElementById('bstgInheritedTags');

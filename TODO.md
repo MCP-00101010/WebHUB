@@ -4,6 +4,31 @@
 
 - Auto-export on a schedule, such as a daily JSON backup written to Downloads.
 
+## UI
+
+### Group A — Bug fixes
+
+- [x] **Collection create/cancel** — `addCollection` creates the record before the modal opens; cancel still leaves the collection in state. Fix: defer `createCollection` to modal submit; cancel discards with no side-effects.
+- [x] **Strip on leave default** — `cmAutoRemove` (strip shared tags on board removal) initialises unchecked. Default it to checked everywhere a parent object with shared tags is created or edited.
+- [x] **Collection settings icon** — when a collection is active, the name-pane settings button opens board settings. Guard it: if `state.activeCollectionId` is set, open the collection edit modal instead.
+
+### Group B — Modal presentation
+
+- [ ] **Bookmark modal URL section** — wrap the URL row in a `settings-section` with a "URL" label to match the visual style of other sections.
+- [ ] **Folder modal size** — folder create/edit modal stretches to full modal height. Constrain to `fit-content`; remove excess padding so it only shows name and any folder options.
+- [ ] **Widget modal tweaks** — remove `(optional)` from name placeholders; apply the same `fit-content` sizing fix; ensure all widget modals are draggable (see Group D).
+
+### Group C — Name pane icons
+
+- [ ] **Icon size + alignment** — reduce undo/redo/inbox/settings icons in the board name pane to match the sidebar settings icon size; anchor them top-right; reposition the inbox counter chips adjacent to the inbox icon.
+- [ ] **Board settings icon in collection tab bar** — add a small settings button to the right end of the collection tab bar (aligned under the name-pane settings icon) that opens board settings for the active board.
+
+### Group D — Major layout restructures
+
+- [ ] **Create/edit board modal layout** — two-column layout: tags + speed dial on the left, opacity + background image on the right; show a background preview in the drop zone if an image is already set; shrink modal to fit content.
+- [ ] **Draggable modals** — add `mousedown` drag handling on `.modal-card-header` to allow free repositioning of all edit/create modals.
+
+
 ## Widgets
 
 - Weather widget with current conditions and configurable location.

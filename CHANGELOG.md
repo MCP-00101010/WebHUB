@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.35] — 2026-04-25
+
+### Fixed
+
+- **Collection create/cancel** — creating a collection no longer writes to state or renders in the nav until the modal is confirmed. Cancelling the New Collection modal now discards with no side-effects.
+- **Strip on leave default** — the "Strip on leave" / auto-remove-tags toggle now defaults to enabled when creating a new collection, board, or folder that exposes shared tags.
+- **Collection settings icon** — the settings button in the board name pane now opens the Edit Collection modal when a collection is active, instead of the board settings panel.
+
+---
+
 ## [0.11.34] — 2026-04-25
 
 ### Added

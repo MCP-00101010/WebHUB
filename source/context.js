@@ -183,15 +183,12 @@ function handleContextMenuAction(action) {
       showBoardSettingsPanel(true);
       break;
     case 'addCollection':
-      pushUndoSnapshot();
-      createCollection('New Collection');
-      renderAll();
-      saveState();
-      showModal('editCollection', {
+      showModal('addCollection', {
         title: 'New Collection', placeholder1: 'Collection Name', value1: '',
         showTags: true, showSharedTags: true, showSharedTagsOptions: true,
-        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(findCollectionById(state.activeCollectionId)),
-        collectionShowSpeedDial: true
+        showSpeedDialSlots: true, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
+        collectionShowSpeedDial: true,
+        autoRemoveTags: true
       });
       break;
     case 'editCollection': {

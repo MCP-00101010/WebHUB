@@ -373,6 +373,27 @@ function handleModalSubmit(event) {
       }
       break;
     }
+    case 'addCollection': {
+      const coll = createCollection(value1);
+      const sdSection = document.getElementById('modalSpeedDialSection');
+      if (sdSection && !sdSection.classList.contains('hidden')) {
+        normalizeSpeedDialSlots(coll);
+        const slotsInput = document.getElementById('modalSpeedDialSlots');
+        const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+        coll.speedDialSlotCount = Math.max(requested, 1);
+        coll.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial')?.checked !== false;
+      }
+      coll.tags = tags;
+      coll.sharedTags = sharedTagsFromModal;
+      const sharedTagsOptsEl3 = document.getElementById('modalSharedTagsOptions');
+      if (sharedTagsOptsEl3 && !sharedTagsOptsEl3.classList.contains('hidden')) {
+        coll.inheritTags = document.getElementById('cmInheritTags').checked;
+        coll.autoRemoveTags = document.getElementById('cmAutoRemove').checked;
+      }
+      renderAll();
+      saveState();
+      break;
+    }
     case 'moveToBoard': {
       const targetBoard = state.boards.find(b => b.id === elements.modalSelect.value);
       if (!targetBoard || !contextTarget?.item) break;
@@ -466,7 +487,7 @@ function showFolderModal(mode, ct) {
     document.getElementById('fmTags').value = '';
     document.getElementById('fmSharedTags').value = '';
     document.getElementById('fmInheritTags').checked = true;
-    document.getElementById('fmAutoRemove').checked = false;
+    document.getElementById('fmAutoRemove').checked = true;
   }
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('folderModalHeader'));

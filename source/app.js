@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.34';
+const APP_VERSION = '0.11.35';
 
 let activeModal = null;
 let contextTarget = null;
@@ -346,7 +346,26 @@ function attachEventListeners() {
     btn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
   });
 
-  elements.boardSettingsBtn.addEventListener('click', () => showBoardSettingsPanel());
+  elements.boardSettingsBtn.addEventListener('click', () => {
+    if (state.activeCollectionId) {
+      const coll = findCollectionById(state.activeCollectionId);
+      if (coll) {
+        contextTarget = { collectionId: coll.id, item: coll };
+        showModal('editCollection', {
+          title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
+          showTags: true, showSharedTags: true, showSharedTagsOptions: true,
+          showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(coll),
+          collectionShowSpeedDial: coll.showSpeedDial !== false,
+          inheritTags: coll.inheritTags !== false,
+          autoRemoveTags: coll.autoRemoveTags === true,
+          value3: (coll.tags || []).join(' '),
+          value4: (coll.sharedTags || []).join(' ')
+        });
+        return;
+      }
+    }
+    showBoardSettingsPanel();
+  });
   makeDraggable(document.getElementById('modalCard'), document.getElementById('modalCardHeader'));
   elements.modalCancelBtn.addEventListener('click', hideModal);
   elements.modalOverlay.addEventListener('click', event => {
