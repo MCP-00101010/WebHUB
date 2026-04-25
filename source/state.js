@@ -920,7 +920,23 @@ function loadTrash() {
 }
 
 function saveTrash() {
-  localStorage.setItem(TRASH_KEY, JSON.stringify(recentlyDeleted));
+  const tryStore = data => {
+    try { localStorage.setItem(TRASH_KEY, JSON.stringify(data)); return true; }
+    catch (e) { if (e.name !== 'QuotaExceededError') throw e; return false; }
+  };
+  if (tryStore(recentlyDeleted)) return;
+  // Strip large backgroundImages to reclaim space
+  const slim = recentlyDeleted.map(e => {
+    const b = e.item?.board;
+    if (!b?.backgroundImage) return e;
+    return { ...e, item: { ...e.item, board: { ...b, backgroundImage: '' } } };
+  });
+  if (tryStore(slim)) return;
+  // Drop oldest entries one by one until it fits
+  for (let i = slim.length - 1; i > 0; i--) {
+    if (tryStore(slim.slice(0, i))) return;
+  }
+  localStorage.removeItem(TRASH_KEY);
 }
 
 function pushToTrash(item, source) {

@@ -30,7 +30,7 @@
 
 ## Current Bugs/Issues:
 
-- **Nav board deletion regression** — root cause not yet identified. v0.11.36 adds error surfacing: context menu now always closes, and any exception during deletion or `renderAll()` is shown as a notice dialog. Need to observe the error message in production to diagnose root cause.
+- ~~**Nav board deletion regression**~~ — Fixed v0.11.37. Root cause: `saveTrash()` threw `QuotaExceededError` when a board with a large background image was pushed to trash, aborting deletion before `deleteBoardAndNavItem` ran. See [0.11.37] in CHANGELOG.
 
 
 ## Widgets

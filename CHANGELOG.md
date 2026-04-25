@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.37] — 2026-04-26
+
+### Fixed
+
+- **Nav board / collection deletion quota error** — `saveTrash()` now handles `QuotaExceededError` gracefully: it retries by stripping `backgroundImage` from stored boards, then progressively drops the oldest trash entries, so deletion never fails due to localStorage being full.
+
+---
+
 ## [0.11.36] — 2026-04-25
 
 ### Fixed

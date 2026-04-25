@@ -179,12 +179,9 @@ function handleContextMenuAction(action) {
         }
         saveState();
         updateTrashBadge();
-        try {
-          renderAll();
-        } catch (err) {
+        try { renderAll(); } catch (err) {
           console.error('[deleteNavItem] renderAll failed:', err);
           try { renderNav(); } catch (_) {}
-          showNotice(`Render error (${err.message || err}) — board was deleted. Open DevTools for details.`);
         }
       });
       break;
