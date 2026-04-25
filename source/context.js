@@ -618,7 +618,6 @@ function handleContextMenuAction(action) {
         if (targetBoard && !targetBoard.locked && contextTarget?.item) {
           pushUndoSnapshot();
           const capturedItem = cloneData(contextTarget.item);
-          capturedItem.type = 'bookmark';
           if (!capturedItem.tags) capturedItem.tags = [];
           deleteBoardTarget(contextTarget);
           (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(capturedItem);

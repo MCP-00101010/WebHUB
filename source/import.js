@@ -120,7 +120,7 @@ function attachBookmarkImportListener() {
     const reader = new FileReader();
     reader.onload = ev => {
       const items = parseBookmarkHtml(ev.target.result);
-      if (!items.length) { alert('No bookmarks found in file.'); return; }
+      if (!items.length) { showNotice('No bookmarks found in file.'); return; }
       pushUndoSnapshot();
       const importBoard = getOrCreateImportManagerBoard();
       const targetCol = importBoard.columns.find(c => !c.isInbox);
@@ -130,7 +130,7 @@ function attachBookmarkImportListener() {
       saveState();
       hideSettingsPanel();
       const { bookmarks, folders } = getImportManagerCounts();
-      alert(`Imported ${bookmarks} bookmarks in ${folders} folders into Import Manager.`);
+      showNotice(`Imported ${bookmarks} bookmarks in ${folders} folders into Import Manager.`);
     };
     reader.readAsText(file);
     bmImportFile.value = '';

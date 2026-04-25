@@ -321,15 +321,17 @@ function handleModalSubmit(event) {
       if (!targetBoard || !contextTarget?.item) break;
       const area = contextTarget.area;
       const capturedItem = cloneData(contextTarget.item);
-      capturedItem.type = 'bookmark';
       if (!capturedItem.tags) capturedItem.tags = [];
       if (area === 'speed-dial-item') {
+        capturedItem.type = 'bookmark';
         const board = getActiveBoard();
         board.speedDial = board.speedDial.filter(i => i.id !== contextTarget.itemId);
       } else if (area === 'collection-speed-dial') {
+        capturedItem.type = 'bookmark';
         const coll = state.navItems.find(i => i.id === contextTarget.collectionId);
         if (coll) coll.speedDial = (coll.speedDial || []).filter(i => i.id !== contextTarget.itemId);
       } else if (area === 'essential') {
+        capturedItem.type = 'bookmark';
         removeEssential(contextTarget.slot);
         trimEssentialsTail();
       } else {
