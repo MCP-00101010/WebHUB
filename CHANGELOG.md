@@ -5,6 +5,17 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.32] — 2026-04-25
+
+### Fixed
+
+- **Tag Manager drag and drop regression** — restored tag chip drag/drop between Unsorted and existing or newly-created groups. Tag drags now keep the active tag ID in memory during `dragover`, and entire group blocks accept drops instead of relying only on the chip input row.
+- **Legacy tag group records** — old tag groups now normalize missing/default fields and string boolean values so groups are not accidentally treated as locked.
+- **Tag deletion from Tag Manager** — clicking a chip's × button now reliably routes through a delegated Tag Manager handler before chip drag/edit behavior can intercept it.
+- **Tag delete confirmation crash** — tag usage counting now skips null item slots, so delete confirmation modals open correctly when enabled.
+
+---
+
 ## [0.11.31] — 2026-04-23
 
 ### Fixed

@@ -56,7 +56,11 @@ function initChipInput(hiddenInput, opts = {}) {
       btn.type = 'button';
       btn.className = 'chip-remove-btn';
       btn.textContent = '×';
-      btn.addEventListener('mousedown', e => { e.preventDefault(); removeChip(value, false); });
+      btn.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        removeChip(value, false);
+      });
       btn.addEventListener('click', e => e.stopPropagation());
       chip.appendChild(btn);
 

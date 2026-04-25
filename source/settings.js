@@ -441,6 +441,43 @@ function setGroupLocked(block, locked) {
   if (textInput) textInput.disabled = locked;
 }
 
+function normalizeTagGroupRecord(group) {
+  if (!group) return group;
+  if (!group.id) group.id = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  if (group.name == null) group.name = '';
+  if (!group.color) group.color = '#6d7cff';
+  group.locked = group.locked === true || group.locked === 'true';
+  group.collapsed = group.collapsed === true || group.collapsed === 'true';
+  return group;
+}
+
+function eventTargetElement(event) {
+  const target = event?.target;
+  if (target instanceof Element) return target;
+  return target?.parentElement || null;
+}
+
+function handleTagManagerRemovePointer(event) {
+  const removeBtn = eventTargetElement(event)?.closest('.chip-remove-btn');
+  if (!removeBtn) return;
+  const list = document.getElementById('tagGroupList');
+  if (!list?.contains(removeBtn)) return;
+  const chip = removeBtn.closest('.chip-live');
+  const tagId = chip?.dataset.value;
+  if (!tagId) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  deleteTagsWithConfirmation([tagId]);
+}
+
+function ensureTagManagerDeleteDelegation() {
+  const list = document.getElementById('tagGroupList');
+  if (!list || list.dataset.deleteDelegationAttached) return;
+  list.dataset.deleteDelegationAttached = '1';
+  if ('PointerEvent' in window) list.addEventListener('pointerdown', handleTagManagerRemovePointer, true);
+  else list.addEventListener('mousedown', handleTagManagerRemovePointer, true);
+}
+
 function deleteUnsortedTagById(tagId) {
   const tag = getTagById(tagId);
   if (!tag || tag.groupId) return;
@@ -706,6 +743,7 @@ function buildTagUsage(tagId) {
   const r = { boards: 0, folders: 0, bookmarks: 0 };
   const walk = items => {
     for (const item of (items || [])) {
+      if (!item) continue;
       if ([...(item.tags || []), ...(item.sharedTags || [])].includes(tagId)) {
         if (item.type === 'folder') r.folders++;
         else r.bookmarks++;
@@ -768,11 +806,12 @@ function tagGroupChipOpts(group) {
 }
 
 function getTagDragId(e) {
-  return e.dataTransfer?.getData('text/x-morpheus-tag-id') || e.dataTransfer?.getData('text/plain') || '';
+  return _tagDragTagId || e.dataTransfer?.getData('text/x-morpheus-tag-id') || e.dataTransfer?.getData('text/plain') || '';
 }
 
 let _tagDragPreview = null;
 let _tagDragSourceChip = null;
+let _tagDragTagId = null;
 
 function getTagGroupColor(groupId) {
   if (!groupId) return 'var(--text-muted)';
@@ -847,11 +886,22 @@ function placeTagDropPreview(targetEl, e, targetGroupId, dragTagId) {
   return null;
 }
 
+function getTagDropSurface(container, e) {
+  if (container.classList.contains('chip-input-wrapper') || container.classList.contains('tag-group-header')) {
+    return container;
+  }
+  const hoveredWrapper = eventTargetElement(e)?.closest('.chip-input-wrapper');
+  if (hoveredWrapper && container.contains(hoveredWrapper)) return hoveredWrapper;
+  const openWrapper = container.querySelector(':scope > .chip-input-wrapper');
+  return openWrapper || container.querySelector(':scope > .tag-group-header') || container;
+}
+
 function cleanupTagDragState() {
   removeTagDropPreview();
   document.querySelectorAll('.tag-drop-target').forEach(el => el.classList.remove('tag-drop-target'));
   document.querySelectorAll('.tag-collapsed-drop-preview').forEach(el => el.remove());
   _tagDragSourceChip = null;
+  _tagDragTagId = null;
 }
 
 function findLastTagIndexInGroup(groupId) {
@@ -907,9 +957,18 @@ function attachTagChipInteractions(wrapper, sourceGroupId) {
     chip.dataset.tagInteractions = '1';
     chip.draggable = true;
     chip.addEventListener('mousedown', e => {
-      if (!e.target.closest('.chip-remove-btn')) return;
+      const removeBtn = eventTargetElement(e)?.closest('.chip-remove-btn');
+      if (!removeBtn) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
       chip.draggable = false;
-      document.addEventListener('mouseup', () => { chip.draggable = true; }, { once: true });
+      const restoreDraggable = () => {
+        chip.draggable = true;
+        document.removeEventListener('mouseup', restoreDraggable);
+        document.removeEventListener('dragend', restoreDraggable);
+      };
+      document.addEventListener('mouseup', restoreDraggable, { once: true });
+      document.addEventListener('dragend', restoreDraggable, { once: true });
     }, true);
     chip.addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -929,6 +988,7 @@ function attachTagChipInteractions(wrapper, sourceGroupId) {
       e.dataTransfer.setData('text/plain', tagId);
       useTransparentTagDragImage(e);
       _tagDragSourceChip = chip;
+      _tagDragTagId = tagId;
       createTagDropPreview(chip, sourceGroupId);
       chip.classList.add('dragging');
     });
@@ -951,8 +1011,9 @@ function configureTagDropTarget(wrapper, targetGroupId) {
     if (targetGroup?.locked) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    wrapper.classList.add('tag-drop-target');
-    placeTagDropPreview(wrapper, e, targetGroupId, tagId);
+    const surface = getTagDropSurface(wrapper, e);
+    surface.classList.add('tag-drop-target');
+    placeTagDropPreview(surface, e, targetGroupId, tagId);
   });
   wrapper.addEventListener('dragleave', e => {
     if (!wrapper.contains(e.relatedTarget)) wrapper.classList.remove('tag-drop-target');
@@ -960,10 +1021,11 @@ function configureTagDropTarget(wrapper, targetGroupId) {
   wrapper.addEventListener('drop', e => {
     const tagId = getTagDragId(e);
     if (!tagId) return;
-    const beforeTagId = placeTagDropPreview(wrapper, e, targetGroupId, tagId);
+    const surface = getTagDropSurface(wrapper, e);
+    const beforeTagId = placeTagDropPreview(surface, e, targetGroupId, tagId);
     e.preventDefault();
     e.stopPropagation();
-    wrapper.classList.remove('tag-drop-target');
+    surface.classList.remove('tag-drop-target');
     cleanupTagDragState();
     moveTagToGroupAt(tagId, targetGroupId, beforeTagId);
   });
@@ -972,8 +1034,10 @@ function configureTagDropTarget(wrapper, targetGroupId) {
 function renderTagGroups() {
   if (!state.settings.tagGroups) state.settings.tagGroups = [];
   const list = document.getElementById('tagGroupList');
+  ensureTagManagerDeleteDelegation();
   list.innerHTML = '';
-  const groups = state.settings.tagGroups;
+  const groups = state.settings.tagGroups.map(normalizeTagGroupRecord);
+  state.settings.tagGroups = groups;
   const tagCounts = buildTagCounts();
 
   if (!groups.length) {
@@ -1118,6 +1182,7 @@ function renderTagGroups() {
     block.appendChild(header);
     if (!group.collapsed) block.appendChild(hiddenInput);
     list.appendChild(block);
+    configureTagDropTarget(block, group.id);
 
     if (!group.collapsed) {
       initChipInput(hiddenInput, tagGroupChipOpts(group));
@@ -1215,6 +1280,7 @@ function renderTagGroups() {
       return createTag(typed, null, null).id;
     }
   });
+  configureTagDropTarget(uBlock, null);
   const wrapper = uBlock.querySelector('.chip-input-wrapper');
   if (wrapper) {
     wrapper.classList.add('tag-group-unsorted-chips');

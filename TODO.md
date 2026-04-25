@@ -94,6 +94,7 @@
 - ✓ *Completed 2026-04-23* Tag context menu can create a new group and move the tag into it.
 - ✓ *Completed 2026-04-23* Tags can be moved between groups and Unsorted, inserted at cursor position, and reordered within groups via drag and drop.
 - ✓ *Completed 2026-04-23* Tag groups can be collapsed/expanded to save screen space.
+- ✓ *Fixed 2026-04-25* Tag chip drag/drop regression, legacy group locking, and chip × deletion/confirmation crash — see [0.11.32] in CHANGELOG.
 
 ### Phase 1 — Polish & quick wins ✓ *Completed 2026-04-18*
 
