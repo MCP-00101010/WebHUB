@@ -23,7 +23,11 @@ function showContextMenu(x, y, actions) {
         action.submenu.forEach(subAction => {
           const subBtn = document.createElement('button');
           subBtn.textContent = subAction.label;
-          subBtn.addEventListener('click', () => { handleContextMenuAction(subAction.action); hideContextMenu(); });
+          subBtn.addEventListener('click', () => {
+            try { handleContextMenuAction(subAction.action); }
+            catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
+            finally { hideContextMenu(); }
+          });
           sub.appendChild(subBtn);
         });
         document.body.appendChild(sub);
@@ -40,7 +44,11 @@ function showContextMenu(x, y, actions) {
       });
     } else {
       button.addEventListener('mouseenter', _clearSubmenus);
-      button.addEventListener('click', () => { handleContextMenuAction(action.action); hideContextMenu(); });
+      button.addEventListener('click', () => {
+        try { handleContextMenuAction(action.action); }
+        catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
+        finally { hideContextMenu(); }
+      });
     }
     menu.appendChild(button);
   });
@@ -169,9 +177,15 @@ function handleContextMenuAction(action) {
           pushToTrash(capturedNavItem, { area: 'nav-item', parentId: capturedNavParentId });
           removeNavItemById(capturedNavItemId);
         }
-        renderAll();
         saveState();
         updateTrashBadge();
+        try {
+          renderAll();
+        } catch (err) {
+          console.error('[deleteNavItem] renderAll failed:', err);
+          try { renderNav(); } catch (_) {}
+          showNotice(`Render error (${err.message || err}) — board was deleted. Open DevTools for details.`);
+        }
       });
       break;
     }

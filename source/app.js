@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.35';
+const APP_VERSION = '0.11.36';
 
 let activeModal = null;
 let contextTarget = null;
@@ -416,7 +416,12 @@ function attachEventListeners() {
   document.getElementById('confirmOkBtn').addEventListener('click', () => {
     const cb = confirmCallback;
     hideConfirmDialog();
-    if (cb) cb();
+    if (cb) {
+      try { cb(); } catch (err) {
+        console.error('[confirmOkBtn] callback threw:', err);
+        showNotice(`An error occurred: ${err.message || err}`);
+      }
+    }
   });
   document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmDialog);
   document.getElementById('confirmOverlay').addEventListener('click', e => {

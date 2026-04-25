@@ -204,7 +204,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.35</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.36</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -252,11 +252,11 @@
         <input id="modalInput1" type="text" class="bstg-title-input" placeholder="Enter name" form="modalForm" />
       </div>
       <form id="modalForm" class="modal-form">
-        <div class="form-row hidden" id="modalUrlRow">
-          <label for="modalInput2">URL</label>
+        <div class="settings-section hidden" id="modalUrlRow">
+          <div class="settings-section-label">URL</div>
           <input id="modalInput2" type="text" placeholder="duckduckgo.com" />
+          <div id="modalDuplicateWarning" class="modal-duplicate-warning hidden"></div>
         </div>
-        <div id="modalDuplicateWarning" class="modal-duplicate-warning hidden"></div>
         <div class="settings-section tag-section hidden" id="modalTagsRow">
           <div class="settings-section-label">Tags</div>
           <div class="tag-section-fields">
@@ -893,7 +893,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.35</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.36</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>
@@ -966,7 +966,7 @@
 
     <div id="widgetSettingsPanel" class="settings-panel draggable hidden" style="width:min(480px,calc(100vw - 40px))">
       <div id="wstgHeader" class="settings-header">
-        <input id="wstgTitle" type="text" class="bstg-title-input" placeholder="Widget title (optional)" />
+        <input id="wstgTitle" type="text" class="bstg-title-input" placeholder="Widget title" />
       </div>
       <div id="wstgBody"></div>
       <div class="form-actions">

@@ -14,9 +14,9 @@
 
 ### Group B — Modal presentation
 
-- [ ] **Bookmark modal URL section** — wrap the URL row in a `settings-section` with a "URL" label to match the visual style of other sections.
-- [ ] **Folder modal size** — folder create/edit modal stretches to full modal height. Constrain to `fit-content`; remove excess padding so it only shows name and any folder options.
-- [ ] **Widget modal tweaks** — remove `(optional)` from name placeholders; apply the same `fit-content` sizing fix; ensure all widget modals are draggable (see Group D).
+- [x] **Bookmark modal URL section** — wrap the URL row in a `settings-section` with a "URL" label to match the visual style of other sections.
+- [x] **Folder modal size** — folder create/edit modal stretches to full modal height. Constrain to `fit-content`; remove excess padding so it only shows name and any folder options.
+- [x] **Widget modal tweaks** — remove `(optional)` from name placeholders; apply the same `fit-content` sizing fix; ensure all widget modals are draggable (see Group D).
 
 ### Group C — Name pane icons
 
@@ -27,6 +27,10 @@
 
 - [ ] **Create/edit board modal layout** — two-column layout: tags + speed dial on the left, opacity + background image on the right; show a background preview in the drop zone if an image is already set; shrink modal to fit content.
 - [ ] **Draggable modals** — add `mousedown` drag handling on `.modal-card-header` to allow free repositioning of all edit/create modals.
+
+## Current Bugs/Issues:
+
+- **Nav board deletion regression** — root cause not yet identified. v0.11.36 adds error surfacing: context menu now always closes, and any exception during deletion or `renderAll()` is shown as a notice dialog. Need to observe the error message in production to diagnose root cause.
 
 
 ## Widgets

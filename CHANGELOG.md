@@ -5,6 +5,18 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.36] — 2026-04-25
+
+### Fixed
+
+- **Bookmark modal URL section** — URL row is now a `settings-section` with a "URL" label and input styling matching other modal sections; duplicate-URL warning moved inside the section.
+- **Folder modal size** — folder modal now uses `height: auto` so it only occupies what it needs instead of stretching to full panel height.
+- **Widget modal tweaks** — widget title placeholder no longer shows "(optional)"; widget settings panel also uses `height: auto`.
+- **Context menu always closes** — context menu button handlers now use `try/catch/finally` so the menu is dismissed even when an action throws, and errors are surfaced as a notice dialog instead of being silently swallowed.
+- **Nav board deletion error reporting** — `renderAll()` inside the delete-nav-item callback is now wrapped in a try/catch; if rendering fails after a successful deletion, the nav is refreshed via `renderNav()` and an error notice is shown rather than leaving the UI in a stale state.
+
+---
+
 ## [0.11.35] — 2026-04-25
 
 ### Fixed
