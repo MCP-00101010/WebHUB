@@ -193,10 +193,12 @@ function showModal(type, options = {}) {
   elements.modalUrlRow.classList.toggle('hidden', !options.showUrl);
   elements.modalTagsRow.classList.toggle('hidden', !options.showTags);
   document.getElementById('modalSharedTagsRow').classList.toggle('hidden', !options.showSharedTags);
-  const speedDialSlotsRow = document.getElementById('modalSpeedDialSlotsRow');
-  if (speedDialSlotsRow) {
-    speedDialSlotsRow.classList.toggle('hidden', !options.showSpeedDialSlots);
+  const speedDialSection = document.getElementById('modalSpeedDialSection');
+  if (speedDialSection) {
+    speedDialSection.classList.toggle('hidden', !options.showSpeedDialSlots);
     document.getElementById('modalSpeedDialSlots').value = options.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT;
+    const showToggle = document.getElementById('cmCollectionShowSpeedDial');
+    if (showToggle) showToggle.checked = options.collectionShowSpeedDial !== false;
   }
   const sharedTagsOptsEl = document.getElementById('modalSharedTagsOptions');
   if (sharedTagsOptsEl) {
@@ -232,8 +234,8 @@ function showModal(type, options = {}) {
 function applyModalCollectionSpeedDialSlots() {
   if (activeModal !== 'editCollection') return null;
   const slotsInput = document.getElementById('modalSpeedDialSlots');
-  const slotsRow = document.getElementById('modalSpeedDialSlotsRow');
-  if (!slotsInput || slotsRow?.classList.contains('hidden')) return null;
+  const speedDialSection = document.getElementById('modalSpeedDialSection');
+  if (!slotsInput || speedDialSection?.classList.contains('hidden')) return null;
   const coll = contextTarget?.collectionId
     ? findCollectionById(contextTarget.collectionId)
     : findCollectionById(state.activeCollectionId);
@@ -255,6 +257,19 @@ function handleModalSpeedDialSlotsInput() {
   saveState();
 }
 
+function handleModalCollectionShowSpeedDialChange() {
+  if (activeModal !== 'editCollection') return;
+  const coll = contextTarget?.collectionId
+    ? findCollectionById(contextTarget.collectionId)
+    : findCollectionById(state.activeCollectionId);
+  if (!coll) return;
+  coll.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial').checked;
+  if (state.activeCollectionId === coll.id || findBoardCollection(state.activeBoardId)?.id === coll.id) {
+    renderBoard();
+  }
+  saveState();
+}
+
 function hideModal() {
   activeModal = null;
   document.getElementById('modalCard').classList.add('hidden');
@@ -263,7 +278,7 @@ function hideModal() {
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
   document.getElementById('modalSharedTagsOptions')?.classList.add('hidden');
-  document.getElementById('modalSpeedDialSlotsRow')?.classList.add('hidden');
+  document.getElementById('modalSpeedDialSection')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
@@ -345,6 +360,10 @@ function handleModalSubmit(event) {
       if (!coll) break;
       if (value1.trim()) coll.title = value1.trim();
       applyModalCollectionSpeedDialSlots();
+      const sdSection = document.getElementById('modalSpeedDialSection');
+      if (sdSection && !sdSection.classList.contains('hidden')) {
+        coll.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial').checked;
+      }
       coll.tags = tags;
       coll.sharedTags = sharedTagsFromModal;
       const sharedTagsOptsEl2 = document.getElementById('modalSharedTagsOptions');

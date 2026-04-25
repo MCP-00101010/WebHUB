@@ -1099,9 +1099,9 @@ function renderBoard() {
 
   const speedDialPanel = elements.mainPanel.querySelector('.speed-dial-panel');
   if (collection) {
-    // Use the collection's speed dial; suppress the board's
-    if (speedDialPanel) speedDialPanel.classList.remove('hidden');
-    renderSpeedDial(collection, true);
+    const showSD = collection.showSpeedDial !== false;
+    if (speedDialPanel) speedDialPanel.classList.toggle('hidden', !showSD);
+    if (showSD) renderSpeedDial(collection, true);
   } else {
     if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
     renderSpeedDial(board, false);

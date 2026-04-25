@@ -5,6 +5,15 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.34] — 2026-04-25
+
+### Added
+
+- **Collection speed dial section in Edit Collection modal** — speed dial settings (Show toggle and Slots input) are now in a dedicated "Speed Dial" section below Tags, instead of being appended inside the Tags section.
+- **Show toggle for collection speed dial** — collections now have a `showSpeedDial` flag; the "Show" toggle in the new Speed Dial section controls whether the speed dial bar is visible when that collection is active. Changes apply live.
+
+---
+
 ## [0.11.33] — 2026-04-25
 
 ### Added

@@ -190,7 +190,8 @@ function handleContextMenuAction(action) {
       showModal('editCollection', {
         title: 'New Collection', placeholder1: 'Collection Name', value1: '',
         showTags: true, showSharedTags: true, showSharedTagsOptions: true,
-        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(findCollectionById(state.activeCollectionId))
+        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(findCollectionById(state.activeCollectionId)),
+        collectionShowSpeedDial: true
       });
       break;
     case 'editCollection': {
@@ -201,6 +202,7 @@ function handleContextMenuAction(action) {
         title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
         showTags: true, showSharedTags: true, showSharedTagsOptions: true,
         showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(coll),
+        collectionShowSpeedDial: coll.showSpeedDial !== false,
         inheritTags: coll.inheritTags !== false,
         autoRemoveTags: coll.autoRemoveTags === true,
         value3: (coll.tags || []).join(' '),

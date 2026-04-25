@@ -188,6 +188,7 @@ function migrateItems(items) {
       if (!item.boardIds) item.boardIds = [];
       if (item.inheritTags === undefined) item.inheritTags = true;
       if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
+      if (item.showSpeedDial === undefined) item.showSpeedDial = true;
     }
     if (item.children) migrateItems(item.children);
   }
@@ -691,7 +692,7 @@ function findBoardFolder(boardId) {
 
 function createCollection(title) {
   const id = `col-${Date.now()}`;
-  const navItem = { id, type: 'collection', title, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
+  const navItem = { id, type: 'collection', title, showSpeedDial: true, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
   state.navItems.push(navItem);
   state.activeCollectionId = id;
   return navItem;

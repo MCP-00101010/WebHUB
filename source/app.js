@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.33';
+const APP_VERSION = '0.11.34';
 
 let activeModal = null;
 let contextTarget = null;
@@ -363,6 +363,7 @@ function attachEventListeners() {
   });
   elements.modalForm.addEventListener('submit', handleModalSubmit);
   document.getElementById('modalSpeedDialSlots')?.addEventListener('input', handleModalSpeedDialSlotsInput);
+  document.getElementById('cmCollectionShowSpeedDial')?.addEventListener('change', handleModalCollectionShowSpeedDialChange);
   elements.modalInput2.addEventListener('input', () => {
     if (activeModal !== 'addBookmark') return;
     const url = elements.modalInput2.value.trim();
