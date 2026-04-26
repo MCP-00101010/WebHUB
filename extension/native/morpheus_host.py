@@ -171,6 +171,39 @@ def file_to_data_url(path):
     return f'data:{mime};base64,{data}'
 
 
+def get_file_info(path):
+    normalized = (path or '').strip()
+    if not normalized:
+        return {
+            'exists': False,
+            'version': None,
+            'modifiedMs': None,
+            'size': None
+        }
+    try:
+        stat = os.stat(normalized)
+        if not os.path.isfile(normalized):
+            return {
+                'exists': False,
+                'version': None,
+                'modifiedMs': None,
+                'size': None
+            }
+        return {
+            'exists': True,
+            'version': f'{stat.st_mtime_ns}:{stat.st_size}',
+            'modifiedMs': int(stat.st_mtime_ns / 1_000_000),
+            'size': stat.st_size
+        }
+    except FileNotFoundError:
+        return {
+            'exists': False,
+            'version': None,
+            'modifiedMs': None,
+            'size': None
+        }
+
+
 def load_config():
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -218,9 +251,9 @@ def handle(msg):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            reply_ok(content=content)
+            reply_ok(content=content, fileInfo=get_file_info(path))
         except FileNotFoundError:
-            reply_ok(content=None)   # not found is not an error — caller falls back
+            reply_ok(content=None, fileInfo=get_file_info(path))   # not found is not an error — caller falls back
         except Exception as e:
             reply_err(str(e))
 
@@ -231,7 +264,30 @@ def handle(msg):
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            reply_ok()
+            reply_ok(fileInfo=get_file_info(path))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'WRITE_FILE_IF_UNCHANGED':
+        path = msg.get('path', '')
+        content = msg.get('content', '')
+        expected_version = msg.get('expectedVersion') or None
+        try:
+            current_info = get_file_info(path)
+            if current_info['version'] != expected_version and not (expected_version is None and not current_info['exists']):
+                reply_ok(conflict=True, fileInfo=current_info)
+                return
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            reply_ok(fileInfo=get_file_info(path))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'STAT_FILE':
+        path = msg.get('path', '')
+        try:
+            reply_ok(fileInfo=get_file_info(path))
         except Exception as e:
             reply_err(str(e))
 

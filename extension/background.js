@@ -12,6 +12,8 @@ let nativeAvailable = false;
 // Debounce timer for file writes (avoid hammering disk on every save).
 let saveTimer = null;
 let pendingSaveContent = null;
+let pendingSaveExpectedVersion = null;
+let saveWaiters = [];
 
 
 // ---------------------------------------------------------------------------
@@ -99,12 +101,82 @@ function extractDatabasePath(json) {
   }
 }
 
+async function getDatabaseFileInfo() {
+  await nativeProbePromise;
+  await hostConfigPromise;
+  if (!nativeAvailable || !saveFilePath) {
+    return {
+      databasePath: saveFilePath || null,
+      fileInfo: null
+    };
+  }
+  try {
+    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+      type: 'STAT_FILE',
+      path: saveFilePath
+    });
+    return {
+      databasePath: saveFilePath || null,
+      fileInfo: res?.fileInfo || null
+    };
+  } catch {
+    return {
+      databasePath: saveFilePath || null,
+      fileInfo: null
+    };
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // Save — native file write (debounced) + storage.local mirror
 // ---------------------------------------------------------------------------
 
-async function saveState(json) {
+async function flushPendingSave() {
+  const content = pendingSaveContent;
+  const expectedVersion = pendingSaveExpectedVersion;
+  pendingSaveContent = null;
+  pendingSaveExpectedVersion = null;
+  try {
+    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+      type: 'WRITE_FILE_IF_UNCHANGED',
+      path: saveFilePath,
+      content,
+      expectedVersion
+    });
+    return {
+      ok: res?.ok !== false,
+      conflict: res?.conflict === true,
+      fileInfo: res?.fileInfo || null,
+      databasePath: saveFilePath || null
+    };
+  } catch (e) {
+    console.warn('Morpheus: native write failed', e);
+    return {
+      ok: false,
+      error: e.message,
+      conflict: false,
+      fileInfo: null,
+      databasePath: saveFilePath || null
+    };
+  }
+}
+
+function scheduleNativeSave(content, expectedVersion = null) {
+  pendingSaveContent = content;
+  pendingSaveExpectedVersion = expectedVersion ?? null;
+  clearTimeout(saveTimer);
+  return new Promise(resolve => {
+    saveWaiters.push(resolve);
+    saveTimer = setTimeout(async () => {
+      const result = await flushPendingSave();
+      const waiters = saveWaiters.splice(0);
+      for (const waiter of waiters) waiter(result);
+    }, 800);
+  });
+}
+
+async function saveState(json, { expectedVersion = null } = {}) {
   await nativeProbePromise;
   await hostConfigPromise;
   const jsonPath = extractDatabasePath(json);
@@ -124,25 +196,11 @@ async function saveState(json) {
 
   // Write to disk via native host (debounced).
   if (nativeAvailable && saveFilePath) {
-    pendingSaveContent = json;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const content = pendingSaveContent;
-      pendingSaveContent = null;
-      try {
-        await browser.runtime.sendNativeMessage('morpheus_webhub', {
-          type: 'WRITE_FILE',
-          path: saveFilePath,
-          content
-        });
-      } catch (e) {
-        console.warn('Morpheus: native write failed', e);
-      }
-    }, 800);
-    return;
+    const diskResult = await scheduleNativeSave(json, expectedVersion);
+    if (diskResult.ok || diskResult.conflict) return diskResult;
   }
 
-  if (mirrored) return;
+  if (mirrored) return { ok: true, conflict: false, fileInfo: null, databasePath: saveFilePath || null };
   throw (mirrorError || new Error('No save target available'));
 }
 
@@ -160,14 +218,26 @@ async function loadState() {
         type: 'READ_FILE',
         path: saveFilePath
       });
-      if (res?.ok && res.content) return res.content;
+      if (res?.ok) {
+        return {
+          json: res.content || null,
+          fileInfo: res.fileInfo || null,
+          fromDisk: true,
+          databasePath: saveFilePath || null
+        };
+      }
     } catch (e) {
       console.warn('Morpheus: native read failed', e);
     }
   }
   // Fall back to extension storage.
   const stored = await browser.storage.local.get('morpheusState');
-  return stored.morpheusState || null;
+  return {
+    json: stored.morpheusState || null,
+    fileInfo: null,
+    fromDisk: false,
+    databasePath: saveFilePath || null
+  };
 }
 
 
@@ -256,14 +326,20 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_SAVE':
-      saveState(msg.json)
-        .then(() => sendResponse({ ok: true }))
+      saveState(msg.json, { expectedVersion: msg.expectedVersion ?? null })
+        .then(result => sendResponse(result || { ok: true }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case 'MW_LOAD':
       loadState()
-        .then(json => sendResponse({ ok: true, json }))
+        .then(result => sendResponse({ ok: true, ...result }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_GET_DATABASE_FILE_INFO':
+      getDatabaseFileInfo()
+        .then(result => sendResponse({ ok: true, ...result }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 

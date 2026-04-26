@@ -27,9 +27,9 @@
 - Completed 2026-04-26: localhost support is now wired into the extension bridge so the hub can be served from a local webserver without losing extension features.
 - Completed 2026-04-26: extension storage is now treated as a best-effort backup mirror only; the shared disk file is the primary persistence target when native messaging is available.
 - Completed 2026-04-26: page-side bridge connection retries now recover from false "extension disconnected" startup races, and the native-host path picker now returns the selected save path reliably on Windows.
-- Watch for external file changes, including saves from the other browser and sync tools like Dropbox/OneDrive, and prompt or auto-reload safely.
-- Add stale-write protection so Firefox and Zen cannot silently clobber each other when both are open on the same database.
-- Add file-version / modified-time checks before save, plus a user-visible conflict flow for "disk changed since you loaded".
+- Completed 2026-04-26: shared-disk polling now detects external JSON changes from the other browser or sync tools and auto-reloads or prompts safely depending on whether this tab has newer unsynced edits.
+- Completed 2026-04-26: stale-write protection now blocks silent cross-browser clobbering by comparing file versions before every shared-disk save.
+- Completed 2026-04-26: file-version / modified-time metadata is now checked before save, with a user-visible reload flow when the disk changed since this tab last loaded or saved.
 - Add background asset management: when a board background image is picked from disk, copy it into a managed sibling assets folder and store a stable relative path instead of inflating the JSON with data URLs.
 - Add theme file lifecycle support beyond write-only save: disk delete/update/refresh should stay in sync with in-app theme state.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.

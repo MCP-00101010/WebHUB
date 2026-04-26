@@ -103,18 +103,53 @@ const bridge = (() => {
       }
     },
 
-    async saveState(json) {
+    async saveState(json, options = {}) {
       if (!_available) await _connect({ retries: 1, delayMs: 200 });
-      if (!_available) return false;
-      try { await _send('MW_SAVE', { json }); return true; }
-      catch { return false; }
+      if (!_available) return { ok: false, conflict: false, fileInfo: null, databasePath: null };
+      try {
+        const res = await _send('MW_SAVE', {
+          json,
+          expectedVersion: options.expectedVersion ?? null
+        });
+        return {
+          ok: res.ok !== false,
+          conflict: res.conflict === true,
+          fileInfo: res.fileInfo || null,
+          databasePath: res.databasePath || null
+        };
+      } catch {
+        return { ok: false, conflict: false, fileInfo: null, databasePath: null };
+      }
     },
 
     async loadState() {
       if (!_available) await _connect({ retries: 1, delayMs: 200 });
-      if (!_available) return null;
-      try { return (await _send('MW_LOAD')).json || null; }
-      catch { return null; }
+      if (!_available) return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
+      try {
+        const res = await _send('MW_LOAD');
+        return {
+          json: res.json || null,
+          fileInfo: res.fileInfo || null,
+          fromDisk: res.fromDisk === true,
+          databasePath: res.databasePath || null
+        };
+      } catch {
+        return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
+      }
+    },
+
+    async getDatabaseFileInfo() {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable) return { databasePath: null, fileInfo: null };
+      try {
+        const res = await _send('MW_GET_DATABASE_FILE_INFO');
+        return {
+          databasePath: res.databasePath || null,
+          fileInfo: res.fileInfo || null
+        };
+      } catch {
+        return { databasePath: null, fileInfo: null };
+      }
     },
 
     // Returns { name, dataUrl } or null (cancelled / unavailable).

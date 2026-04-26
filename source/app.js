@@ -5,6 +5,11 @@ let contextTarget = null;
 let lastActiveColumnId = null;
 
 let confirmCallback = null;
+let confirmCancelCallback = null;
+const SHARED_DISK_POLL_MS = 5000;
+const SHARED_DISK_NOTICE_KEY = 'morpheus-shared-disk-notice';
+let sharedDiskPollTimer = null;
+let sharedDiskReloadPromptOpen = false;
 
 // --- Undo / redo ---
 
@@ -128,17 +133,22 @@ document.addEventListener('mouseout', e => {
   }
 });
 
-function showConfirmDialog(message, onConfirm, okLabel = 'Delete') {
+function showConfirmDialog(message, onConfirm, okLabel = 'Delete', onCancel = null) {
   confirmCallback = onConfirm;
+  confirmCancelCallback = onCancel;
   document.getElementById('confirmMessage').textContent = message;
   document.getElementById('confirmOkBtn').textContent = okLabel;
   document.getElementById('confirmOverlay').classList.remove('hidden');
 }
 
-function hideConfirmDialog() {
+function hideConfirmDialog(options = {}) {
+  const { invokeCancel = false } = options;
+  const cancelCb = confirmCancelCallback;
   confirmCallback = null;
+  confirmCancelCallback = null;
   document.getElementById('confirmOverlay').classList.add('hidden');
   document.getElementById('confirmOkBtn').textContent = 'Delete';
+  if (invokeCancel && cancelCb) cancelCb();
 }
 
 function showNotice(message) {
@@ -148,6 +158,83 @@ function showNotice(message) {
 
 function hideNotice() {
   document.getElementById('noticeOverlay').classList.add('hidden');
+}
+
+function queueSharedDiskNotice(message) {
+  try { sessionStorage.setItem(SHARED_DISK_NOTICE_KEY, message); } catch {}
+}
+
+function confirmDialogIsOpen() {
+  return !document.getElementById('confirmOverlay').classList.contains('hidden');
+}
+
+function reloadForSharedDisk(message) {
+  queueSharedDiskNotice(message);
+  location.reload();
+}
+
+function promptSharedDiskConflict(detail = {}) {
+  if (sharedDiskReloadPromptOpen) return;
+  if (confirmDialogIsOpen()) {
+    setTimeout(() => promptSharedDiskConflict(detail), 600);
+    return;
+  }
+  sharedDiskReloadPromptOpen = true;
+  const path = detail.databasePath || state.databasePath || 'the shared database';
+  showConfirmDialog(
+    `The shared database changed on disk before this browser finished saving to ${path}. Reload the latest shared copy now?`,
+    () => {
+      sharedDiskReloadPromptOpen = false;
+      reloadForSharedDisk('Reloaded shared database after a save conflict with another browser or sync tool.');
+    },
+    'Reload',
+    () => {
+      sharedDiskReloadPromptOpen = false;
+      showNotice('Shared disk sync is paused in this tab until you reload. Export JSON if you need to keep this local copy first.');
+    }
+  );
+}
+
+function startSharedDiskPolling() {
+  if (sharedDiskPollTimer) clearInterval(sharedDiskPollTimer);
+  if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable() || !state.databasePath) return;
+  sharedDiskPollTimer = setInterval(() => {
+    checkForExternalSharedDiskChanges().catch(() => {});
+  }, SHARED_DISK_POLL_MS);
+}
+
+async function checkForExternalSharedDiskChanges() {
+  if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable()) return;
+  const live = await bridge.getDatabaseFileInfo();
+  const livePath = (live?.databasePath || '').trim();
+  if (!livePath) return;
+  if (livePath !== (state.databasePath || '').trim()) {
+    state.databasePath = livePath;
+    resetSharedDiskBaseline(livePath);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (typeof updateDatabasePathControls === 'function') await updateDatabasePathControls();
+    if (typeof updateAboutBridgeStatus === 'function') await updateAboutBridgeStatus();
+  }
+  if (sharedDiskSyncIsBlocked()) return;
+  const liveVersion = live?.fileInfo?.version || null;
+  const baselineVersion = getSharedDiskBaselineVersion();
+  if (liveVersion === baselineVersion) return;
+  if (liveVersion === null && baselineVersion === null) return;
+  if (sharedDiskReloadPromptOpen || confirmDialogIsOpen()) return;
+  if (hasPendingSharedDiskChanges()) {
+    sharedDiskReloadPromptOpen = true;
+    showConfirmDialog(
+      `The shared database changed on disk at ${livePath}. Reload now and discard this window's newer local copy?`,
+      () => {
+        sharedDiskReloadPromptOpen = false;
+        reloadForSharedDisk('Reloaded shared database after detecting an external change.');
+      },
+      'Reload',
+      () => { sharedDiskReloadPromptOpen = false; }
+    );
+    return;
+  }
+  reloadForSharedDisk('Reloaded shared database after detecting an external change.');
 }
 
 
@@ -423,9 +510,9 @@ function attachEventListeners() {
       }
     }
   });
-  document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmDialog);
+  document.getElementById('confirmCancelBtn').addEventListener('click', () => hideConfirmDialog({ invokeCancel: true }));
   document.getElementById('confirmOverlay').addEventListener('click', e => {
-    if (e.target === document.getElementById('confirmOverlay')) hideConfirmDialog();
+    if (e.target === document.getElementById('confirmOverlay')) hideConfirmDialog({ invokeCancel: true });
   });
 
   document.getElementById('noticeOkBtn').addEventListener('click', hideNotice);
@@ -545,7 +632,7 @@ function attachEventListeners() {
 
     if (event.key !== 'Escape') return;
     if (!document.getElementById('noticeOverlay').classList.contains('hidden')) { hideNotice(); return; }
-    if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog(); return; }
+    if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog({ invokeCancel: true }); return; }
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
@@ -583,6 +670,10 @@ function attachEventListeners() {
     updateInboxBadge();
     if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
   });
+
+  window.addEventListener('morpheus:shared-disk-conflict', e => {
+    promptSharedDiskConflict(e.detail || {});
+  });
 }
 
 attachEventListeners();
@@ -594,6 +685,13 @@ attachBookmarkImportListener();
 renderAll();
 localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 updateUndoRedoUI();
+try {
+  const sharedDiskNotice = sessionStorage.getItem(SHARED_DISK_NOTICE_KEY);
+  if (sharedDiskNotice) {
+    sessionStorage.removeItem(SHARED_DISK_NOTICE_KEY);
+    requestAnimationFrame(() => showNotice(sharedDiskNotice));
+  }
+} catch {}
 
 // If native sync is available, prefer the shared disk database over stale
 // per-browser localStorage copies. Otherwise, keep the previous backup restore.
@@ -603,21 +701,23 @@ if (typeof bridge !== 'undefined') {
     const info = await bridge.getStorageInfo();
 
     if (info?.nativeAvailable && info.databasePath) {
-      const json = await bridge.loadState();
-      if (json) {
-        restoreStateSnapshot(json);
+      const loaded = await bridge.loadState();
+      if (loaded?.json) {
+        restoreStateSnapshot(loaded.json);
       }
       state.databasePath = info.databasePath;
+      setSharedDiskBaseline(loaded?.fileInfo || null, info.databasePath);
       localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
       renderAll();
       updateUndoRedoUI();
+      startSharedDiskPolling();
       return;
     }
 
     if (localStorage.getItem('morpheus-webhub-state')) return; // already have local state
-    const json = await bridge.loadState();
-    if (!json) return;
-    restoreStateSnapshot(json);
+    const loaded = await bridge.loadState();
+    if (!loaded?.json) return;
+    restoreStateSnapshot(loaded.json);
     localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
     renderAll();
   });
