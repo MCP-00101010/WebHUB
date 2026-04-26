@@ -523,6 +523,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
+  document.getElementById('stgApiKeyNasa').value = s.serviceApiKeys?.nasa || '';
   document.getElementById('stgFolderFont').value = s.folderFontSize;
   document.getElementById('stgCollectionFont').value = s.collectionFontSize || 15;
   document.getElementById('stgTitleFont').value = s.titleFontSize;
@@ -560,6 +561,7 @@ function showSettingsPanel(tab = 'general') {
 }
 
 function hideSettingsPanel() {
+  renderAll();
   document.getElementById('settingsPanel').classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.add('hidden');
@@ -1458,10 +1460,23 @@ function renderTagGroups() {
 }
 
 function attachSettingsListeners() {
+  const ensureServiceApiKeySettings = () => {
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') {
+      state.settings.serviceApiKeys = { nasa: '' };
+    } else if (typeof state.settings.serviceApiKeys.nasa !== 'string') {
+      state.settings.serviceApiKeys.nasa = '';
+    }
+  };
+
   document.getElementById('stgHubName').addEventListener('input', e => {
     state.hubName = e.target.value || 'Morpheus WebHub';
     elements.hubNameEl.textContent = state.hubName;
     document.title = state.hubName;
+  });
+
+  document.getElementById('stgApiKeyNasa').addEventListener('input', e => {
+    ensureServiceApiKeySettings();
+    state.settings.serviceApiKeys.nasa = e.target.value.trim();
   });
 
   document.querySelectorAll('input[name="stgGlobalFontScale"]').forEach(radio => {
@@ -1662,9 +1677,11 @@ function attachSettingsListeners() {
     }
     _pendingDatabasePath = '';
     state.databasePath = res.databasePath;
-    saveState();
+    resetSharedDiskBaseline(res.databasePath);
+    saveState({ skipDiskSync: true });
     await updateDatabasePathControls();
     await updateAboutBridgeStatus();
+    if (typeof startSharedDiskPolling === 'function') startSharedDiskPolling();
   };
 
   databasePathInput.addEventListener('input', () => {

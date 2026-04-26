@@ -63,6 +63,9 @@ const defaultSettings = {
   collectionTextAlign: 'left', collectionColor: '',
   titleColor: '',
   tagGroups: [],
+  serviceApiKeys: {
+    nasa: ''
+  },
   activeThemeName: 'default-dark',
   customThemes: [],
   speedDialIconSize: 'medium',
@@ -143,6 +146,10 @@ const defaultState = {
 };
 
 let state = loadState();
+let sharedDiskBaselineVersion = null;
+let sharedDiskBaselinePath = '';
+let sharedDiskWritesBlocked = false;
+let sharedDiskHasPendingChanges = false;
 
 function migrateStyleSettings(settings) {
   if (!settings.styleOverrides) settings.styleOverrides = cloneData(defaultSettings.styleOverrides);
@@ -158,6 +165,18 @@ function migrateStyleSettings(settings) {
   settings.styleOverrides.collection = differs('collectionFontSize', 15) || !!settings.collectionFontFamily || !!settings.collectionBold || !!settings.collectionItalic || !!settings.collectionUnderline || differs('collectionTextAlign', 'left') || !!settings.collectionColor;
   settings.styleOverrides.title = differs('titleFontSize', 12) || differs('titleLineThickness', 1) || !!settings.titleLineColor || differs('titleLineStyle', 'solid') || !!settings.titleFontFamily || !!settings.titleBold || !!settings.titleItalic || !!settings.titleUnderline || !!settings.titleColor;
   settings.styleOverridesMigrated = true;
+}
+
+function migrateServiceApiKeys(settings) {
+  if (!settings.serviceApiKeys || typeof settings.serviceApiKeys !== 'object') {
+    settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
+    return;
+  }
+  settings.serviceApiKeys = { ...defaultSettings.serviceApiKeys, ...settings.serviceApiKeys };
+  Object.keys(settings.serviceApiKeys).forEach(key => {
+    if (typeof settings.serviceApiKeys[key] !== 'string') settings.serviceApiKeys[key] = '';
+    else settings.serviceApiKeys[key] = settings.serviceApiKeys[key].trim();
+  });
 }
 
 function migrateItems(items) {
@@ -192,6 +211,32 @@ function migrateItems(items) {
       if (item.showSpeedDial === undefined) item.showSpeedDial = true;
     }
     if (item.children) migrateItems(item.children);
+  }
+}
+
+function migrateWidgetServiceSettings(parsed) {
+  const serviceKeys = parsed.settings?.serviceApiKeys;
+  if (!serviceKeys) return;
+
+  const visitItem = item => {
+    if (!item) return;
+    if (item.type === 'widget' && item.widgetType === 'nasaApod' && item.config && typeof item.config === 'object') {
+      const oldKey = typeof item.config.apiKey === 'string' ? item.config.apiKey.trim() : '';
+      if (oldKey && !serviceKeys.nasa) serviceKeys.nasa = oldKey;
+      delete item.config.apiKey;
+      if (item.data?.apodCache && typeof item.data.apodCache === 'object') {
+        delete item.data.apodCache.apiKey;
+      }
+    }
+    if (item.children) item.children.forEach(visitItem);
+  };
+
+  (parsed.essentials || []).forEach(visitItem);
+  (parsed.navItems || []).forEach(visitItem);
+  for (const board of (parsed.boards || [])) {
+    for (const col of (board.columns || [])) {
+      (col.items || []).forEach(visitItem);
+    }
   }
 }
 
@@ -310,6 +355,8 @@ function parseStateJson(saved) {
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
     migrateStyleSettings(parsed.settings);
+    migrateServiceApiKeys(parsed.settings);
+    migrateWidgetServiceSettings(parsed);
     // Tag ID migration — must run before essentials migration (which also has tags)
     migrateToIdTags(parsed);
     parsed.tags = parsed.tags || [];
@@ -339,13 +386,75 @@ function loadState() {
   return parseStateJson(localStorage.getItem(STORAGE_KEY));
 }
 
-function saveState() {
+function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
+  sharedDiskBaselineVersion = fileInfo?.version || null;
+  sharedDiskBaselinePath = (path || '').trim();
+  sharedDiskWritesBlocked = false;
+  sharedDiskHasPendingChanges = false;
+}
+
+function resetSharedDiskBaseline(path = state?.databasePath || '') {
+  sharedDiskBaselineVersion = null;
+  sharedDiskBaselinePath = (path || '').trim();
+  sharedDiskWritesBlocked = false;
+  sharedDiskHasPendingChanges = false;
+}
+
+function getSharedDiskBaselineVersion() {
+  return sharedDiskBaselineVersion;
+}
+
+function getSharedDiskBaselinePath() {
+  return sharedDiskBaselinePath || state?.databasePath || '';
+}
+
+function hasPendingSharedDiskChanges() {
+  return sharedDiskHasPendingChanges;
+}
+
+function sharedDiskSyncIsBlocked() {
+  return sharedDiskWritesBlocked;
+}
+
+function notifySharedDiskConflict(detail = {}) {
+  sharedDiskWritesBlocked = true;
+  sharedDiskHasPendingChanges = true;
+  window.dispatchEvent(new CustomEvent('morpheus:shared-disk-conflict', {
+    detail: {
+      ...detail,
+      databasePath: detail.databasePath || getSharedDiskBaselinePath()
+    }
+  }));
+}
+
+function saveState(options = {}) {
+  const { skipDiskSync = false } = options;
   trimFaviconCache();
   const json = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, json);
   isDirty = true;
   if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
-    bridge.saveState(json); // fire-and-forget; extension storage is a backup
+    const shouldSyncSharedDisk = !skipDiskSync && bridge.nativeIsAvailable() && !!(state.databasePath || sharedDiskBaselinePath);
+    if (shouldSyncSharedDisk && getSharedDiskBaselinePath() !== (state.databasePath || '').trim()) {
+      resetSharedDiskBaseline(state.databasePath || '');
+    }
+    if (shouldSyncSharedDisk && sharedDiskWritesBlocked) return;
+    if (shouldSyncSharedDisk) sharedDiskHasPendingChanges = true;
+    bridge.saveState(json, {
+      expectedVersion: shouldSyncSharedDisk ? sharedDiskBaselineVersion : null
+    }).then(result => {
+      if (!result?.ok) return;
+      if (result.conflict) {
+        notifySharedDiskConflict({
+          fileInfo: result.fileInfo || null,
+          databasePath: result.databasePath || state.databasePath || ''
+        });
+        return;
+      }
+      if (shouldSyncSharedDisk && result.fileInfo) {
+        setSharedDiskBaseline(result.fileInfo, result.databasePath || state.databasePath || '');
+      }
+    }).catch(() => {});
   }
 }
 

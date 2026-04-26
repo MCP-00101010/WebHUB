@@ -2663,11 +2663,13 @@ button {
 
 .settings-body[data-active-tab="about"]       .settings-section:not([data-tab="about"])       { display: none; }
 .settings-body[data-active-tab="general"]     .settings-section:not([data-tab="general"])     { display: none; }
+.settings-body[data-active-tab="api-keys"]    .settings-section:not([data-tab="api-keys"])    { display: none; }
 .settings-body[data-active-tab="tag-manager"] .settings-section:not([data-tab="tag-manager"]) { display: none; }
 .settings-body[data-active-tab="theme"]       .settings-section:not([data-tab="theme"])       { display: none; }
 .settings-body[data-active-tab="style"]       .settings-section:not([data-tab="style"])       { display: none; }
 .settings-body[data-active-tab="about"]       { grid-template-columns: 1fr; }
 .settings-body[data-active-tab="general"]     { grid-template-columns: repeat(2, 1fr); }
+.settings-body[data-active-tab="api-keys"]    { grid-template-columns: 1fr; }
 .settings-body[data-active-tab="tag-manager"] { grid-template-columns: 1fr; }
 .settings-body[data-active-tab="theme"]       { grid-template-columns: 1fr; }
 
@@ -3322,6 +3324,127 @@ button {
   text-align: center;
   padding: 20px 0;
   font-style: italic;
+}
+
+/* NASA APOD widget */
+.widget-apod {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.widget-apod-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.widget-apod-title {
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.widget-apod-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.widget-apod-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  text-transform: capitalize;
+  letter-spacing: 0.03em;
+}
+.widget-apod-figure {
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--panel-muted);
+}
+.widget-apod-preview-link {
+  display: block;
+  line-height: 0;
+}
+.widget-apod-preview {
+  width: 100%;
+  max-height: 320px;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+.widget-apod-preview-link:hover .widget-apod-preview {
+  transform: scale(1.02);
+}
+.widget-apod-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.widget-apod-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  color: var(--text);
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.widget-apod-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.widget-apod-details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-muted);
+  overflow: hidden;
+}
+.widget-apod-details summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: var(--text);
+  user-select: none;
+}
+.widget-apod-summary {
+  padding: 0 10px 10px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+.widget-apod-status {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.widget-apod-status.is-error {
+  color: var(--danger);
+}
+.widget-apod-placeholder {
+  padding: 18px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: center;
+}
+.widget-apod-settings-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.widget-apod-settings-link:hover {
+  text-decoration: underline;
 }
 
 

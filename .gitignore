@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.build/
 build/
 *.lock
 __pycache__/
@@ -9,3 +10,7 @@ __pycache__/
 .qodo
 backgrounds/
 extension/native/morpheus-webhub.json
+extension/native/morpheus_host.bat
+extension/native/morpheus_webhub.json
+morpheus-webhub.json
+morpheus-webhub.xpi

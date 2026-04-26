@@ -447,6 +447,7 @@
         <div class="settings-tabs">
           <button type="button" class="settings-tab" data-tab="about">About</button>
           <button type="button" class="settings-tab active" data-tab="general">General</button>
+          <button type="button" class="settings-tab" data-tab="api-keys">API Keys</button>
           <button type="button" class="settings-tab" data-tab="theme">Theme</button>
           <button type="button" class="settings-tab" data-tab="style">Style</button>
         </div>
@@ -860,6 +861,20 @@
               <div class="confirm-delete-item">
                 <span>Tags</span>
                 <label class="settings-toggle"><input id="stgConfirmDeleteTag" type="checkbox" /><span class="toggle-track"></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section span-full" data-tab="api-keys">
+          <div class="settings-section-label">API Keys</div>
+          <div class="settings-row settings-row--top">
+            <span>NASA</span>
+            <div class="tz-picker-group">
+              <input id="stgApiKeyNasa" type="password" class="settings-text-input" placeholder="Paste your NASA API key" autocomplete="off" />
+              <div class="tz-hint-row">
+                <span class="tz-hint">Used by the NASA APOD widget. Stored locally in your hub data.</span>
+                <a href="https://api.nasa.gov/" target="_blank" rel="noreferrer noopener" class="widget-apod-settings-link">Get key</a>
               </div>
             </div>
           </div>
