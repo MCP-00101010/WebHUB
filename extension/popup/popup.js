@@ -3,6 +3,7 @@
 async function main() {
   const elMorpheus = document.getElementById('statusMorpheus');
   const elNative   = document.getElementById('statusNative');
+  const elPath     = document.getElementById('statusPath');
   const tabInfo    = document.getElementById('tabInfo');
   const tabTitle   = document.getElementById('tabTitle');
   const tabUrl     = document.getElementById('tabUrl');
@@ -34,10 +35,12 @@ async function main() {
   // Extension status.
   let morpheusOpen = false;
   let nativeAvailable = false;
+  let databasePath = null;
   try {
     const res = await browser.runtime.sendMessage({ type: 'MW_GET_STATUS' });
     morpheusOpen    = res.morpheusOpen;
     nativeAvailable = res.nativeAvailable;
+    databasePath    = res.databasePath || null;
   } catch {
     setRow(elMorpheus, '⚠ Extension error', 'err');
     return;
@@ -52,6 +55,15 @@ async function main() {
     nativeAvailable ? '● File save: enabled' : '○ File save: extension storage only',
     nativeAvailable ? 'ok' : 'muted'
   );
+
+  if (nativeAvailable) {
+    elPath.textContent = databasePath ? `Shared DB: ${databasePath}` : 'Shared DB: not configured';
+    elPath.classList.remove('hidden');
+    elPath.classList.toggle('warn', !databasePath);
+    elPath.classList.toggle('muted', !databasePath);
+  } else {
+    elPath.classList.add('hidden');
+  }
 
   if (!morpheusOpen || !isReal) {
     if (!morpheusOpen) setRow(elMorpheus, '○ Open Morpheus to send tabs', 'warn');

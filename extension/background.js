@@ -3,7 +3,7 @@
 // Tab ID of the currently open Morpheus WebHub page.
 let morpheusTabId = null;
 
-// File path derived from the morpheus page URL (e.g. C:/…/morpheus-webhub.json).
+// Shared database file path resolved via native host config.
 let saveFilePath = null;
 
 // Whether the native messaging host is reachable.
@@ -27,7 +27,17 @@ async function probeNativeHost() {
   }
 }
 
-probeNativeHost();
+const nativeProbePromise = probeNativeHost();
+const hostConfigPromise = (async () => {
+  await nativeProbePromise;
+  if (!nativeAvailable) return;
+  try {
+    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'READ_CONFIG' });
+    saveFilePath = normalizeDatabasePath(res?.config?.databasePath || '');
+  } catch {
+    saveFilePath = null;
+  }
+})();
 
 
 // ---------------------------------------------------------------------------
@@ -47,15 +57,43 @@ function joinThemePath(filename) {
   return dir + sep + filename;
 }
 
-function deriveFilePath(pageUrl) {
-  // Convert file:///C:/foo/index.html  →  C:/foo/morpheus-webhub.json
-  // Convert file:///home/user/foo/index.html  →  /home/user/foo/morpheus-webhub.json
+function normalizeDatabasePath(path) {
+  const trimmed = typeof path === 'string' ? path.trim() : '';
+  return trimmed || null;
+}
+
+function getStorageInfo() {
+  return {
+    nativeAvailable,
+    databasePath: saveFilePath || null
+  };
+}
+
+async function writeHostConfig() {
+  await nativeProbePromise;
+  if (!nativeAvailable) return false;
   try {
-    let path = decodeURIComponent(pageUrl.replace(/^file:\/\/\//, '').replace(/^file:\/\//, ''));
-    // On Windows the path starts with a drive letter (C:/…) — correct already.
-    // On Linux/Mac it starts with / — re-add it.
-    if (!path.match(/^[A-Za-z]:/)) path = '/' + path;
-    return path.replace(/[^/\\]*$/, 'morpheus-webhub.json');
+    await browser.runtime.sendNativeMessage('morpheus_webhub', {
+      type: 'WRITE_CONFIG',
+      config: { databasePath: saveFilePath || '' }
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function setDatabasePath(path) {
+  await hostConfigPromise;
+  saveFilePath = normalizeDatabasePath(path);
+  if (!nativeAvailable) return !saveFilePath;
+  return writeHostConfig();
+}
+
+function extractDatabasePath(json) {
+  try {
+    const parsed = JSON.parse(json);
+    return normalizeDatabasePath(parsed?.databasePath || '');
   } catch {
     return null;
   }
@@ -67,8 +105,22 @@ function deriveFilePath(pageUrl) {
 // ---------------------------------------------------------------------------
 
 async function saveState(json) {
-  // Always mirror to extension storage (fast, no debounce needed).
-  await browser.storage.local.set({ morpheusState: json });
+  await nativeProbePromise;
+  await hostConfigPromise;
+  const jsonPath = extractDatabasePath(json);
+  if (jsonPath && jsonPath !== saveFilePath) await setDatabasePath(jsonPath);
+  let mirrored = false;
+  let mirrorError = null;
+
+  // Mirror to extension storage when possible, but do not let quota pressure
+  // block the primary shared-file save path.
+  try {
+    await browser.storage.local.set({ morpheusState: json });
+    mirrored = true;
+  } catch (e) {
+    mirrorError = e;
+    console.warn('Morpheus: extension storage mirror failed', e);
+  }
 
   // Write to disk via native host (debounced).
   if (nativeAvailable && saveFilePath) {
@@ -87,7 +139,11 @@ async function saveState(json) {
         console.warn('Morpheus: native write failed', e);
       }
     }, 800);
+    return;
   }
+
+  if (mirrored) return;
+  throw (mirrorError || new Error('No save target available'));
 }
 
 
@@ -96,6 +152,8 @@ async function saveState(json) {
 // ---------------------------------------------------------------------------
 
 async function loadState() {
+  await nativeProbePromise;
+  await hostConfigPromise;
   if (nativeAvailable && saveFilePath) {
     try {
       const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
@@ -118,12 +176,28 @@ async function loadState() {
 // ---------------------------------------------------------------------------
 
 async function openFilePicker(accept, title) {
+  await nativeProbePromise;
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   try {
     return await browser.runtime.sendNativeMessage('morpheus_webhub', {
       type: 'OPEN_FILE_PICKER',
       accept,
       title
+    });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function pickDatabasePath(title, defaultName) {
+  await nativeProbePromise;
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  try {
+    return await browser.runtime.sendNativeMessage('morpheus_webhub', {
+      type: 'SAVE_FILE_PICKER',
+      accept: 'json',
+      title,
+      defaultName
     });
   } catch (e) {
     return { ok: false, error: e.message };
@@ -138,15 +212,48 @@ async function openFilePicker(accept, title) {
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
 
+    case 'MW_PING':
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => sendResponse({ ok: true, version: '1.0', ...getStorageInfo() }))
+        .catch(() => sendResponse({ ok: true, version: '1.0', nativeAvailable: false, databasePath: null }));
+      return true;
+
     case 'MW_REGISTER':
       morpheusTabId = sender.tab.id;
-      saveFilePath  = deriveFilePath(msg.pageUrl);
-      sendResponse({ ok: true, nativeAvailable });
-      break;
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => sendResponse({ ok: true, ...getStorageInfo() }))
+        .catch(() => sendResponse({ ok: true, nativeAvailable: false, databasePath: null }));
+      return true;
 
     case 'MW_GET_STATUS':
-      sendResponse({ ok: true, morpheusOpen: morpheusTabId !== null, nativeAvailable });
-      break;
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => sendResponse({ ok: true, morpheusOpen: morpheusTabId !== null, ...getStorageInfo() }))
+        .catch(() => sendResponse({ ok: true, morpheusOpen: morpheusTabId !== null, nativeAvailable: false, databasePath: null }));
+      return true;
+
+    case 'MW_GET_STORAGE_INFO':
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => sendResponse({ ok: true, ...getStorageInfo() }))
+        .catch(() => sendResponse({ ok: true, nativeAvailable: false, databasePath: null }));
+      return true;
+
+    case 'MW_SET_DATABASE_PATH':
+      setDatabasePath(msg.path || '')
+        .then(ok => ok
+          ? sendResponse({ ok: true, ...getStorageInfo() })
+          : sendResponse({ ok: false, error: 'Failed to update database path' }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_PICK_DATABASE_PATH':
+      pickDatabasePath(msg.title || 'Choose shared database location', msg.defaultName || 'morpheus-webhub.json')
+        .then(res => sendResponse(res))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
 
     case 'MW_SAVE':
       saveState(msg.json)
@@ -167,28 +274,36 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_LIST_THEMES': {
-      const dir = deriveThemesDir();
-      if (!dir || !nativeAvailable) { sendResponse({ ok: true, themes: [] }); break; }
-      browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'LIST_DIR', path: dir, ext: '.json' })
-        .then(res => Promise.all((res?.files || []).map(async f => {
-          try {
-            const r = await browser.runtime.sendNativeMessage('morpheus_webhub',
-              { type: 'READ_FILE', path: joinThemePath(f) });
-            return (r?.ok && r.content) ? JSON.parse(r.content) : null;
-          } catch { return null; }
-        })))
-        .then(themes => sendResponse({ ok: true, themes: themes.filter(Boolean) }))
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => {
+          const dir = deriveThemesDir();
+          if (!dir || !nativeAvailable) return sendResponse({ ok: true, themes: [] });
+          return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'LIST_DIR', path: dir, ext: '.json' })
+            .then(res => Promise.all((res?.files || []).map(async f => {
+              try {
+                const r = await browser.runtime.sendNativeMessage('morpheus_webhub',
+                  { type: 'READ_FILE', path: joinThemePath(f) });
+                return (r?.ok && r.content) ? JSON.parse(r.content) : null;
+              } catch { return null; }
+            })))
+            .then(themes => sendResponse({ ok: true, themes: themes.filter(Boolean) }));
+        })
         .catch(() => sendResponse({ ok: true, themes: [] }));
       return true;
     }
 
     case 'MW_WRITE_THEME': {
-      const theme = msg.theme;
-      const path = joinThemePath((theme?.id || 'custom') + '.json');
-      if (!path || !nativeAvailable) { sendResponse({ ok: false, error: 'Not available' }); break; }
-      browser.runtime.sendNativeMessage('morpheus_webhub',
-        { type: 'WRITE_FILE', path, content: JSON.stringify(theme, null, 2) })
-        .then(res => sendResponse(res || { ok: true }))
+      nativeProbePromise
+        .then(() => hostConfigPromise)
+        .then(() => {
+          const theme = msg.theme;
+          const path = joinThemePath((theme?.id || 'custom') + '.json');
+          if (!path || !nativeAvailable) return sendResponse({ ok: false, error: 'Not available' });
+          return browser.runtime.sendNativeMessage('morpheus_webhub',
+            { type: 'WRITE_FILE', path, content: JSON.stringify(theme, null, 2) })
+            .then(res => sendResponse(res || { ok: true }));
+        })
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
@@ -220,6 +335,5 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 browser.tabs.onRemoved.addListener(tabId => {
   if (tabId === morpheusTabId) {
     morpheusTabId = null;
-    saveFilePath  = null;
   }
 });

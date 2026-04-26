@@ -32,6 +32,12 @@ header {
 .status-row.warn { color: #fbbf24; }
 .status-row.err  { color: #f87171; }
 .status-row.muted{ color: #6b7280; }
+.status-row.hidden { display: none; }
+.status-row-path {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .tab-info { padding: 10px 14px; border-bottom: 1px solid #2d2f35; }
 .tab-info.hidden { display: none; }

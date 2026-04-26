@@ -5,6 +5,23 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.47] — 2026-04-26
+
+### Changed
+
+- **Shared extension database path** — the Firefox bridge no longer derives `morpheus-webhub.json` from the page URL. The active database path is now explicit, browser-independent, and can be shared between Firefox and Zen.
+- **Hub data settings** — Global Settings now exposes the shared database path when the native bridge is available, including browse/apply flow plus read-only path display in About.
+- **Extension popup status** — the popup now reports the resolved shared database path so the browser-side status matches what the hub shows.
+- **Localhost bridge support** — the extension content script now runs on `http://localhost/*` and `http://127.0.0.1/*` in addition to `file://`, allowing the hub to be served from a local webserver without losing bridge features.
+
+### Fixed
+
+- **Native host configuration bootstrap** — the native host now supports `config.json` for shared database path discovery and persistence, including a Windows save-path picker flow that reliably returns the selected JSON path.
+- **False disconnected state** — the page-side bridge now retries its handshake and reconnects on later bridge calls so the hub no longer gets stuck reporting the extension as disconnected while the popup/native host are actually available.
+- **Primary persistence target** — when native messaging is available, the shared on-disk database is treated as authoritative and extension storage is only a best-effort backup mirror, avoiding quota-related save failures on larger databases.
+
+---
+
 ## [0.11.46] — 2026-04-26
 
 ### Fixed

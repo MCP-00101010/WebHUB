@@ -42,6 +42,18 @@ $batContent = "@echo off`r`n`"$python`" `"$hostPath`" %*`r`n"
 [System.IO.File]::WriteAllText($batPath, $batContent, [System.Text.Encoding]::ASCII)
 Write-Host "Launcher: $batPath"
 
+# --- Write default config.json if missing ---
+$configPath = Join-Path $scriptDir "config.json"
+if (-not (Test-Path $configPath)) {
+    $config = [ordered]@{
+        databasePath = ""
+    }
+    $config | ConvertTo-Json | Set-Content -Path $configPath -Encoding UTF8
+    Write-Host "Config   : $configPath"
+} else {
+    Write-Host "Config   : $configPath (existing)"
+}
+
 # --- Write native messaging manifest ---
 $manifestDir  = Join-Path $env:APPDATA "Mozilla\NativeMessagingHosts"
 $manifestPath = Join-Path $manifestDir "morpheus_webhub.json"

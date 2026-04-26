@@ -6,11 +6,12 @@
 
 ## UI
 
-✓ *Completed 2026-04-26* — See [0.11.41] in CHANGELOG.
+- Trash, Search, Inbox and Global Settings Modals should use the same layout/css for their headers as the edit/create modals. (use bookmark modal for reference)
+- footer divider line in navpane should follow global divider line style settings.
 
 ## Widgets
 
-✓ *Completed 2026-04-26* — See [0.11.41] in CHANGELOG.
+
 
 ## Drag and Drop
 
@@ -19,9 +20,19 @@
 
 ## Firefox Extension / Bridge
 
+- Completed 2026-04-26: shared database path is now explicit instead of being derived from the `file://` page location.
+- Completed 2026-04-26: Firefox and Zen can now point at the same browser-independent JSON database path.
+- Completed 2026-04-26: the preferred shared path is now carried in the hub state as `databasePath`, with a bootstrap `config.json` next to the native host as the initial/fallback path.
+- Completed 2026-04-26: the active shared path is exposed in Hub settings and shown read-only in the About tab and extension popup.
+- Completed 2026-04-26: localhost support is now wired into the extension bridge so the hub can be served from a local webserver without losing extension features.
+- Completed 2026-04-26: extension storage is now treated as a best-effort backup mirror only; the shared disk file is the primary persistence target when native messaging is available.
+- Completed 2026-04-26: page-side bridge connection retries now recover from false "extension disconnected" startup races, and the native-host path picker now returns the selected save path reliably on Windows.
+- Watch for external file changes, including saves from the other browser and sync tools like Dropbox/OneDrive, and prompt or auto-reload safely.
+- Add stale-write protection so Firefox and Zen cannot silently clobber each other when both are open on the same database.
+- Add file-version / modified-time checks before save, plus a user-visible conflict flow for "disk changed since you loaded".
+- Add background asset management: when a board background image is picked from disk, copy it into a managed sibling assets folder and store a stable relative path instead of inflating the JSON with data URLs.
+- Add theme file lifecycle support beyond write-only save: disk delete/update/refresh should stay in sync with in-app theme state.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.
-- Watch for external file changes, such as Dropbox/OneDrive sync, and prompt the user to reload.
-- Configurable paths: path stored as a top-level field in the JSON itself, not in browser extension storage. A bootstrap `config.json` next to the native host binary holds the initial/fallback path. The hub settings panel exposes the path field when `bridge.isAvailable()`; the extension popup shows the resolved path read-only.
 
 ## Compatibility / Portability / Readability
 

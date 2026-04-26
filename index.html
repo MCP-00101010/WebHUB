@@ -204,7 +204,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.46</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.47</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -886,6 +886,17 @@
         <div class="settings-section span-full" data-tab="general">
           <div class="settings-section-label">Data</div>
           <div class="settings-row">
+            <span>Shared database</span>
+            <input id="stgDatabasePath" type="text" class="settings-text-input" placeholder="C:\Path\morpheus-webhub.json" />
+          </div>
+          <div class="settings-row">
+            <span id="stgDatabasePathStatus" class="settings-muted">Extension storage only.</span>
+            <div class="fmt-btns">
+              <button type="button" id="stgDatabasePathBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
+              <button type="button" id="stgDatabasePathApply" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Apply Path</button>
+            </div>
+          </div>
+          <div class="settings-row">
             <span>Export data</span>
             <button type="button" id="stgExportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Download JSON</button>
           </div>
@@ -904,7 +915,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.46</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.47</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>
@@ -914,8 +925,12 @@
             <span>Native host</span>
             <span id="aboutNativeStatus" class="settings-muted">Checking...</span>
           </div>
+          <div class="settings-row">
+            <span>Database path</span>
+            <span id="aboutDatabasePath" class="settings-muted">Checking...</span>
+          </div>
           <p id="aboutExtensionFeatures" class="about-note">Extension features: checking...</p>
-          <p class="about-note">Data is stored in localStorage. Use Export JSON in General to keep regular backups.</p>
+          <p id="aboutStorageNote" class="about-note">Checking storage mode...</p>
         </div>
 
       </div>

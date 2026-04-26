@@ -29,13 +29,8 @@ window.addEventListener('message', async e => {
   }
 
   try {
-    // MW_PING is answered directly — no background round-trip needed.
-    if (type === 'MW_PING') {
-      reply({ ok: true, version: '1.0' });
-      return;
-    }
-
-    // Everything else (MW_SAVE, MW_LOAD, MW_OPEN_FILE_PICKER) goes to background.
+    // Route all bridge traffic through the background so the page can learn
+    // whether native messaging is actually available.
     const res = await browser.runtime.sendMessage({ type, ...e.data });
     reply(res);
   } catch (err) {

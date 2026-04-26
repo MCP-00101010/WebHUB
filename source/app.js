@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.46';
+const APP_VERSION = '0.11.47';
 
 let activeModal = null;
 let contextTarget = null;
@@ -592,18 +592,33 @@ attachFolderModalListeners();
 attachInboxListeners();
 attachBookmarkImportListener();
 renderAll();
-saveState();
+localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 updateUndoRedoUI();
 
-// If localStorage is empty and bridge storage has a backup, restore from it.
+// If native sync is available, prefer the shared disk database over stale
+// per-browser localStorage copies. Otherwise, keep the previous backup restore.
 if (typeof bridge !== 'undefined') {
   bridge.whenReady.then(async () => {
     if (!bridge.isAvailable()) return;
+    const info = await bridge.getStorageInfo();
+
+    if (info?.nativeAvailable && info.databasePath) {
+      const json = await bridge.loadState();
+      if (json) {
+        restoreStateSnapshot(json);
+      }
+      state.databasePath = info.databasePath;
+      localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
+      renderAll();
+      updateUndoRedoUI();
+      return;
+    }
+
     if (localStorage.getItem('morpheus-webhub-state')) return; // already have local state
     const json = await bridge.loadState();
     if (!json) return;
     restoreStateSnapshot(json);
-    localStorage.setItem('morpheus-webhub-state', json);
+    localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
     renderAll();
   });
 }

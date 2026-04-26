@@ -25,7 +25,7 @@
 
   "content_scripts": [
     {
-      "matches": ["file://*/*"],
+      "matches": ["file://*/*", "http://localhost/*", "http://127.0.0.1/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

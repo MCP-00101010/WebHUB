@@ -26,6 +26,19 @@ echo "Python  : $PYTHON"
 HOST="$SCRIPT_DIR/morpheus_host.py"
 chmod +x "$HOST"
 
+# --- Write default config.json if missing ---
+CONFIG="$SCRIPT_DIR/config.json"
+if [ ! -f "$CONFIG" ]; then
+cat > "$CONFIG" <<JSON
+{
+  "databasePath": ""
+}
+JSON
+    echo "Config  : $CONFIG"
+else
+    echo "Config  : $CONFIG (existing)"
+fi
+
 # --- Write manifest ---
 if [[ "$OSTYPE" == "darwin"* ]]; then
     MANIFEST_DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"

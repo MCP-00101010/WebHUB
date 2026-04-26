@@ -100,6 +100,7 @@ const defaultSettings = {
 const defaultState = {
   activeBoardId: 'board-1',
   activeCollectionId: null,
+  databasePath: '',
   hubName: 'Morpheus WebHub',
   lastExported: null,
   tags: [],
@@ -274,11 +275,12 @@ function collectReferencedBoardIds(items) {
   return ids;
 }
 
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return defaultState;
+function parseStateJson(saved) {
+  if (!saved) return cloneData(defaultState);
   try {
     const parsed = JSON.parse(saved);
+    if (typeof parsed.databasePath !== 'string') parsed.databasePath = '';
+    else parsed.databasePath = parsed.databasePath.trim();
     for (const board of (parsed.boards || [])) {
       if (board.backgroundImage === undefined) board.backgroundImage = '';
       if (board.containerOpacity === undefined) board.containerOpacity = 100;
@@ -329,8 +331,12 @@ function loadState() {
     return parsed;
   } catch (error) {
     console.warn('Failed to parse saved state, resetting', error);
-    return defaultState;
+    return cloneData(defaultState);
   }
+}
+
+function loadState() {
+  return parseStateJson(localStorage.getItem(STORAGE_KEY));
 }
 
 function saveState() {
@@ -905,7 +911,7 @@ function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags
 // --- Undo snapshot ---
 
 function restoreStateSnapshot(jsonStr) {
-  state = JSON.parse(jsonStr);
+  state = parseStateJson(jsonStr);
 }
 
 // --- Recently deleted (trash) ---

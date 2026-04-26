@@ -2,6 +2,7 @@
 
 let boardSettingsCreatingId = null;
 let _boardSettingsCancelSnapshot = null;
+let _pendingDatabasePath = '';
 
 function showBoardSettingsPanel(isNew = false) {
   const board = getActiveBoard();
@@ -418,26 +419,77 @@ function updateLastExportedLabel() {
   el.textContent = `Last exported: ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
+async function getBridgeStorageInfo() {
+  if (typeof bridge === 'undefined') {
+    return { extensionReady: false, nativeReady: false, databasePath: null };
+  }
+  await bridge.whenReady;
+  const extensionReady = bridge.isAvailable();
+  const nativeReady = extensionReady && bridge.nativeIsAvailable();
+  const info = extensionReady ? await bridge.getStorageInfo() : null;
+  return {
+    extensionReady,
+    nativeReady,
+    databasePath: info?.databasePath || null
+  };
+}
+
+async function updateDatabasePathControls() {
+  const input = document.getElementById('stgDatabasePath');
+  const browseBtn = document.getElementById('stgDatabasePathBrowse');
+  const applyBtn = document.getElementById('stgDatabasePathApply');
+  const statusEl = document.getElementById('stgDatabasePathStatus');
+  if (!input || !browseBtn || !applyBtn || !statusEl) return;
+
+  const info = await getBridgeStorageInfo();
+  const savedPath = state.databasePath || info.databasePath || '';
+  const draftPath = _pendingDatabasePath.trim();
+  const displayedPath = draftPath || savedPath;
+  input.value = displayedPath;
+  input.disabled = !info.nativeReady;
+  browseBtn.disabled = !info.nativeReady;
+  applyBtn.disabled = !info.nativeReady;
+
+  if (!info.extensionReady) {
+    statusEl.textContent = 'Extension not detected. Using browser localStorage only.';
+    return;
+  }
+  if (!info.nativeReady) {
+    statusEl.textContent = 'Extension connected, but native host is unavailable. Shared disk sync is off.';
+    return;
+  }
+  statusEl.textContent = savedPath
+    ? `Shared file active: ${savedPath}`
+    : draftPath
+      ? 'Path selected but not applied yet.'
+      : 'Native host is available, but no shared database path is configured yet.';
+}
+
 async function updateAboutBridgeStatus() {
-  if (typeof bridge !== 'undefined') await bridge.whenReady;
   const extensionEl = document.getElementById('aboutExtensionStatus');
   const nativeEl = document.getElementById('aboutNativeStatus');
+  const databasePathEl = document.getElementById('aboutDatabasePath');
   const featuresEl = document.getElementById('aboutExtensionFeatures');
-  if (!extensionEl || !nativeEl || !featuresEl) return;
+  const storageNoteEl = document.getElementById('aboutStorageNote');
+  if (!extensionEl || !nativeEl || !databasePathEl || !featuresEl || !storageNoteEl) return;
 
-  const extensionReady = typeof bridge !== 'undefined' && bridge.isAvailable();
-  const nativeReady = extensionReady && bridge.nativeIsAvailable();
-  extensionEl.textContent = extensionReady ? 'Connected' : 'Not detected';
-  nativeEl.textContent = nativeReady ? 'Available' : (extensionReady ? 'Not available' : 'Not connected');
+  const info = await getBridgeStorageInfo();
+  extensionEl.textContent = info.extensionReady ? 'Connected' : 'Not detected';
+  nativeEl.textContent = info.nativeReady ? 'Available' : (info.extensionReady ? 'Not available' : 'Not connected');
+  databasePathEl.textContent = info.databasePath || (info.nativeReady ? 'Not configured' : 'Unavailable');
 
   const features = [];
-  if (extensionReady) {
+  if (info.extensionReady) {
     features.push('extension storage backup', 'send current tab to board inbox');
-    if (nativeReady) features.push('native JSON file sync', 'background image picker', 'theme file import/export');
+    if (info.nativeReady) features.push('shared JSON file sync', 'background image picker', 'theme file import/export');
   }
   featuresEl.textContent = features.length
     ? `Extension features: ${features.join(', ')}.`
     : 'Extension features: unavailable. The hub is running in localStorage-only mode.';
+
+  storageNoteEl.textContent = info.nativeReady && info.databasePath
+    ? `Primary storage is the shared disk file at ${info.databasePath}. localStorage is only a browser-local cache.`
+    : 'Without the native host, the hub stores data in browser localStorage. Use Export JSON in General to keep regular backups.';
 }
 
 function showSettingsPanel(tab = 'general') {
@@ -503,6 +555,7 @@ function showSettingsPanel(tab = 'general') {
   updateStyleAdvancedUI();
   renderThemePicker();
   renderTagGroups();
+  updateDatabasePathControls();
   updateAboutBridgeStatus();
 }
 
@@ -1589,6 +1642,58 @@ function attachSettingsListeners() {
 
   document.getElementById('settingsDoneBtn').addEventListener('click', hideSettingsPanel);
 
+  const databasePathInput = document.getElementById('stgDatabasePath');
+  const applyDatabasePath = async path => {
+    const trimmed = (path || '').trim();
+    if (typeof bridge === 'undefined') return;
+    await bridge.whenReady;
+    if (!bridge.nativeIsAvailable()) {
+      showNotice('Shared database paths require the native messaging host.');
+      return;
+    }
+    if (!trimmed) {
+      showNotice('Choose or enter a path for the shared database JSON file.');
+      return;
+    }
+    const res = await bridge.setDatabasePath(trimmed);
+    if (!res?.databasePath) {
+      showNotice('Failed to update the shared database path.');
+      return;
+    }
+    _pendingDatabasePath = '';
+    state.databasePath = res.databasePath;
+    saveState();
+    await updateDatabasePathControls();
+    await updateAboutBridgeStatus();
+  };
+
+  databasePathInput.addEventListener('input', () => {
+    _pendingDatabasePath = databasePathInput.value.trim();
+  });
+
+  document.getElementById('stgDatabasePathApply').addEventListener('click', async () => {
+    await applyDatabasePath(databasePathInput.value);
+  });
+
+  document.getElementById('stgDatabasePathBrowse').addEventListener('click', async () => {
+    if (typeof bridge === 'undefined') return;
+    await bridge.whenReady;
+    if (!bridge.nativeIsAvailable()) {
+      showNotice('Shared database paths require the native messaging host.');
+      return;
+    }
+    const picked = await bridge.pickDatabasePath('Choose shared database location', 'morpheus-webhub.json');
+    if (!picked?.path) {
+      showNotice(picked?.error
+        ? `No path was returned from the extension: ${picked.error}`
+        : 'No path was returned from the extension. If the popup still says connected, reload the hub page and try again.');
+      return;
+    }
+    _pendingDatabasePath = picked.path;
+    databasePathInput.value = picked.path;
+    await updateDatabasePathControls();
+  });
+
   document.getElementById('stgExportBtn').addEventListener('click', () => {
     state.lastExported = new Date().toISOString();
     saveState();
@@ -1609,10 +1714,14 @@ function attachSettingsListeners() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       try {
         const parsed = JSON.parse(ev.target.result);
         if (!parsed.boards || !parsed.navItems) { alert('Invalid file: not a Morpheus WebHub export.'); return; }
+        if (parsed.databasePath && typeof bridge !== 'undefined') {
+          await bridge.whenReady;
+          if (bridge.nativeIsAvailable()) await bridge.setDatabasePath(parsed.databasePath);
+        }
         localStorage.setItem('morpheus-webhub-state', ev.target.result);
         location.reload();
       } catch { alert('Failed to read file. Make sure it is a valid JSON export.'); }

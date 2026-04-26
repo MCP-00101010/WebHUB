@@ -11,6 +11,9 @@ import os
 import base64
 import mimetypes
 
+HOST_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(HOST_DIR, 'config.json')
+
 
 # ---------------------------------------------------------------------------
 # Native messaging protocol (stdin/stdout, 4-byte length-prefixed JSON)
@@ -44,16 +47,27 @@ def reply_err(msg):
 # File picker — try tkinter, fall back to PowerShell on Windows
 # ---------------------------------------------------------------------------
 
+def _picker_filetypes(accept=''):
+    if accept == 'image':
+        return [('Image files', '*.png *.jpg *.jpeg *.gif *.webp *.svg *.bmp'), ('All files', '*.*')]
+    if accept == 'json':
+        return [('JSON files', '*.json'), ('All files', '*.*')]
+    return [('All files', '*.*')]
+
+
+def _windows_filter_string(accept=''):
+    if accept == 'image':
+        return 'Image Files (*.png,*.jpg,*.jpeg,*.gif,*.webp,*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|All Files (*.*)|*.*'
+    if accept == 'json':
+        return 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'
+    return 'All Files (*.*)|*.*'
+
+
 def open_file_picker(accept='', title='Select file'):
     """
-    Open a system file dialog and return (path, mime_type) or (None, None).
-    `accept` is a hint: 'image' selects image filetypes.
+    Open a system file dialog and return the selected path or None.
     """
-    filetypes_tk = []
-    if accept == 'image':
-        filetypes_tk = [('Image files', '*.png *.jpg *.jpeg *.gif *.webp *.svg *.bmp'), ('All files', '*.*')]
-    else:
-        filetypes_tk = [('All files', '*.*')]
+    filetypes_tk = _picker_filetypes(accept)
 
     # --- try tkinter (cross-platform) ---
     try:
@@ -73,10 +87,7 @@ def open_file_picker(accept='', title='Select file'):
     if sys.platform == 'win32':
         try:
             import subprocess
-            if accept == 'image':
-                filter_str = 'Image Files (*.png,*.jpg,*.jpeg,*.gif,*.webp,*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|All Files (*.*)|*.*'
-            else:
-                filter_str = 'All Files (*.*)|*.*'
+            filter_str = _windows_filter_string(accept)
             ps_script = (
                 'Add-Type -AssemblyName System.Windows.Forms;'
                 '$d = New-Object System.Windows.Forms.OpenFileDialog;'
@@ -97,6 +108,60 @@ def open_file_picker(accept='', title='Select file'):
     return None
 
 
+def save_file_picker(accept='json', title='Choose file', default_name='morpheus-webhub.json'):
+    filetypes_tk = _picker_filetypes(accept)
+
+    # --- Windows first: PowerShell save dialog in STA mode ---
+    if sys.platform == 'win32':
+        try:
+            import subprocess
+            filter_str = _windows_filter_string(accept)
+            safe_default_name = (default_name or '').replace("'", "''")
+            ps_script = (
+                'Add-Type -AssemblyName System.Windows.Forms;'
+                '$d = New-Object System.Windows.Forms.SaveFileDialog;'
+                f'$d.Title = \'{title}\';'
+                f'$d.Filter = \'{filter_str}\';'
+                f'$d.FileName = \'{safe_default_name}\';'
+                '$d.CheckPathExists = $true;'
+                '$d.OverwritePrompt = $false;'
+                '$d.AddExtension = $true;'
+                '$d.DefaultExt = \'json\';'
+                '$d.RestoreDirectory = $true;'
+                'if ($d.ShowDialog() -eq \'OK\') { Write-Output $d.FileName }'
+            )
+            result = subprocess.run(
+                ['powershell', '-STA', '-NonInteractive', '-Command', ps_script],
+                capture_output=True, text=True, timeout=60
+            )
+            path = result.stdout.strip()
+            if path:
+                return path
+        except Exception:
+            pass
+
+    # --- try tkinter (cross-platform) ---
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes('-topmost', True)
+        path = filedialog.asksaveasfilename(
+            title=title,
+            filetypes=filetypes_tk,
+            defaultextension='.json' if accept == 'json' else '',
+            initialfile=default_name or ''
+        )
+        root.destroy()
+        if path:
+            return path
+    except Exception:
+        pass
+
+    return None
+
+
 def file_to_data_url(path):
     mime, _ = mimetypes.guess_type(path)
     if not mime:
@@ -104,6 +169,28 @@ def file_to_data_url(path):
     with open(path, 'rb') as f:
         data = base64.b64encode(f.read()).decode('ascii')
     return f'data:{mime};base64,{data}'
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+    return {}
+
+
+def save_config(config):
+    data = {
+        'databasePath': (config or {}).get('databasePath', '') or ''
+    }
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write('\n')
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +202,16 @@ def handle(msg):
 
     if msg_type == 'PING':
         reply_ok(version='1.0')
+
+    elif msg_type == 'READ_CONFIG':
+        reply_ok(config=load_config())
+
+    elif msg_type == 'WRITE_CONFIG':
+        try:
+            save_config(msg.get('config', {}))
+            reply_ok(config=load_config())
+        except Exception as e:
+            reply_err(str(e))
 
     elif msg_type == 'READ_FILE':
         path = msg.get('path', '')
@@ -150,6 +247,16 @@ def handle(msg):
                 reply_err(str(e))
         else:
             reply_ok(path=None, name=None, dataUrl=None)   # user cancelled
+
+    elif msg_type == 'SAVE_FILE_PICKER':
+        accept = msg.get('accept', 'json')
+        title = msg.get('title', 'Choose file')
+        default_name = msg.get('defaultName', 'morpheus-webhub.json')
+        path = save_file_picker(accept, title, default_name)
+        if path:
+            reply_ok(path=path, name=os.path.basename(path))
+        else:
+            reply_ok(path=None, name=None)
 
     elif msg_type == 'LIST_DIR':
         path = msg.get('path', '')
