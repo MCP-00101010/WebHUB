@@ -5,6 +5,14 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.39] — 2026-04-26
+
+### Fixed
+
+- **Collection tab bar button styling** — add-board and board-settings buttons in the collection tab bar now match the 18 px icon size used in the board name pane and no longer display a bordered frame; hover uses the same subtle background as the name-pane buttons.
+
+---
+
 ## [0.11.38] — 2026-04-26
 
 ### Changed

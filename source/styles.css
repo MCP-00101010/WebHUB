@@ -968,47 +968,36 @@ button {
   flex-shrink: 0;
 }
 
-.collection-tab-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--text-muted);
-  background: var(--surface-1);
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.collection-tab-add:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--surface-2);
-}
-
+.collection-tab-add,
 .collection-tab-settings-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
   cursor: pointer;
   color: var(--text-muted);
   background: transparent;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: color 0.15s, background 0.15s;
   flex-shrink: 0;
 }
 
+.collection-tab-add svg,
+.collection-tab-settings-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.collection-tab-add {
+  margin-left: auto;
+}
+
+.collection-tab-add:hover,
 .collection-tab-settings-btn:hover {
   color: var(--accent);
-  border-color: var(--accent);
-  background: var(--surface-2);
+  background: var(--panel-strong);
 }
 
 .collection-tab-settings-btn:disabled {
