@@ -5,6 +5,12 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.46] — 2026-04-26
+
+### Fixed
+
+- Removed the redundant un-themed `border-bottom` from `.modal-card-header`, `.bstg-header`, and `#wstgHeader`. The title input's accent underline (shown on focus when modals open) is the sole header divider.
+
 ## [0.11.45] — 2026-04-26
 
 ### Fixed
