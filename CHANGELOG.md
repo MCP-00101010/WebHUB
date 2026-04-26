@@ -5,6 +5,12 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.44] — 2026-04-26
+
+### Fixed
+
+- Navpane "Add folder" and "Add subfolder" now open the same `folderModal` panel as board folders, giving them the correct subtitle header and the full tags section (Tags, Shared, Inherit, Auto-remove).
+
 ## [0.11.43] — 2026-04-26
 
 ### Changed

@@ -524,7 +524,15 @@ function handleFolderModalSubmit() {
   } else {
     const area = contextTarget?.area;
     const parent = contextTarget?.item;
-    if (area === 'board-subfolder') {
+    if (area === 'nav-empty') {
+      addNavSection({ type: 'folder', title: name, tags, sharedTags, inheritTags, autoRemoveTags });
+    } else if (area === 'nav-subfolder') {
+      if (parent) {
+        parent.children = parent.children || [];
+        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags, inheritTags, autoRemoveTags });
+        parent.collapsed = false;
+      }
+    } else if (area === 'board-subfolder') {
       if (parent) {
         parent.children = parent.children || [];
         parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags, inheritTags, autoRemoveTags });

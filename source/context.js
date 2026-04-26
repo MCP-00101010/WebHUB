@@ -378,7 +378,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addNavFolder':
-      showModal('addFolder', { title: 'New Folder', placeholder1: 'New Folder' });
+      showFolderModal('create');
       break;
     case 'addNavTitle':
       showModal('addTitle', { title: 'New Title', placeholder1: 'New Title' });
@@ -440,7 +440,7 @@ function handleContextMenuAction(action) {
     }
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
-      showModal('addFolder', { title: 'New Folder', placeholder1: 'New Folder' });
+      showFolderModal('create');
       break;
     case 'addEssential':
       showModal('addBookmark', {
