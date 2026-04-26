@@ -5,6 +5,12 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.45] — 2026-04-26
+
+### Fixed
+
+- Folder modal header now uses `modal-card-header` class (matching the bookmark modal) instead of the overridden `settings-header` variant, giving it the correct column layout.
+
 ## [0.11.44] — 2026-04-26
 
 ### Fixed

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.44';
+const APP_VERSION = '0.11.45';
 
 let activeModal = null;
 let contextTarget = null;

@@ -2610,7 +2610,6 @@ button {
   background: var(--text-muted);
 }
 
-.folder-modal-header,
 #wstgHeader {
   flex-direction: column;
   align-items: stretch;
