@@ -276,8 +276,8 @@ WIDGET_REGISTRY['clock'] = {
       <div class="settings-row">
         <span>Format</span>
         <div class="icon-size-radios">
-          <label class="icon-size-label" title="24 hour"><input type="radio" data-cfg="format" value="24h" ${c.format !== '12h' ? 'checked' : ''}/><span>24h</span></label>
-          <label class="icon-size-label" title="12 hour"><input type="radio" data-cfg="format" value="12h" ${c.format === '12h' ? 'checked' : ''}/><span>12h</span></label>
+          <label class="icon-size-label" title="24 hour"><input type="radio" name="clockFormat" data-cfg="format" value="24h" ${c.format !== '12h' ? 'checked' : ''}/><span>24h</span></label>
+          <label class="icon-size-label" title="12 hour"><input type="radio" name="clockFormat" data-cfg="format" value="12h" ${c.format === '12h' ? 'checked' : ''}/><span>12h</span></label>
         </div>
       </div>
       <div class="settings-row">

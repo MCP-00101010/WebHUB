@@ -5,6 +5,12 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.42] — 2026-04-26
+
+### Fixed
+
+- Clock widget format radio buttons now share a `name` attribute, ensuring only one can be selected at a time.
+
 ## [0.11.41] — 2026-04-26
 
 ### Changed
