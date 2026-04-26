@@ -9,10 +9,6 @@
 - Trash, Search, Inbox and Global Settings Modals should use the same layout/css for their headers as the edit/create modals. (use bookmark modal for reference)
 - footer divider line in navpane should follow global divider line style settings.
 
-## Widgets
-
-
-
 ## Drag and Drop
 
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover`; only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
@@ -20,27 +16,12 @@
 
 ## Firefox Extension / Bridge
 
-- Completed 2026-04-26: shared database path is now explicit instead of being derived from the `file://` page location.
-- Completed 2026-04-26: Firefox and Zen can now point at the same browser-independent JSON database path.
-- Completed 2026-04-26: the preferred shared path is now carried in the hub state as `databasePath`, with a bootstrap `config.json` next to the native host as the initial/fallback path.
-- Completed 2026-04-26: the active shared path is exposed in Hub settings and shown read-only in the About tab and extension popup.
-- Completed 2026-04-26: localhost support is now wired into the extension bridge so the hub can be served from a local webserver without losing extension features.
-- Completed 2026-04-26: extension storage is now treated as a best-effort backup mirror only; the shared disk file is the primary persistence target when native messaging is available.
-- Completed 2026-04-26: page-side bridge connection retries now recover from false "extension disconnected" startup races, and the native-host path picker now returns the selected save path reliably on Windows.
-- Completed 2026-04-26: shared-disk polling now detects external JSON changes from the other browser or sync tools and auto-reloads or prompts safely depending on whether this tab has newer unsynced edits.
-- Completed 2026-04-26: stale-write protection now blocks silent cross-browser clobbering by comparing file versions before every shared-disk save.
-- Completed 2026-04-26: file-version / modified-time metadata is now checked before save, with a user-visible reload flow when the disk changed since this tab last loaded or saved.
+- Completed 2026-04-26: shared database path, localhost bridge support, best-effort extension-storage mirroring, shared-disk polling, and stale-write/conflict protection are all now in place. See [0.11.48] and [0.11.47] in `CHANGELOG.md`.
+- Add a generic secret-storage bridge so API keys are kept out of hub state, exports, and the shared JSON database. Use OS-backed storage where available (Windows Credential Manager, Linux Secret Service/keyring), with a clearly labeled fallback only if no secure store exists.
+- Prefer adding generic extension/native-host capabilities for service integrations up front (for example secret get/set and other reusable bridge actions) so future widgets do not force frequent AMO re-signing for one-off extension changes.
 - Add background asset management: when a board background image is picked from disk, copy it into a managed sibling assets folder and store a stable relative path instead of inflating the JSON with data URLs.
 - Add theme file lifecycle support beyond write-only save: disk delete/update/refresh should stay in sync with in-app theme state.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.
-
-## Compatibility / Portability / Readability
-
-- Add native File System Access API support for Chromium browsers.
-- Write user-facing documentation for installation, usage, extension setup, and file structure.
-- Add localisation support.
-- Restructure source files for readability.
-- Add JSDoc comments for major functions and data types.
 
 ## UI Standardization
 
