@@ -921,6 +921,7 @@ function createNavItem(item, depth = 0, parent = null) {
   } else if (item.type !== 'collection') {
     if (item.type !== 'title' || item.title) {
       if (item.type === 'board') {
+        if (item.boardId === state.activeBoardId) el.classList.add('active');
         const boardIcon = document.createElement('span');
         boardIcon.className = 'nav-board-icon';
         boardIcon.appendChild(icon('icon-board'));
@@ -1350,6 +1351,13 @@ function renderCollectionTabBar(collection) {
   settingsBtn.addEventListener('click', () => showBoardSettingsPanel());
   tabBar.appendChild(settingsBtn);
 
+  tabBar.addEventListener('contextmenu', e => {
+    if (e.target.closest('.collection-tab, .collection-tab-add, .collection-tab-settings-btn')) return;
+    e.preventDefault();
+    contextTarget = { area: 'collection-tab-bar', collectionId: collection.id };
+    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToCollection' }]);
+  });
+
   // Accept nav board drops anywhere on the tab bar (between tabs or at the end).
   // When the ghost indicator has pointer-events:none, cursor events fall through to tabBar —
   // in that case just accept the drop without repositioning to avoid flicker.
@@ -1442,6 +1450,13 @@ function renderFolderTabBar(folder) {
     showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToFolder' }]);
   });
   tabBar.appendChild(addBtn);
+
+  tabBar.addEventListener('contextmenu', e => {
+    if (e.target.closest('.collection-tab, .collection-tab-add')) return;
+    e.preventDefault();
+    contextTarget = { area: 'folder-tab-bar', folderId: folder.id };
+    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToFolder' }]);
+  });
 }
 
 function renderColumns(board) {

@@ -468,6 +468,7 @@ function showFolderModal(mode, ct) {
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   const submitBtn = document.getElementById('folderModalSubmitBtn');
+  document.getElementById('fmSubtitle').textContent = mode === 'edit' ? 'Edit Folder' : 'New Folder';
   if (mode === 'edit') {
     submitBtn.textContent = 'Save';
     let folderItem = null;
@@ -553,7 +554,7 @@ function attachFolderModalListeners() {
 function openExternalBookmarkModal(url, title, target, faviconCache = '') {
   contextTarget = { ...target, faviconCache };
   showModal('addBookmark', {
-    title: 'Add Bookmark',
+    title: 'New Bookmark',
     placeholder1: 'New Bookmark',
     value1: title,
     showUrl: true,

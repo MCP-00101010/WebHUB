@@ -596,6 +596,7 @@ button {
 .nav-item[data-type="board"] {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .nav-board-info {
@@ -1334,7 +1335,7 @@ button {
 .folder-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 
@@ -1605,6 +1606,11 @@ button {
   font-size: 0.78rem;
 }
 
+.bstg-url-row > span:first-child {
+  flex: 0;
+  white-space: nowrap;
+}
+
 .settings-text-input {
   flex: 1;
   border: 1px solid var(--border);
@@ -1780,8 +1786,8 @@ button {
 
 .bstg-header {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
   cursor: grab;
@@ -1789,6 +1795,12 @@ button {
 
 .bstg-header:active {
   cursor: grabbing;
+}
+
+.bstg-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .bstg-title-input {
@@ -2563,6 +2575,13 @@ button {
   background: var(--text-muted);
 }
 
+.folder-modal-header,
+#wstgHeader {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .settings-header {
   display: flex;
   align-items: center;
@@ -3038,17 +3057,22 @@ button {
   overflow: hidden;
 }
 
+.widget-card {
+  font-family: var(--bookmark-font-family);
+}
+
 .widget-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px 6px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--title-line-thickness) var(--title-line-style) var(--title-line-color);
 }
 
 .widget-title {
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: var(--board-font-weight, 600);
+  font-family: var(--board-font-family);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3159,6 +3183,14 @@ button {
   min-height: 120px;
   resize: vertical;
 }
+
+.widget-notes-settings-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 160px;
+  resize: vertical;
+}
 .settings-row--top { align-items: flex-start; }
 
 /* To-do list widget */
@@ -3206,7 +3238,6 @@ button {
   display: flex;
   gap: 6px;
   padding-top: 4px;
-  border-top: 1px solid var(--border);
 }
 .widget-todo-input {
   flex: 1;
@@ -3230,6 +3261,10 @@ button {
 }
 .widget-todo-add-btn:hover { color: var(--accent-strong); }
 .settings-value { color: var(--text-muted); font-size: 0.85rem; }
+
+.todo-clear-row {
+  justify-content: flex-start;
+}
 
 /* Image widget */
 .widget-image {

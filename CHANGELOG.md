@@ -5,6 +5,24 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.41] — 2026-04-26
+
+### Changed
+
+- **U1** All edit/create modals now have a consistent header: "NEW/EDIT \<TYPE>" subtitle, name input with auto-focus, and `var(--border)` divider line. Board, folder, and widget settings panels brought in line with the bookmark modal reference.
+- **U2** Board settings panel Cancel button is now always visible (not only during create). Cancelling an edit restores the original board state without saving.
+- **U3** Active board icon in the navpane now changes to accent color, matching active collection icon behaviour.
+- **U4** Board names, collection names, and folder names all use the same 8 px gap between icon and label.
+- **U5** Right-clicking empty space in the board tab bar (collection and folder contexts) shows an "Add board" context menu.
+- **U6** Background image URL input in the board settings panel now sits flush left next to the "URL" label and stretches to fill the remaining width.
+- **W1** Widget cards inherit theme font family and title line style/color/thickness from global style settings.
+- **W2** Clock widget 12 h / 24 h format is now selected with radio buttons instead of a dropdown.
+- **W3** To-do widget in columns no longer renders a duplicate divider below the widget title.
+- **W4** To-do settings modal: removed redundant "Clear Completed" label; button renamed "Clear completed" and aligned bottom-left.
+- **W5** Countdown widget blocks saving when the target date is in the past, with an inline error message.
+- **W6** Countdown widget defaults to midnight (00:00) when no time component is provided, instead of failing.
+- **W7** Note settings modal: removed "Content" label; textarea stretches to fill the full modal width.
+
 ## [0.11.40] — 2026-04-26
 
 ### Changed

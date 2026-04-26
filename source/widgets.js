@@ -127,7 +127,9 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   const panel      = document.getElementById('widgetSettingsPanel');
   const titleInput = document.getElementById('wstgTitle');
   const body       = document.getElementById('wstgBody');
+  const subtitle   = document.getElementById('wstgSubtitle');
 
+  if (subtitle) subtitle.textContent = (options.isNew ? 'New ' : 'Edit ') + def.name;
   titleInput.value = widget.title || '';
   body.innerHTML   = '';
   def.renderSettings(widget, body);
@@ -137,9 +139,11 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('wstgHeader'));
+  titleInput.focus();
 
   const syncConfig = () => {
     body.querySelectorAll('[data-cfg]').forEach(input => {
+      if (input.type === 'radio' && !input.checked) return;
       const key = input.dataset.cfg;
       widget.config[key] = input.type === 'checkbox' ? input.checked : input.value;
     });
@@ -149,6 +153,18 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   body.addEventListener('change', syncConfig, { signal: sig });
 
   document.getElementById('wstgDoneBtn').addEventListener('click', () => {
+    if (widget.widgetType === 'countdown') {
+      const dateInput = body.querySelector('[data-cfg="targetDate"]');
+      const errorEl = body.querySelector('#countdownDateError');
+      let val = dateInput?.value || '';
+      if (val && !val.includes('T')) val = val + 'T00:00';
+      if (dateInput && val) dateInput.value = val;
+      if (val && new Date(val) <= new Date()) {
+        errorEl?.classList.remove('hidden');
+        return;
+      }
+      errorEl?.classList.add('hidden');
+    }
     if (!options.deferUndo) pushUndoSnapshot();
     widget.title = titleInput.value.trim();
     syncConfig();
@@ -259,10 +275,10 @@ WIDGET_REGISTRY['clock'] = {
     container.innerHTML = `
       <div class="settings-row">
         <span>Format</span>
-        <select data-cfg="format">
-          <option value="24h" ${c.format !== '12h' ? 'selected' : ''}>24 hour</option>
-          <option value="12h" ${c.format === '12h' ? 'selected' : ''}>12 hour</option>
-        </select>
+        <div class="icon-size-radios">
+          <label class="icon-size-label" title="24 hour"><input type="radio" data-cfg="format" value="24h" ${c.format !== '12h' ? 'checked' : ''}/><span>24h</span></label>
+          <label class="icon-size-label" title="12 hour"><input type="radio" data-cfg="format" value="12h" ${c.format === '12h' ? 'checked' : ''}/><span>12h</span></label>
+        </div>
       </div>
       <div class="settings-row">
         <span>Show seconds</span>
@@ -338,7 +354,8 @@ WIDGET_REGISTRY['countdown'] = {
       <div class="settings-row">
         <span>Target date</span>
         <input type="datetime-local" data-cfg="targetDate" value="${c.targetDate || ''}" class="settings-text-input" />
-      </div>`;
+      </div>
+      <div id="countdownDateError" class="settings-warning hidden">Target date must be in the future.</div>`;
   }
 };
 
@@ -367,10 +384,7 @@ WIDGET_REGISTRY['notes'] = {
   renderSettings(widget, container) {
     const c = widget.config;
     container.innerHTML = `
-      <div class="settings-row settings-row--top">
-        <span>Content</span>
-        <textarea data-cfg="content" class="settings-text-input widget-settings-textarea" rows="8" placeholder="Type a note…">${c.content || ''}</textarea>
-      </div>`;
+      <textarea data-cfg="content" class="settings-text-input widget-notes-settings-textarea" rows="8" placeholder="Type a note…">${c.content || ''}</textarea>`;
   }
 };
 
@@ -470,9 +484,8 @@ WIDGET_REGISTRY['todo'] = {
         <span>Progress</span>
         <span class="settings-value">${done} / ${total} done</span>
       </div>
-      <div class="settings-row">
-        <span>Clear completed</span>
-        <button type="button" class="secondary-btn" id="todoClearDoneBtn">Clear</button>
+      <div class="settings-row todo-clear-row">
+        <button type="button" class="secondary-btn" id="todoClearDoneBtn">Clear completed</button>
       </div>`;
     container.querySelector('#todoClearDoneBtn').addEventListener('click', () => {
       widget.data.items = (widget.data.items || []).filter(i => !i.done);

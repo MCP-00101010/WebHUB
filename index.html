@@ -204,7 +204,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.40</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.41</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -328,12 +328,15 @@
 
     <div id="boardSettingsPanel" class="settings-panel hidden">
       <div id="bstgHeader" class="bstg-header">
-        <input id="bstgTitle" type="text" class="bstg-title-input" placeholder="New Board" />
-        <div class="bstg-columns-radio">
-          <span class="bstg-columns-label">Columns</span>
-          <label class="col-radio-label" title="3 columns"><input type="radio" name="bstgCols" value="3" /><span>3</span></label>
-          <label class="col-radio-label" title="4 columns"><input type="radio" name="bstgCols" value="4" /><span>4</span></label>
-          <label class="col-radio-label" title="5 columns"><input type="radio" name="bstgCols" value="5" /><span>5</span></label>
+        <span id="bstgSubtitle" class="modal-card-subtitle">New Board</span>
+        <div class="bstg-header-row">
+          <input id="bstgTitle" type="text" class="bstg-title-input" placeholder="New Board" />
+          <div class="bstg-columns-radio">
+            <span class="bstg-columns-label">Columns</span>
+            <label class="col-radio-label" title="3 columns"><input type="radio" name="bstgCols" value="3" /><span>3</span></label>
+            <label class="col-radio-label" title="4 columns"><input type="radio" name="bstgCols" value="4" /><span>4</span></label>
+            <label class="col-radio-label" title="5 columns"><input type="radio" name="bstgCols" value="5" /><span>5</span></label>
+          </div>
         </div>
       </div>
       <div class="settings-body bstg-two-col">
@@ -404,7 +407,7 @@
 
           <div class="settings-section">
             <div class="settings-section-label">Background Image</div>
-            <div class="settings-row">
+            <div class="settings-row bstg-url-row">
               <span>URL</span>
               <input id="bstgBgUrl" type="text" class="settings-text-input" placeholder="https://..." />
             </div>
@@ -432,7 +435,7 @@
 
       </div>
       <div class="form-actions">
-        <button type="button" id="boardSettingsCancelBtn" class="secondary-btn hidden">Cancel</button>
+        <button type="button" id="boardSettingsCancelBtn" class="secondary-btn">Cancel</button>
         <button type="button" id="boardSettingsDoneBtn" class="primary-btn">Done</button>
       </div>
     </div>
@@ -901,7 +904,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.40</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.41</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>
@@ -923,6 +926,7 @@
 
     <div id="folderModal" class="settings-panel hidden">
       <div id="folderModalHeader" class="settings-header folder-modal-header">
+        <span id="fmSubtitle" class="modal-card-subtitle">New Folder</span>
         <input id="fmName" type="text" class="bstg-title-input" placeholder="New Folder" />
       </div>
       <div class="folder-modal-body">
@@ -974,6 +978,7 @@
 
     <div id="widgetSettingsPanel" class="settings-panel draggable hidden" style="width:min(480px,calc(100vw - 40px))">
       <div id="wstgHeader" class="settings-header">
+        <span id="wstgSubtitle" class="modal-card-subtitle">Widget</span>
         <input id="wstgTitle" type="text" class="bstg-title-input" placeholder="Widget title" />
       </div>
       <div id="wstgBody"></div>

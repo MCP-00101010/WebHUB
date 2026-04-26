@@ -1,16 +1,22 @@
 // --- Board settings panel ---
 
 let boardSettingsCreatingId = null;
+let _boardSettingsCancelSnapshot = null;
 
 function showBoardSettingsPanel(isNew = false) {
   const board = getActiveBoard();
   if (!board) return;
-  if (!isNew) pushUndoSnapshot();
+  if (!isNew) {
+    pushUndoSnapshot();
+    _boardSettingsCancelSnapshot = cloneData(board);
+  } else {
+    _boardSettingsCancelSnapshot = null;
+  }
   boardSettingsCreatingId = isNew ? board.id : null;
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('boardSettingsPanel');
   document.getElementById('boardSettingsDoneBtn').textContent = isNew ? 'Create' : 'OK';
-  document.getElementById('boardSettingsCancelBtn').classList.toggle('hidden', !isNew);
+  document.getElementById('bstgSubtitle').textContent = isNew ? 'New Board' : 'Edit Board';
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
@@ -18,6 +24,7 @@ function showBoardSettingsPanel(isNew = false) {
   const titleEl = document.getElementById('bstgTitle');
   titleEl.placeholder = isNew ? board.title : 'Board Name';
   titleEl.value = isNew ? '' : board.title;
+  titleEl.focus();
   const colRadio = document.querySelector(`input[name="bstgCols"][value="${board.columnCount}"]`);
   if (colRadio) colRadio.checked = true;
   document.getElementById('bstgBgUrl').value = board.backgroundImage || '';
@@ -64,6 +71,7 @@ function hideBoardSettingsPanel() {
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.add('hidden');
   boardSettingsCreatingId = null;
+  _boardSettingsCancelSnapshot = null;
   saveState();
 }
 
@@ -81,8 +89,17 @@ function cancelBoardSettingsPanel() {
     if (navItem) deleteBoardAndNavItem(navItem.id, boardSettingsCreatingId);
     renderAll();
     saveState();
+  } else if (_boardSettingsCancelSnapshot) {
+    const idx = state.boards.findIndex(b => b.id === _boardSettingsCancelSnapshot.id);
+    if (idx !== -1) state.boards[idx] = _boardSettingsCancelSnapshot;
+    _boardSettingsCancelSnapshot = null;
+    renderAll();
   }
-  hideBoardSettingsPanel();
+  _boardSettingsCancelSnapshot = null;
+  document.getElementById('boardSettingsPanel').classList.add('hidden');
+  document.getElementById('modalCard').classList.remove('hidden');
+  elements.modalOverlay.classList.add('hidden');
+  boardSettingsCreatingId = null;
 }
 
 function updateBgDropZonePreview(imageUrl) {

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.40';
+const APP_VERSION = '0.11.41';
 
 let activeModal = null;
 let contextTarget = null;
@@ -534,7 +534,7 @@ function attachEventListeners() {
         const columnId = lastActiveColumnId || board.columns[0]?.id;
         contextTarget = { area: 'board-empty', columnId };
         showModal('addBookmark', {
-          title: 'Add Bookmark', placeholder1: 'New Bookmark',
+          title: 'New Bookmark', placeholder1: 'New Bookmark',
           showUrl: true, placeholder2: 'Bookmark URL',
           showTags: true, inheritedTags: getContextInheritedTags(contextTarget)
         });

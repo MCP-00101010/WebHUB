@@ -4,10 +4,13 @@
 
 - Auto-export on a schedule, such as a daily JSON backup written to Downloads.
 
+## UI
+
+✓ *Completed 2026-04-26* — See [0.11.41] in CHANGELOG.
+
 ## Widgets
 
-- Weather widget with current conditions and configurable location.
-- News feed / RSS widget that fetches and displays headlines from a feed URL.
+✓ *Completed 2026-04-26* — See [0.11.41] in CHANGELOG.
 
 ## Drag and Drop
 

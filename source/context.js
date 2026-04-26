@@ -378,10 +378,10 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addNavFolder':
-      showModal('addFolder', { title: 'Add Navigation Folder', placeholder1: 'New Folder' });
+      showModal('addFolder', { title: 'New Folder', placeholder1: 'New Folder' });
       break;
     case 'addNavTitle':
-      showModal('addTitle', { title: 'Add Navigation Title', placeholder1: 'New Title' });
+      showModal('addTitle', { title: 'New Title', placeholder1: 'New Title' });
       break;
     case 'addNavDivider':
       pushUndoSnapshot();
@@ -394,14 +394,14 @@ function handleContextMenuAction(action) {
       break;
     case 'addBookmark':
       showModal('addBookmark', {
-        title: 'Add Bookmark', placeholder1: 'New Bookmark',
+        title: 'New Bookmark', placeholder1: 'New Bookmark',
         showUrl: true, placeholder2: 'Bookmark URL',
         showTags: true, contextTarget,
         inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'addTitle':
-      showModal('addTitle', { title: 'Add Title', placeholder1: 'New Title', contextTarget });
+      showModal('addTitle', { title: 'New Title', placeholder1: 'New Title', contextTarget });
       break;
     case 'addDivider':
       pushUndoSnapshot();
@@ -431,7 +431,7 @@ function handleContextMenuAction(action) {
     case 'addBookmarkToFolder': {
       const folderCtx = { ...contextTarget, area: 'board-folder-item' };
       showModal('addBookmark', {
-        title: 'Add Bookmark', placeholder1: 'New Bookmark',
+        title: 'New Bookmark', placeholder1: 'New Bookmark',
         showUrl: true, placeholder2: 'Bookmark URL',
         showTags: true, contextTarget: folderCtx,
         inheritedTags: getContextInheritedTags({ ...contextTarget, area: 'board-subfolder' })
@@ -440,11 +440,11 @@ function handleContextMenuAction(action) {
     }
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
-      showModal('addFolder', { title: 'Create Subfolder', placeholder1: 'New Folder' });
+      showModal('addFolder', { title: 'New Folder', placeholder1: 'New Folder' });
       break;
     case 'addEssential':
       showModal('addBookmark', {
-        title: 'Add Bookmark', placeholder1: 'New Bookmark',
+        title: 'New Bookmark', placeholder1: 'New Bookmark',
         showUrl: true, placeholder2: 'Bookmark URL', showTags: true
       });
       break;
@@ -594,6 +594,7 @@ function handleContextMenuAction(action) {
         const widget = _newWidgetState(type);
         const columnId = contextTarget.columnId;
         openWidgetSettings(widget, null, {
+          isNew: true,
           deferUndo: true,
           onDone: () => {
             pushUndoSnapshot();
@@ -607,6 +608,7 @@ function handleContextMenuAction(action) {
         const type = action.slice('addNavWidget:'.length);
         const widget = _newWidgetState(type);
         openWidgetSettings(widget, null, {
+          isNew: true,
           deferUndo: true,
           onDone: () => {
             pushUndoSnapshot();
