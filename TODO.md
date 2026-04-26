@@ -20,8 +20,8 @@
 
 ### Group C — Name pane icons
 
-- [ ] **Icon size + alignment** — reduce undo/redo/inbox/settings icons in the board name pane to match the sidebar settings icon size; anchor them top-right; reposition the inbox counter chips adjacent to the inbox icon.
-- [ ] **Board settings icon in collection tab bar** — add a small settings button to the right end of the collection tab bar (aligned under the name-pane settings icon) that opens board settings for the active board.
+- [x] **Icon size + alignment** — reduce undo/redo/inbox/settings icons in the board name pane to match the sidebar settings icon size; anchor them top-right; reposition the inbox counter chips adjacent to the inbox icon.
+- [x] **Board settings icon in collection tab bar** — add a small settings button to the right end of the collection tab bar (aligned under the name-pane settings icon) that opens board settings for the active board.
 
 ### Group D — Major layout restructures
 

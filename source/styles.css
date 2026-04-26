@@ -558,15 +558,12 @@ button {
 }
 
 .inbox-badge {
-  position: absolute;
-  top: -16px;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   gap: 3px;
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  flex-shrink: 0;
 }
 
 .count-chip-row {
@@ -796,6 +793,7 @@ button {
   background: rgba(var(--panel-r), var(--panel-g), var(--panel-b), var(--container-alpha, 1));
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  align-items: flex-start;
 }
 
 .main-panel.has-context-tabs .board-header {
@@ -983,12 +981,40 @@ button {
   background: var(--surface-1);
   transition: color 0.15s, border-color 0.15s, background 0.15s;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .collection-tab-add:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--surface-2);
+}
+
+.collection-tab-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.collection-tab-settings-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.collection-tab-settings-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
 }
 
 .collection-tab.tab-locked {
@@ -2359,7 +2385,36 @@ button {
 .board-header-actions {
   display: flex;
   align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.board-header-actions .icon-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 5px;
+  background: transparent;
+  border-radius: 7px;
+}
+
+.board-header-actions .icon-btn:hover {
+  background: var(--panel-strong);
+}
+
+.board-header-actions .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.board-header-actions .inbox-btn {
+  display: flex;
+  align-items: center;
   gap: 4px;
+  width: auto;
+  min-width: 28px;
+  padding: 5px 6px;
 }
 
 /* --- Undo/redo disabled state --- */

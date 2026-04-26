@@ -1340,6 +1340,16 @@ function renderCollectionTabBar(collection) {
   });
   tabBar.appendChild(addBtn);
 
+  // Board settings button
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'collection-tab-settings-btn';
+  settingsBtn.title = 'Board Settings';
+  settingsBtn.disabled = !getActiveBoard();
+  settingsBtn.appendChild(icon('icon-settings'));
+  settingsBtn.addEventListener('click', () => showBoardSettingsPanel());
+  tabBar.appendChild(settingsBtn);
+
   // Accept nav board drops anywhere on the tab bar (between tabs or at the end).
   // When the ghost indicator has pointer-events:none, cursor events fall through to tabBar —
   // in that case just accept the drop without repositioning to avoid flicker.

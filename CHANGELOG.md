@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.38] — 2026-04-26
+
+### Changed
+
+- **Name pane icon size + alignment** — undo/redo/inbox/settings buttons in the board header are now 28 × 28 px with 18 px SVG icons (down from 36 × 36 / 20 px), use a transparent resting background, and are top-aligned so they anchor to the top-right corner when the board title wraps.
+- **Inbox count chips inline** — the inbox item-count chips are now displayed inline to the right of the inbox icon inside the button, replacing the old absolutely-positioned row that floated above the header.
+- **Board settings button in collection tab bar** — a small settings button now appears at the right end of the collection tab bar (aligned under the name-pane gear icon) and opens board settings for the active board. The add-board button is also pushed to the right alongside it via `margin-left: auto`.
+
+---
+
 ## [0.11.37] — 2026-04-26
 
 ### Fixed
