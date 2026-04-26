@@ -1174,6 +1174,11 @@ button {
 
 .modal-card-header:active { cursor: grabbing; }
 
+.modal-card.draggable {
+  position: fixed;
+  margin: 0;
+}
+
 .modal-card-header .bstg-title-input {
   user-select: text;
   cursor: text;
@@ -1756,6 +1761,23 @@ button {
   color: var(--text);
 }
 
+#boardSettingsPanel {
+  height: auto;
+  max-height: calc(100vh - 40px);
+  width: min(780px, calc(100vw - 40px));
+}
+
+#boardSettingsPanel .settings-body.bstg-two-col {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+.bstg-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .bstg-header {
   display: flex;
   align-items: center;
@@ -1840,6 +1862,25 @@ button {
   cursor: default;
   transition: border-color 0.15s, background 0.15s;
   margin: 4px 0;
+  background-size: cover;
+  background-position: center;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bg-drop-zone.has-preview {
+  border-style: solid;
+  border-color: var(--accent);
+  min-height: 120px;
+}
+
+.bg-drop-zone.has-preview > span {
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  padding: 2px 10px;
+  border-radius: 4px;
 }
 
 .bg-drop-zone.drag-over {

@@ -204,7 +204,7 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.39</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.40</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -336,90 +336,98 @@
           <label class="col-radio-label" title="5 columns"><input type="radio" name="bstgCols" value="5" /><span>5</span></label>
         </div>
       </div>
-      <div class="settings-body">
+      <div class="settings-body bstg-two-col">
 
-        <div class="settings-section">
-          <div class="settings-section-label">Background Image</div>
-          <div class="settings-row">
-            <span>URL</span>
-            <input id="bstgBgUrl" type="text" class="settings-text-input" placeholder="https://..." />
+        <div class="bstg-col">
+
+          <div class="settings-section tag-section">
+            <div class="settings-section-label">Tags</div>
+            <div class="tag-section-fields">
+              <div class="tag-field-row">
+                <label for="bstgTags">Tags</label>
+                <div class="tags-input-container">
+                  <input id="bstgTags" type="text" placeholder="tag1 tag2" />
+                </div>
+              </div>
+              <div class="tag-field-row hidden" id="bstgInheritedTagsRow">
+                <label>Inherited</label>
+                <div class="tag-readonly-field">
+                  <span id="bstgInheritedTags" class="modal-inherited-tags"></span>
+                </div>
+              </div>
+              <div class="tag-field-row">
+                <label for="bstgSharedTags">Shared</label>
+                <div class="tags-input-container">
+                  <input id="bstgSharedTags" type="text" placeholder="tag1 tag2" />
+                </div>
+              </div>
+              <div class="tag-toggle-row">
+                <div class="tag-toggle-item">
+                  <span>Pass to items <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are added to all items it contains. Items created or moved here receive these tags automatically.">?</span></span>
+                  <label class="settings-toggle">
+                    <input id="bstgInheritTags" type="checkbox" checked />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+                <div class="tag-toggle-item">
+                  <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are removed from items moved out of this board.">?</span></span>
+                  <label class="settings-toggle">
+                    <input id="bstgAutoRemove" type="checkbox" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
-          <div id="bstgDropZone" class="bg-drop-zone">
-            <span>Drop an image file here</span>
+
+          <div class="settings-section">
+            <div class="settings-section-label">Speed Dial</div>
+            <div class="settings-row">
+              <span>Show Speed Dial</span>
+              <label class="settings-toggle">
+                <input id="bstgShowSpeedDial" type="checkbox" checked />
+                <span class="toggle-track"></span>
+              </label>
+            </div>
+            <div class="settings-row">
+              <span>Slots</span>
+              <input id="bstgSpeedDialSlots" type="number" min="1" max="48" class="settings-text-input" />
+            </div>
+            <p id="bstgCollectionSpeedDialNote" class="settings-warning hidden">
+              This board's speed dial is hidden while the board belongs to a collection.
+            </p>
           </div>
-          <div class="settings-row">
-            <button type="button" id="bstgBgBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
-            <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
-          </div>
+
         </div>
 
-        <div class="settings-section tag-section">
-          <div class="settings-section-label">Tags</div>
-          <div class="tag-section-fields">
-            <div class="tag-field-row">
-              <label for="bstgTags">Tags</label>
-              <div class="tags-input-container">
-                <input id="bstgTags" type="text" placeholder="tag1 tag2" />
-              </div>
-            </div>
-            <div class="tag-field-row hidden" id="bstgInheritedTagsRow">
-              <label>Inherited</label>
-              <div class="tag-readonly-field">
-                <span id="bstgInheritedTags" class="modal-inherited-tags"></span>
-              </div>
-            </div>
-            <div class="tag-field-row">
-              <label for="bstgSharedTags">Shared</label>
-              <div class="tags-input-container">
-                <input id="bstgSharedTags" type="text" placeholder="tag1 tag2" />
-              </div>
-            </div>
-            <div class="tag-toggle-row">
-              <div class="tag-toggle-item">
-                <span>Pass to items <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are added to all items it contains. Items created or moved here receive these tags automatically.">?</span></span>
-                <label class="settings-toggle">
-                  <input id="bstgInheritTags" type="checkbox" checked />
-                  <span class="toggle-track"></span>
-                </label>
-              </div>
-              <div class="tag-toggle-item">
-                <span>Strip on move out <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are removed from items moved out of this board.">?</span></span>
-                <label class="settings-toggle">
-                  <input id="bstgAutoRemove" type="checkbox" />
-                  <span class="toggle-track"></span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div class="bstg-col">
 
-        <div class="settings-section">
-          <div class="settings-section-label">Speed Dial</div>
-          <div class="settings-row">
-            <span>Show Speed Dial</span>
-            <label class="settings-toggle">
-              <input id="bstgShowSpeedDial" type="checkbox" checked />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <span>Slots</span>
-            <input id="bstgSpeedDialSlots" type="number" min="1" max="48" class="settings-text-input" />
-          </div>
-          <p id="bstgCollectionSpeedDialNote" class="settings-warning hidden">
-            This board's speed dial is hidden while the board belongs to a collection.
-          </p>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-section-label">Container Transparency</div>
-          <div class="settings-row">
-            <span>Opacity</span>
-            <div class="settings-slider-group">
-              <input id="bstgOpacity" type="range" min="0" max="100" step="1" />
-              <span id="bstgOpacityVal">100</span><span class="stepper-unit">%</span>
+          <div class="settings-section">
+            <div class="settings-section-label">Background Image</div>
+            <div class="settings-row">
+              <span>URL</span>
+              <input id="bstgBgUrl" type="text" class="settings-text-input" placeholder="https://..." />
+            </div>
+            <div id="bstgDropZone" class="bg-drop-zone">
+              <span>Drop an image file here</span>
+            </div>
+            <div class="settings-row">
+              <button type="button" id="bstgBgBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
+              <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
             </div>
           </div>
+
+          <div class="settings-section">
+            <div class="settings-section-label">Container Transparency</div>
+            <div class="settings-row">
+              <span>Opacity</span>
+              <div class="settings-slider-group">
+                <input id="bstgOpacity" type="range" min="0" max="100" step="1" />
+                <span id="bstgOpacityVal">100</span><span class="stepper-unit">%</span>
+              </div>
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -893,7 +901,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.39</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.40</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>

@@ -21,6 +21,7 @@ function showBoardSettingsPanel(isNew = false) {
   const colRadio = document.querySelector(`input[name="bstgCols"][value="${board.columnCount}"]`);
   if (colRadio) colRadio.checked = true;
   document.getElementById('bstgBgUrl').value = board.backgroundImage || '';
+  updateBgDropZonePreview(board.backgroundImage || '');
   document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
   document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
@@ -84,6 +85,17 @@ function cancelBoardSettingsPanel() {
   hideBoardSettingsPanel();
 }
 
+function updateBgDropZonePreview(imageUrl) {
+  const dz = document.getElementById('bstgDropZone');
+  if (imageUrl) {
+    dz.style.backgroundImage = `url(${JSON.stringify(imageUrl)})`;
+    dz.classList.add('has-preview');
+  } else {
+    dz.style.backgroundImage = '';
+    dz.classList.remove('has-preview');
+  }
+}
+
 function attachBoardSettingsListeners() {
   document.getElementById('bstgTitle').addEventListener('input', e => {
     const board = getActiveBoard();
@@ -131,6 +143,7 @@ function attachBoardSettingsListeners() {
     const board = getActiveBoard();
     if (!board) return;
     board.backgroundImage = e.target.value.trim();
+    updateBgDropZonePreview(board.backgroundImage);
     applyBg();
   });
 
@@ -148,6 +161,7 @@ function attachBoardSettingsListeners() {
       if (!board) return;
       board.backgroundImage = ev.target.result;
       document.getElementById('bstgBgUrl').value = '';
+      updateBgDropZonePreview(board.backgroundImage);
       applyBg();
     };
     reader.readAsDataURL(file);
@@ -164,6 +178,7 @@ function attachBoardSettingsListeners() {
     if (!board) return;
     board.backgroundImage = result.dataUrl;
     document.getElementById('bstgBgUrl').value = '';
+    updateBgDropZonePreview(board.backgroundImage);
     applyBg();
   });
 
@@ -172,6 +187,7 @@ function attachBoardSettingsListeners() {
     if (!board) return;
     board.backgroundImage = '';
     document.getElementById('bstgBgUrl').value = '';
+    updateBgDropZonePreview('');
     applyBg();
   });
 

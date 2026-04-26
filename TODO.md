@@ -25,8 +25,8 @@
 
 ### Group D — Major layout restructures
 
-- [ ] **Create/edit board modal layout** — two-column layout: tags + speed dial on the left, opacity + background image on the right; show a background preview in the drop zone if an image is already set; shrink modal to fit content.
-- [ ] **Draggable modals** — add `mousedown` drag handling on `.modal-card-header` to allow free repositioning of all edit/create modals.
+- [x] **Create/edit board modal layout** — two-column layout: tags + speed dial on the left, opacity + background image on the right; show a background preview in the drop zone if an image is already set; shrink modal to fit content.
+- [x] **Draggable modals** — add `mousedown` drag handling on `.modal-card-header` to allow free repositioning of all edit/create modals.
 
 ## Current Bugs/Issues:
 

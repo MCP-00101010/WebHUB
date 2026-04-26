@@ -5,6 +5,16 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.40] — 2026-04-26
+
+### Changed
+
+- **Board settings panel two-column layout** — Tags and Speed Dial sections move to the left column; Background Image and Container Transparency move to the right. The panel now sizes to fit content (`height: auto`, max `calc(100vh - 40px)`, width capped at 780 px).
+- **Background image drop-zone preview** — the drop zone shows the current background image as a cover preview when one is set; the preview updates live as the URL is typed, a file is dropped or browsed, or the image is cleared.
+- **Draggable modals** — all create/edit modals are now draggable: `showModal` calls `centerPanel` so the card is positioned with `fixed` coordinates rather than flowing inside the overlay grid, allowing it to be freely repositioned by dragging the header.
+
+---
+
 ## [0.11.39] — 2026-04-26
 
 ### Fixed

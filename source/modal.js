@@ -181,8 +181,10 @@ function attachTagAutocomplete(textInput, hiddenInput) {
 function showModal(type, options = {}) {
   activeModal = type;
   if (options.contextTarget) contextTarget = options.contextTarget;
-  document.getElementById('modalCard').classList.remove('hidden');
+  const modalCard = document.getElementById('modalCard');
+  modalCard.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
+  centerPanel(modalCard);
   elements.modalTitle.textContent = options.title || 'Action';
   elements.modalInput1.value = options.value1 || '';
   elements.modalInput2.value = options.value2 || '';
