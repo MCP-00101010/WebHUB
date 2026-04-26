@@ -9,6 +9,11 @@
 - Trash, Search, Inbox and Global Settings Modals should use the same layout/css for their headers as the edit/create modals. (use bookmark modal for reference)
 - footer divider line in navpane should follow global divider line style settings.
 
+## Sets
+
+- Completed 2026-04-26: global sets are now implemented as bookmark-only launch groups with a dedicated Sets Manager, Set Editor, copy-only bookmark membership, URL uniqueness per set, search integration, and bookmark context-menu `Add to Set...` actions.
+
+
 ## Drag and Drop
 
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover`; only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.

@@ -23,6 +23,7 @@ const elements = {
   contextMenu: document.getElementById('contextMenu'),
   quickSearchBtn: document.getElementById('quickSearchBtn'),
   quickTagManagerBtn: document.getElementById('quickTagManagerBtn'),
+  quickSetsBtn: document.getElementById('quickSetsBtn'),
   quickSettingsBtn: document.getElementById('quickSettingsBtn'),
   searchModal: document.getElementById('searchModal'),
   searchModalInput: document.getElementById('searchModalInput'),
@@ -304,6 +305,9 @@ function renderAll() {
     const q = elements.searchModalInput.value.trim();
     if (q || activeTagFilters.size > 0) renderSearchResults();
   }
+  if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen && typeof renderSetManagerPanel === 'function') {
+    renderSetManagerPanel();
+  }
 }
 
 function _showTagPicker(show) {
@@ -395,6 +399,11 @@ function renderSearchResults() {
   state.essentials.forEach((e, i) => {
     if (e && matchesText(e, null)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null });
   });
+  (state.sets || []).forEach(set => {
+    if (matchesText({ type: 'set', title: set.title }, null)) {
+      allBaseHits.push({ item: { id: set.id, type: 'set', title: set.title, itemCount: (set.items || []).length }, meta: { area: 'set', setId: set.id }, board: null });
+    }
+  });
   for (const board of state.boards) {
     if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
     board.speedDial.filter(i => i && matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
@@ -405,7 +414,11 @@ function renderSearchResults() {
 
   const groupMap = new Map();
   for (const h of finalHits) {
-    const label = h.meta.area === 'essential' ? 'Essentials' : (h.board?.title || state.boards.find(b => b.id === h.meta.boardId)?.title || '');
+    const label = h.meta.area === 'essential'
+      ? 'Essentials'
+      : h.meta.area === 'set'
+        ? 'Sets'
+        : (h.board?.title || state.boards.find(b => b.id === h.meta.boardId)?.title || '');
     if (!groupMap.has(label)) groupMap.set(label, []);
     groupMap.get(label).push(h);
   }
@@ -539,6 +552,7 @@ function _makePickerChip(id, tag, count) {
 }
 
 function createSearchResultItem(item, meta = {}) {
+  if (meta.area === 'set') return createSetSearchResultItem(item, meta);
   if (item.type === 'folder') return createFolderSearchResultItem(item, meta);
   if (item.type === 'board') return createBoardSearchResultItem(item, meta);
 
@@ -581,6 +595,60 @@ function createSearchResultItem(item, meta = {}) {
     renderTagsInto(tagsEl, item.tags);
     el.appendChild(tagsEl);
   }
+  return el;
+}
+
+function createSetSearchResultItem(item, meta = {}) {
+  const set = findSetById(meta.setId || item.id);
+  const el = document.createElement('div');
+  el.className = 'board-column-item bookmark-item set-search-result';
+  el.draggable = false;
+  el.style.cursor = 'pointer';
+  el.dataset.tooltip = set ? `${set.title}\n${(set.items || []).length} bookmark${(set.items || []).length === 1 ? '' : 's'}` : (item.title || 'Set');
+  el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
+  el.addEventListener('click', () => {
+    openSetById(meta.setId || item.id);
+    closeSearchModal();
+  });
+
+  const header = document.createElement('div');
+  header.className = 'item-header';
+  const setIcon = document.createElement('span');
+  setIcon.className = 'bookmark-favicon';
+  setIcon.appendChild(icon('icon-set'));
+  header.appendChild(setIcon);
+  const name = document.createElement('span');
+  name.className = 'bookmark-label';
+  name.textContent = item.title || 'Untitled Set';
+  header.appendChild(name);
+  el.appendChild(header);
+
+  const metaEl = document.createElement('span');
+  metaEl.className = 'search-result-url';
+  const count = (set?.items || []).length;
+  metaEl.textContent = `${count} bookmark${count === 1 ? '' : 's'}`;
+  el.appendChild(metaEl);
+
+  if (set?.items?.length) {
+    const preview = document.createElement('div');
+    preview.className = 'sets-preview-strip';
+    set.items.slice(0, 4).forEach(setItem => {
+      const chip = document.createElement('span');
+      chip.className = 'sets-preview-favicon';
+      if (setItem.url) {
+        const img = document.createElement('img');
+        setFavicon(img, setItem, 32);
+        img.alt = '';
+        img.draggable = false;
+        chip.appendChild(img);
+      } else {
+        chip.textContent = (setItem.title || '?').slice(0, 1).toUpperCase();
+      }
+      preview.appendChild(chip);
+    });
+    el.appendChild(preview);
+  }
+
   return el;
 }
 

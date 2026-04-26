@@ -107,6 +107,7 @@ const defaultState = {
   hubName: 'Morpheus WebHub',
   lastExported: null,
   tags: [],
+  sets: [],
   settings: { ...defaultSettings },
   essentials: [],
   boards: [
@@ -214,6 +215,128 @@ function migrateItems(items) {
   }
 }
 
+function normalizeSetItems(items) {
+  const out = [];
+  const seenUrls = new Set();
+  for (const item of (items || [])) {
+    if (!item || item.type && item.type !== 'bookmark') continue;
+    if (!item.url || !isValidUrl(item.url)) continue;
+    const normalizedUrl = normalizeUrl(item.url);
+    if (seenUrls.has(normalizedUrl)) continue;
+    seenUrls.add(normalizedUrl);
+    out.push({
+      id: item.id || `set-bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'bookmark',
+      title: item.title || normalizedUrl,
+      url: normalizedUrl,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      faviconCache: typeof item.faviconCache === 'string' ? item.faviconCache : ''
+    });
+  }
+  return out;
+}
+
+function normalizeSetRecord(set, index = 0) {
+  const createdAt = typeof set?.createdAt === 'string' ? set.createdAt : new Date().toISOString();
+  const updatedAt = typeof set?.updatedAt === 'string' ? set.updatedAt : createdAt;
+  return {
+    id: set?.id || `set-${Date.now()}-${index}`,
+    title: (set?.title || '').trim() || 'Untitled Set',
+    items: normalizeSetItems(set?.items),
+    createdAt,
+    updatedAt
+  };
+}
+
+function touchSet(set) {
+  if (set) set.updatedAt = new Date().toISOString();
+}
+
+function createSetRecord(title, options = {}) {
+  const createdAt = options.createdAt || new Date().toISOString();
+  return normalizeSetRecord({
+    id: options.id || `set-${Date.now()}`,
+    title: (title || '').trim() || 'New Set',
+    items: options.items || [],
+    createdAt,
+    updatedAt: options.updatedAt || createdAt
+  });
+}
+
+function createSet(title = 'New Set', options = {}) {
+  const set = createSetRecord(title, options);
+  if (!Array.isArray(state.sets)) state.sets = [];
+  state.sets.push(set);
+  return set;
+}
+
+function findSetById(setId) {
+  return (state.sets || []).find(set => set.id === setId) || null;
+}
+
+function findSetItemById(set, itemId) {
+  if (!set) return null;
+  const index = (set.items || []).findIndex(item => item.id === itemId);
+  if (index === -1) return null;
+  return { item: set.items[index], index };
+}
+
+function createSetBookmarkRecord(title, url, tags = [], faviconCache = '') {
+  return {
+    id: `set-bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type: 'bookmark',
+    title: title || normalizeUrl(url),
+    url: normalizeUrl(url),
+    tags: Array.isArray(tags) ? [...tags] : [],
+    faviconCache: typeof faviconCache === 'string' ? faviconCache : ''
+  };
+}
+
+function addBookmarkToSet(set, bookmark, options = {}) {
+  if (!set || !bookmark?.url || !isValidUrl(bookmark.url)) return { ok: false, reason: 'invalid' };
+  const normalizedUrl = normalizeUrl(bookmark.url);
+  if ((set.items || []).some(item => item.url === normalizedUrl)) return { ok: false, reason: 'duplicate' };
+  const record = createSetBookmarkRecord(bookmark.title || normalizedUrl, normalizedUrl, bookmark.tags || [], bookmark.faviconCache || '');
+  if (!Array.isArray(set.items)) set.items = [];
+  const index = Number.isInteger(options.index) ? Math.max(0, Math.min(options.index, set.items.length)) : set.items.length;
+  set.items.splice(index, 0, record);
+  touchSet(set);
+  return { ok: true, item: record };
+}
+
+function removeSetItemById(set, itemId) {
+  if (!set?.items) return null;
+  const index = set.items.findIndex(item => item.id === itemId);
+  if (index === -1) return null;
+  const [removed] = set.items.splice(index, 1);
+  touchSet(set);
+  return removed;
+}
+
+function moveSetItem(set, itemId, targetIndex) {
+  if (!set?.items) return false;
+  const currentIndex = set.items.findIndex(item => item.id === itemId);
+  if (currentIndex === -1) return false;
+  const boundedIndex = Math.max(0, Math.min(targetIndex, set.items.length - 1));
+  if (currentIndex === boundedIndex) return false;
+  const [item] = set.items.splice(currentIndex, 1);
+  set.items.splice(boundedIndex, 0, item);
+  touchSet(set);
+  return true;
+}
+
+function deleteSetById(setId) {
+  if (!Array.isArray(state.sets)) return false;
+  const index = state.sets.findIndex(set => set.id === setId);
+  if (index === -1) return false;
+  state.sets.splice(index, 1);
+  return true;
+}
+
+function collectSetUrls(set) {
+  return (set?.items || []).filter(item => item?.url).map(item => item.url);
+}
+
 function migrateWidgetServiceSettings(parsed) {
   const serviceKeys = parsed.settings?.serviceApiKeys;
   if (!serviceKeys) return;
@@ -260,6 +383,7 @@ function deleteTag(id) {
   // Strip the ID from all items that reference it
   const strip = items => { for (const item of (items || [])) { if (item?.tags) item.tags = item.tags.filter(tid => tid !== id); if (item?.sharedTags) item.sharedTags = item.sharedTags.filter(tid => tid !== id); if (item?.children) strip(item.children); } };
   strip(state.essentials);
+  strip(state.sets?.flatMap(set => set.items) || []);
   for (const board of state.boards) { strip([board]); strip(board.speedDial); for (const col of board.columns) strip(col.items); }
   for (const item of state.navItems) { if (item.type === 'collection') strip([item]); }
 }
@@ -305,6 +429,7 @@ function migrateToIdTags(parsed) {
   }
   (parsed.navItems  || []).forEach(migrateItemTags);
   (parsed.essentials|| []).forEach(migrateItemTags);
+  (parsed.sets || []).forEach(set => (set.items || []).forEach(migrateItemTags));
 
   for (const g of (parsed.settings?.tagGroups || [])) delete g.tags;
   if (parsed.settings) delete parsed.settings.tagColors;
@@ -326,6 +451,9 @@ function parseStateJson(saved) {
     const parsed = JSON.parse(saved);
     if (typeof parsed.databasePath !== 'string') parsed.databasePath = '';
     else parsed.databasePath = parsed.databasePath.trim();
+    parsed.sets = Array.isArray(parsed.sets)
+      ? parsed.sets.map((set, index) => normalizeSetRecord(set, index))
+      : [];
     for (const board of (parsed.boards || [])) {
       if (board.backgroundImage === undefined) board.backgroundImage = '';
       if (board.containerOpacity === undefined) board.containerOpacity = 100;

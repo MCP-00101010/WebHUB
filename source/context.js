@@ -85,6 +85,14 @@ function _sortedBoardOptions(boards) {
   return withMeta.map(({ value, label }) => ({ value, label }));
 }
 
+function _buildAddToSetSubmenu() {
+  const sets = [...(state.sets || [])]
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+    .map(set => ({ label: set.title || 'Untitled Set', action: `addBookmarkToSet:${set.id}` }));
+  sets.push({ label: 'New set from this bookmark', action: 'createSetFromBookmark' });
+  return sets;
+}
+
 function _findNavItem(id, items) {
   for (const item of (items || state.navItems)) {
     if (item.id === id) return item;
@@ -120,6 +128,12 @@ function handleContextMenuAction(action) {
       }
       break;
     }
+    case 'openSet':
+      openSetById(contextTarget.setId || contextTarget.item?.id);
+      break;
+    case 'editSet':
+      if (contextTarget.setId || contextTarget.item?.id) showSetManagerForSet(contextTarget.setId || contextTarget.item.id, { focusTitle: true });
+      break;
     case 'editSpeedDial':
     case 'editBookmark':
       showModal('editBookmark', {
@@ -131,7 +145,17 @@ function handleContextMenuAction(action) {
         value2: contextTarget.item.url || '',
         showTags: true,
         value3: (contextTarget.item.tags || []).join(' '),
-        inheritedTags: getContextInheritedTags(contextTarget)
+        inheritedTags: contextTarget.area === 'set-item' ? [] : getContextInheritedTags(contextTarget)
+      });
+      break;
+    case 'addSetBookmark':
+      showModal('addBookmark', {
+        title: 'Add Bookmark to Set',
+        placeholder1: 'Bookmark title',
+        showUrl: true,
+        placeholder2: 'Bookmark URL',
+        showTags: true,
+        contextTarget: { area: 'set', setId: contextTarget.setId, item: contextTarget.item || findSetById(contextTarget.setId) }
       });
       break;
     case 'deleteItem': {
@@ -184,6 +208,30 @@ function handleContextMenuAction(action) {
           try { renderNav(); } catch (_) {}
         }
       });
+      break;
+    }
+    case 'deleteSet': {
+      const set = findSetById(contextTarget.setId || contextTarget.item?.id);
+      if (!set) break;
+      showConfirmDialog(`Delete set "${set.title}"?`, () => {
+        pushUndoSnapshot();
+        deleteSetById(set.id);
+        if (selectedSetId === set.id) selectedSetId = null;
+        renderAll();
+        saveState();
+      }, 'Delete');
+      break;
+    }
+    case 'deleteSetItem': {
+      const set = findSetById(contextTarget.setId);
+      const setItem = set?.items?.find(item => item.id === contextTarget.itemId);
+      if (!set || !setItem) break;
+      showConfirmDialog(`Remove "${setItem.title}" from this set?`, () => {
+        pushUndoSnapshot();
+        removeSetItemById(set, setItem.id);
+        renderAll();
+        saveState();
+      }, 'Remove');
       break;
     }
     case 'addBoard':
@@ -647,6 +695,29 @@ function handleContextMenuAction(action) {
           renderAll();
           saveState();
         }
+      } else if (action.startsWith('addBookmarkToSet:')) {
+        const setId = action.slice('addBookmarkToSet:'.length);
+        const set = findSetById(setId);
+        if (!set || !contextTarget?.item?.url) return;
+        pushUndoSnapshot();
+        const result = addBookmarkToSet(set, contextTarget.item);
+        if (!result.ok) {
+          showNotice(result.reason === 'duplicate'
+            ? `That URL is already in the set "${set.title}".`
+            : 'Unable to add this bookmark to the selected set.');
+          return;
+        }
+        renderAll();
+        saveState();
+      } else if (action === 'createSetFromBookmark') {
+        if (!contextTarget?.item?.url) return;
+        pushUndoSnapshot();
+        const set = createSet(contextTarget.item.title || 'New Set');
+        addBookmarkToSet(set, contextTarget.item);
+        selectedSetId = set.id;
+        renderAll();
+        saveState();
+        showSetManagerForSet(set.id, { focusTitle: true });
       }
       break;
   }
@@ -681,6 +752,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     options.push({ label: 'Delete folder', action: 'deleteItem' });
   } else if (item.type === 'bookmark') {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
+    options.push({ label: 'Add to Set...', action: '', submenu: _buildAddToSetSubmenu() });
     options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
     if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });
@@ -761,6 +833,7 @@ function handleCollectionSpeedDialContextMenu(event, item, collection, slot = fi
   const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
   showContextMenu(event.clientX, event.clientY, [
     { label: 'Edit bookmark', action: 'editCollectionSpeedDial' },
+    { label: 'Add to Set...', action: '', submenu: _buildAddToSetSubmenu() },
     { label: 'Duplicate', action: 'duplicateCollectionSpeedDial' },
     { label: 'Refresh favicon', action: 'refreshCollectionSpeedDialFavicon' },
     ...(allBoards.length ? [{ label: 'Move to board', action: 'moveToBoard' }] : []),
@@ -773,6 +846,7 @@ function handleEssentialContextMenu(event, slot, item) {
   const options = item
     ? [
         { label: 'Edit bookmark',    action: 'editEssential' },
+        { label: 'Add to Set...',    action: '', submenu: _buildAddToSetSubmenu() },
         { label: 'Duplicate',        action: 'duplicateBookmark' },
         { label: 'Refresh favicon',  action: 'refreshFavicon' },
         { label: 'Move to board',    action: 'moveToBoard' },
@@ -790,6 +864,7 @@ function handleSpeedDialContextMenu(event, item, slot = findSpeedDialSlot(getAct
   const canMove = boards.length > 0;
   const options = [
     { label: 'Edit bookmark',   action: 'editSpeedDial' },
+    { label: 'Add to Set...',   action: '', submenu: _buildAddToSetSubmenu() },
     { label: 'Duplicate',       action: 'duplicateBookmark' },
     { label: 'Refresh favicon', action: 'refreshFavicon' },
   ];
@@ -828,6 +903,16 @@ function handleSearchResultContextMenu(event, item, meta) {
     handleSpeedDialContextMenu(event, item);
     return;
   }
+  if (meta.area === 'set') {
+    const set = findSetById(meta.setId || item.id);
+    contextTarget = { area: 'set', setId: meta.setId || item.id, item: set || item };
+      showContextMenu(event.clientX, event.clientY, [
+        { label: 'Open set', action: 'openSet' },
+        { label: 'Manage set', action: 'editSet' },
+        { label: 'Delete set', action: 'deleteSet' }
+      ]);
+      return;
+  }
   if (item.type === 'board') {
     handleNavContextMenu(event, item, null, 0);
     return;
@@ -842,6 +927,7 @@ function handleSearchResultContextMenu(event, item, meta) {
       options.push({ label: 'Open in new window', action: 'openNewWindow' });
     }
     options.push({ label: 'Edit bookmark',   action: 'editBookmark' });
+    options.push({ label: 'Add to Set...',   action: '', submenu: _buildAddToSetSubmenu() });
     options.push({ label: 'Duplicate',        action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
     const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== meta.boardId);

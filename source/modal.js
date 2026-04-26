@@ -304,6 +304,14 @@ function handleModalSubmit(event) {
       const fc = contextTarget?.faviconCache || '';
       if (area === 'speed-dial' || area === 'speed-dial-item' || area === 'collection-speed-dial') {
         addSpeedDialBookmark(value1, value2, tags, fc);
+      } else if (area === 'set') {
+        const set = findSetById(contextTarget.setId);
+        if (!set) return;
+        const result = addBookmarkToSet(set, { title: value1, url: value2, tags, faviconCache: fc });
+        if (!result.ok) {
+          alert(result.reason === 'duplicate' ? 'That URL is already in this set.' : 'Please enter a valid URL.');
+          return;
+        }
       } else if (area === 'essential') {
         if (!setEssential(contextTarget.slot, value1, value2, tags, fc)) return;
         hideModal(); renderEssentials(); saveState(); return;
@@ -327,6 +335,19 @@ function handleModalSubmit(event) {
         const coll = findCollectionById(contextTarget.collectionId);
         const sdItem = coll?.speedDial.find(i => i?.id === contextTarget?.itemId);
         if (sdItem) { if (normalizeUrl(value2) !== sdItem.url) sdItem.faviconCache = ''; sdItem.title = value1; sdItem.url = normalizeUrl(value2); sdItem.tags = tags; }
+      } else if (area === 'set-item') {
+        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
+        const set = findSetById(contextTarget.setId);
+        const found = findSetItemById(set, contextTarget.itemId);
+        if (!found?.item) break;
+        const normalized = normalizeUrl(value2);
+        const duplicate = (set.items || []).some(entry => entry.id !== found.item.id && entry.url === normalized);
+        if (duplicate) { alert('That URL is already in this set.'); return; }
+        if (normalized !== found.item.url) found.item.faviconCache = '';
+        found.item.title = value1;
+        found.item.url = normalized;
+        found.item.tags = tags;
+        touchSet(set);
       } else if (area === 'essential') {
         if (!setEssential(contextTarget.slot, value1, value2, tags, '', true)) return;
         hideModal(); renderEssentials(); saveState(); return;

@@ -635,6 +635,7 @@ function attachEventListeners() {
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog({ invokeCancel: true }); return; }
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
+    if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) { hideSetManagerPanel(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }
     if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) { cancelBoardSettingsPanel(); return; }
@@ -681,6 +682,7 @@ attachSettingsListeners();
 attachBoardSettingsListeners();
 attachFolderModalListeners();
 attachInboxListeners();
+attachSetPanelListeners();
 attachBookmarkImportListener();
 renderAll();
 localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
