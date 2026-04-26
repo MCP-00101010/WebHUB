@@ -5,6 +5,12 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.43] — 2026-04-26
+
+### Changed
+
+- Clock widget timezone field replaced with a datalist-backed autocomplete input populated from `Intl.supportedValuesOf('timeZone')`. The detected local timezone is shown as a hint below the field, and a "Use local" button fills the input with it in one click.
+
 ## [0.11.42] — 2026-04-26
 
 ### Fixed

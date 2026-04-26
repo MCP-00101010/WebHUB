@@ -1622,6 +1622,41 @@ button {
   font-size: 0.78rem;
 }
 
+.tz-picker-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+
+.tz-hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tz-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.tz-use-local-btn {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tz-use-local-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
 .settings-number-group {
   display: flex;
   align-items: center;

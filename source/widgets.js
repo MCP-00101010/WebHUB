@@ -288,10 +288,39 @@ WIDGET_REGISTRY['clock'] = {
         <span>Show date</span>
         <label class="settings-toggle"><input type="checkbox" data-cfg="showDate" ${c.showDate ? 'checked' : ''}/><span class="toggle-track"></span></label>
       </div>
-      <div class="settings-row">
+      <div class="settings-row settings-row--top">
         <span>Timezone</span>
-        <input type="text" data-cfg="timezone" placeholder="e.g. America/New_York" value="${c.timezone || ''}" class="settings-text-input" />
+        <div class="tz-picker-group">
+          <input type="text" list="wstgTzList" data-cfg="timezone" placeholder="e.g. America/New_York" value="${c.timezone || ''}" class="settings-text-input" autocomplete="off" />
+          <datalist id="wstgTzList"></datalist>
+          <div class="tz-hint-row">
+            <span class="tz-hint"></span>
+            <button type="button" class="tz-use-local-btn">Use local</button>
+          </div>
+        </div>
       </div>`;
+
+    // Populate datalist and hint
+    const datalist = container.querySelector('#wstgTzList');
+    const hint = container.querySelector('.tz-hint');
+    const useLocalBtn = container.querySelector('.tz-use-local-btn');
+    const tzInput = container.querySelector('[data-cfg="timezone"]');
+
+    const localTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+    if (localTz) hint.textContent = `Local: ${localTz}`;
+
+    try {
+      Intl.supportedValuesOf('timeZone').forEach(tz => {
+        const opt = document.createElement('option');
+        opt.value = tz;
+        datalist.appendChild(opt);
+      });
+    } catch { /* browser doesn't support Intl.supportedValuesOf */ }
+
+    useLocalBtn.addEventListener('click', () => {
+      tzInput.value = localTz;
+      tzInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
   }
 };
 
