@@ -94,11 +94,15 @@ const bridge = (() => {
       if (!_available) return { nativeAvailable: false, databasePath: null };
       try {
         const res = await _send('MW_GET_STORAGE_INFO');
+        _available = true;
+        _nativeAvailable = res.nativeAvailable === true;
         return {
           nativeAvailable: res.nativeAvailable === true,
           databasePath: res.databasePath || null
         };
       } catch {
+        _available = false;
+        _nativeAvailable = false;
         return { nativeAvailable: false, databasePath: null };
       }
     },
@@ -111,6 +115,7 @@ const bridge = (() => {
           json,
           expectedVersion: options.expectedVersion ?? null
         });
+        _available = true;
         return {
           ok: res.ok !== false,
           conflict: res.conflict === true,
@@ -118,6 +123,8 @@ const bridge = (() => {
           databasePath: res.databasePath || null
         };
       } catch {
+        _available = false;
+        _nativeAvailable = false;
         return { ok: false, conflict: false, fileInfo: null, databasePath: null };
       }
     },
@@ -127,6 +134,7 @@ const bridge = (() => {
       if (!_available) return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
       try {
         const res = await _send('MW_LOAD');
+        _available = true;
         return {
           json: res.json || null,
           fileInfo: res.fileInfo || null,
@@ -134,6 +142,8 @@ const bridge = (() => {
           databasePath: res.databasePath || null
         };
       } catch {
+        _available = false;
+        _nativeAvailable = false;
         return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
       }
     },
@@ -143,11 +153,14 @@ const bridge = (() => {
       if (!_available || !_nativeAvailable) return { databasePath: null, fileInfo: null };
       try {
         const res = await _send('MW_GET_DATABASE_FILE_INFO');
+        _available = true;
         return {
           databasePath: res.databasePath || null,
           fileInfo: res.fileInfo || null
         };
       } catch {
+        _available = false;
+        _nativeAvailable = false;
         return { databasePath: null, fileInfo: null };
       }
     },

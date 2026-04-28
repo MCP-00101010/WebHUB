@@ -1,4 +1,6 @@
-const APP_VERSION = '0.11.51';
+const APP_VERSION = '0.11.52';
+
+document.documentElement.classList.add('hub-booting');
 
 let activeModal = null;
 let contextTarget = null;
@@ -10,6 +12,12 @@ const SHARED_DISK_POLL_MS = 5000;
 const SHARED_DISK_NOTICE_KEY = 'morpheus-shared-disk-notice';
 let sharedDiskPollTimer = null;
 let sharedDiskReloadPromptOpen = false;
+let sharedDiskDataReloadInProgress = false;
+let sharedRecoveryPollTimer = null;
+let sharedRecoveryCheckInProgress = false;
+let sharedRecoveryPromptOpen = false;
+let lastBridgeNativeReady = false;
+let lastBridgeRecoveryPath = '';
 
 // --- Undo / redo ---
 
@@ -175,9 +183,297 @@ function confirmDialogIsOpen() {
   return !document.getElementById('confirmOverlay').classList.contains('hidden');
 }
 
+function resetTransientUiForDataReload() {
+  if (!elements.contextMenu.classList.contains('hidden')) hideContextMenu();
+  if (selectedItemIds.size > 0) clearSelection();
+  if (!elements.searchModal.classList.contains('hidden')) closeSearchModal();
+  if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) hideSetManagerPanel();
+  if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) hideImportManagerPanel();
+  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
+  if (!document.getElementById('trashPanel').classList.contains('hidden')) hideTrashPanel();
+  if (!document.getElementById('tagManagerPanel').classList.contains('hidden')) hideTagManagerPanel();
+  if (!document.getElementById('settingsPanel').classList.contains('hidden')) hideSettingsPanel();
+  if (!document.getElementById('folderModal').classList.contains('hidden')) hideFolderModal();
+  if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) {
+    document.getElementById('boardSettingsPanel').classList.add('hidden');
+    document.getElementById('modalCard').classList.remove('hidden');
+    elements.modalOverlay.classList.add('hidden');
+    if (typeof boardSettingsCreatingId !== 'undefined') boardSettingsCreatingId = null;
+    if (typeof _boardSettingsCancelSnapshot !== 'undefined') _boardSettingsCancelSnapshot = null;
+  }
+  if (!document.getElementById('modalCard').classList.contains('hidden')) hideModal();
+  if (!document.getElementById('noticeOverlay').classList.contains('hidden')) hideNotice();
+  if (!document.getElementById('confirmOverlay').classList.contains('hidden')) hideConfirmDialog();
+  if (typeof dragPayload !== 'undefined') dragPayload = null;
+  if (typeof removeDragPlaceholders === 'function') removeDragPlaceholders();
+  sharedDiskReloadPromptOpen = false;
+}
+
+async function reloadHubData(options = {}) {
+  const {
+    source = 'shared',
+    notice = '',
+    fallbackToHardReload = false
+  } = options;
+  if (sharedDiskDataReloadInProgress) return false;
+  sharedDiskDataReloadInProgress = true;
+  document.documentElement.classList.add('hub-booting');
+  try {
+    resetTransientUiForDataReload();
+
+    let snapshot = null;
+    let databasePath = (state.databasePath || '').trim();
+    let fileInfo = null;
+
+    if (source === 'shared') {
+      if (typeof bridge === 'undefined') throw new Error('Bridge unavailable');
+      await bridge.whenReady;
+      if (!bridge.isAvailable() || !bridge.nativeIsAvailable()) throw new Error('Shared storage unavailable');
+      const loaded = await bridge.loadState();
+      snapshot = loaded?.json || null;
+      fileInfo = loaded?.fileInfo || null;
+      databasePath = (loaded?.databasePath || state.databasePath || '').trim();
+      if (!snapshot) throw new Error('No shared hub data was returned');
+      restoreStateSnapshot(snapshot);
+      if (databasePath) state.databasePath = databasePath;
+      if (fileInfo) setSharedDiskBaseline(fileInfo, databasePath);
+      else resetSharedDiskBaseline(databasePath);
+      persistStateToLocalCache(snapshot, {
+        source: 'shared',
+        databasePath,
+        sharedBaselineVersion: fileInfo?.version ?? null,
+        sharedBaselinePath: databasePath
+      });
+      startSharedDiskPolling();
+    } else {
+      snapshot = localStorage.getItem(STORAGE_KEY) || serializeStateSnapshot();
+      restoreStateSnapshot(snapshot);
+      resetSharedDiskBaseline(state.databasePath || '');
+      ensureLocalCacheMetadata(snapshot, {
+        source: 'local',
+        databasePath: state.databasePath || ''
+      });
+    }
+
+    undoStack = [];
+    redoStack = [];
+    isDirty = false;
+    renderAll();
+    if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
+    if (typeof updateDatabasePathControls === 'function') await updateDatabasePathControls();
+    if (typeof updateAboutBridgeStatus === 'function') await updateAboutBridgeStatus();
+    updateUndoRedoUI();
+    document.documentElement.classList.remove('hub-booting');
+    if (notice) showNotice(notice);
+    return true;
+  } catch (error) {
+    console.error('Failed to reload hub data in-app:', error);
+    document.documentElement.classList.remove('hub-booting');
+    if (fallbackToHardReload) {
+      queueSharedDiskNotice(notice || 'Reloaded hub data.');
+      location.reload();
+      return false;
+    }
+    showNotice(`Failed to reload hub data: ${error.message || error}`);
+    return false;
+  } finally {
+    sharedDiskDataReloadInProgress = false;
+  }
+}
+
 function reloadForSharedDisk(message) {
-  queueSharedDiskNotice(message);
-  location.reload();
+  void reloadHubData({
+    source: 'shared',
+    notice: message,
+    fallbackToHardReload: true
+  });
+}
+
+function shouldShowSharedAutoRefreshNotice() {
+  return state.settings?.sharedAutoRefreshNotice !== false;
+}
+
+function getReloadHubSource() {
+  if (typeof bridge !== 'undefined' && bridge.isAvailable() && bridge.nativeIsAvailable() && state.databasePath) {
+    return 'shared';
+  }
+  return 'local';
+}
+
+function reloadHubDataManually() {
+  const source = getReloadHubSource();
+  const notice = source === 'shared'
+    ? 'Reloaded hub data from the shared database.'
+    : 'Reloaded hub data from the browser cache.';
+  void reloadHubData({ source, notice });
+}
+
+function parseIsoTime(value) {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function snapshotsMatch(left, right) {
+  return computeSnapshotHash(left || '') === computeSnapshotHash(right || '');
+}
+
+function localCacheLooksNewerThanShared(localMeta, databasePath, localSnapshot, sharedSnapshot, sharedFileInfo = null) {
+  const samePath =
+    !databasePath ||
+    !localMeta?.databasePath ||
+    localMeta.databasePath === databasePath ||
+    !localMeta?.sharedBaselinePath ||
+    localMeta.sharedBaselinePath === databasePath;
+  if (!samePath) return false;
+  if (localMeta?.source !== 'local') return false;
+  if (snapshotsMatch(localSnapshot, sharedSnapshot)) return false;
+  const liveVersion = sharedFileInfo?.version ?? null;
+  if (liveVersion !== null && localMeta?.sharedBaselineVersion !== null && localMeta.sharedBaselineVersion === liveVersion) {
+    return true;
+  }
+  const localCachedAt = parseIsoTime(localMeta?.cachedAt);
+  if (!localCachedAt) return false;
+  const sharedSeenAt = parseIsoTime(localMeta?.sharedSeenAt);
+  if (sharedSeenAt && localCachedAt <= sharedSeenAt) return false;
+  return true;
+}
+
+async function refreshBridgeStatusUi() {
+  if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
+  if (typeof updateDatabasePathControls === 'function') await updateDatabasePathControls();
+  if (typeof updateAboutBridgeStatus === 'function') await updateAboutBridgeStatus();
+}
+
+async function promoteLocalCacheToShared(options = {}) {
+  const { snapshot = localStorage.getItem(STORAGE_KEY) || serializeStateSnapshot(), databasePath = state.databasePath || '', expectedVersion = null } = options;
+  try {
+    const result = await bridge.saveState(snapshot, { expectedVersion });
+    if (!result?.ok) {
+      showNotice('Failed to update the shared database from this browser cache.');
+      return false;
+    }
+    if (result.conflict) {
+      notifySharedDiskConflict({
+        fileInfo: result.fileInfo || null,
+        databasePath: result.databasePath || databasePath || state.databasePath || ''
+      });
+      return false;
+    }
+    const activePath = (result.databasePath || databasePath || state.databasePath || '').trim();
+    if (activePath) state.databasePath = activePath;
+    if (result.fileInfo) setSharedDiskBaseline(result.fileInfo, activePath);
+    else resetSharedDiskBaseline(activePath);
+    persistStateToLocalCache(snapshot, {
+      source: 'shared',
+      databasePath: activePath,
+      sharedBaselineVersion: result.fileInfo?.version ?? null,
+      sharedBaselinePath: activePath
+    });
+    isDirty = false;
+    startSharedDiskPolling();
+    await refreshBridgeStatusUi();
+    showNotice("Updated the shared database from this browser's newer local cache.");
+    return true;
+  } catch (error) {
+    console.error('Failed to update shared database from local cache:', error);
+    showNotice(`Failed to update the shared database: ${error.message || error}`);
+    return false;
+  }
+}
+
+async function handleRecoveredSharedStorage(info) {
+  const databasePath = (info?.databasePath || '').trim();
+  if (!databasePath || sharedDiskSyncIsBlocked()) return;
+
+  const localSnapshot = localStorage.getItem(STORAGE_KEY) || serializeStateSnapshot();
+  const localMeta = ensureLocalCacheMetadata(localSnapshot, {
+    source: getLocalCacheMeta().source || 'local',
+    databasePath
+  });
+  const loaded = await bridge.loadState();
+  const sharedSnapshot = loaded?.json || '';
+  const sharedFileInfo = loaded?.fileInfo || null;
+
+  state.databasePath = databasePath;
+
+  if (snapshotsMatch(localSnapshot, sharedSnapshot)) {
+    if (sharedFileInfo) setSharedDiskBaseline(sharedFileInfo, databasePath);
+    else resetSharedDiskBaseline(databasePath);
+    persistStateToLocalCache(localSnapshot, {
+      source: 'shared',
+      databasePath,
+      sharedBaselineVersion: sharedFileInfo?.version ?? null,
+      sharedBaselinePath: databasePath
+    });
+    startSharedDiskPolling();
+    await refreshBridgeStatusUi();
+    return;
+  }
+
+  if (localCacheLooksNewerThanShared(localMeta, databasePath, localSnapshot, sharedSnapshot, sharedFileInfo)) {
+    if (sharedRecoveryPromptOpen || sharedDiskReloadPromptOpen || confirmDialogIsOpen()) return;
+    sharedRecoveryPromptOpen = true;
+    showConfirmDialog(
+      `The shared database at ${databasePath} looks older than this browser's cached copy. Update the shared database from the newer local cache now?`,
+      () => {
+        sharedRecoveryPromptOpen = false;
+        void promoteLocalCacheToShared({
+          snapshot: localSnapshot,
+          databasePath,
+          expectedVersion: sharedFileInfo?.version ?? null
+        });
+      },
+      'Update shared',
+      () => {
+        sharedRecoveryPromptOpen = false;
+        blockSharedDiskSync(databasePath);
+        showNotice('Shared storage is available again, but this tab is keeping its newer local copy for now. Shared sync is paused until you reload.');
+      }
+    );
+    return;
+  }
+
+  await reloadHubData({
+    source: 'shared',
+    notice: 'Shared storage is available again. Reloaded the latest shared data.'
+  });
+}
+
+function startSharedRecoveryPolling() {
+  if (sharedRecoveryPollTimer) clearInterval(sharedRecoveryPollTimer);
+  if (typeof bridge === 'undefined') return;
+  sharedRecoveryPollTimer = setInterval(() => {
+    checkForSharedRecovery().catch(() => {});
+  }, SHARED_DISK_POLL_MS);
+}
+
+async function checkForSharedRecovery() {
+  if (sharedRecoveryCheckInProgress || sharedDiskDataReloadInProgress) return;
+  if (typeof bridge === 'undefined') return;
+  sharedRecoveryCheckInProgress = true;
+  try {
+    await bridge.whenReady;
+    const info = await bridge.getStorageInfo();
+    const extensionReady = bridge.isAvailable();
+    const nativeReady = extensionReady && info?.nativeAvailable === true && !!info.databasePath;
+    const databasePath = (info?.databasePath || '').trim();
+
+    if (!nativeReady && sharedDiskPollTimer) {
+      clearInterval(sharedDiskPollTimer);
+      sharedDiskPollTimer = null;
+    }
+
+    const recovered = nativeReady && (!lastBridgeNativeReady || lastBridgeRecoveryPath !== databasePath);
+    const statusChanged = lastBridgeNativeReady !== nativeReady || lastBridgeRecoveryPath !== databasePath;
+
+    lastBridgeNativeReady = nativeReady;
+    lastBridgeRecoveryPath = databasePath;
+
+    if (statusChanged) await refreshBridgeStatusUi();
+    if (recovered) await handleRecoveredSharedStorage(info);
+  } finally {
+    sharedRecoveryCheckInProgress = false;
+  }
 }
 
 function promptSharedDiskConflict(detail = {}) {
@@ -211,6 +507,7 @@ function startSharedDiskPolling() {
 }
 
 async function checkForExternalSharedDiskChanges() {
+  if (sharedDiskDataReloadInProgress) return;
   if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable()) return;
   const live = await bridge.getDatabaseFileInfo();
   const livePath = (live?.databasePath || '').trim();
@@ -218,7 +515,12 @@ async function checkForExternalSharedDiskChanges() {
   if (livePath !== (state.databasePath || '').trim()) {
     state.databasePath = livePath;
     resetSharedDiskBaseline(livePath);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistStateToLocalCache(JSON.stringify(state), {
+      source: 'local',
+      databasePath: livePath,
+      sharedBaselineVersion: null,
+      sharedBaselinePath: livePath
+    });
     if (typeof updateDatabasePathControls === 'function') await updateDatabasePathControls();
     if (typeof updateAboutBridgeStatus === 'function') await updateAboutBridgeStatus();
   }
@@ -232,7 +534,12 @@ async function checkForExternalSharedDiskChanges() {
   const currentJson = typeof serializeStateSnapshot === 'function' ? serializeStateSnapshot() : JSON.stringify(state);
   if (liveJson && liveJson === currentJson) {
     setSharedDiskBaseline(loaded?.fileInfo || live?.fileInfo || null, livePath);
-    localStorage.setItem(STORAGE_KEY, currentJson);
+    persistStateToLocalCache(currentJson, {
+      source: 'shared',
+      databasePath: livePath,
+      sharedBaselineVersion: (loaded?.fileInfo || live?.fileInfo || null)?.version ?? null,
+      sharedBaselinePath: livePath
+    });
     return;
   }
   if (sharedDiskReloadPromptOpen || confirmDialogIsOpen()) return;
@@ -242,14 +549,18 @@ async function checkForExternalSharedDiskChanges() {
       `The shared database changed on disk at ${livePath}. Reload now and discard this window's newer local copy?`,
       () => {
         sharedDiskReloadPromptOpen = false;
-        reloadForSharedDisk('Reloaded shared database after detecting an external change.');
+        reloadForSharedDisk(shouldShowSharedAutoRefreshNotice()
+          ? 'Reloaded shared database after detecting an external change.'
+          : '');
       },
       'Reload',
       () => { sharedDiskReloadPromptOpen = false; }
     );
     return;
   }
-  reloadForSharedDisk('Reloaded shared database after detecting an external change.');
+  reloadForSharedDisk(shouldShowSharedAutoRefreshNotice()
+    ? 'Reloaded shared database after detecting an external change.'
+    : '');
 }
 
 
@@ -719,44 +1030,73 @@ attachInboxListeners();
 attachImportManagerListeners();
 attachSetPanelListeners();
 attachBookmarkImportListener();
-renderAll();
-if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
-localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-updateUndoRedoUI();
-try {
-  const sharedDiskNotice = sessionStorage.getItem(SHARED_DISK_NOTICE_KEY);
-  if (sharedDiskNotice) {
-    sessionStorage.removeItem(SHARED_DISK_NOTICE_KEY);
-    requestAnimationFrame(() => showNotice(sharedDiskNotice));
-  }
-} catch {}
 
-// If native sync is available, prefer the shared disk database over stale
-// per-browser localStorage copies. Otherwise, keep the previous backup restore.
-if (typeof bridge !== 'undefined') {
-  bridge.whenReady.then(async () => {
-    if (!bridge.isAvailable()) return;
-    const info = await bridge.getStorageInfo();
-
-    if (info?.nativeAvailable && info.databasePath) {
-      const loaded = await bridge.loadState();
-      if (loaded?.json) {
-        restoreStateSnapshot(loaded.json);
+async function initializeHubState() {
+  let loadedFromShared = false;
+  try {
+    if (typeof bridge !== 'undefined') {
+      await bridge.whenReady;
+      if (bridge.isAvailable()) {
+        const info = await bridge.getStorageInfo();
+        if (info?.nativeAvailable && info.databasePath) {
+          const loaded = await bridge.loadState();
+          if (loaded?.json) {
+            restoreStateSnapshot(loaded.json);
+          } else {
+            state = loadState();
+            ensureLocalCacheMetadata(localStorage.getItem(STORAGE_KEY), {
+              source: 'local',
+              databasePath: state.databasePath || info.databasePath || ''
+            });
+          }
+          state.databasePath = info.databasePath;
+          if (loaded?.fileInfo) setSharedDiskBaseline(loaded.fileInfo, info.databasePath);
+          else resetSharedDiskBaseline(info.databasePath);
+          persistStateToLocalCache(null, {
+            source: loaded?.json ? 'shared' : 'local',
+            databasePath: info.databasePath,
+            sharedBaselineVersion: loaded?.fileInfo?.version ?? null,
+            sharedBaselinePath: info.databasePath
+          });
+          startSharedDiskPolling();
+          loadedFromShared = true;
+        }
       }
-      state.databasePath = info.databasePath;
-      setSharedDiskBaseline(loaded?.fileInfo || null, info.databasePath);
-      localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
-      renderAll();
-      updateUndoRedoUI();
-      startSharedDiskPolling();
-      return;
     }
+    if (!loadedFromShared) {
+      state = loadState();
+      resetSharedDiskBaseline(state.databasePath || '');
+      ensureLocalCacheMetadata(localStorage.getItem(STORAGE_KEY), {
+        source: 'local',
+        databasePath: state.databasePath || ''
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to initialize hub state from preferred source, falling back to browser cache.', error);
+    state = loadState();
+    resetSharedDiskBaseline(state.databasePath || '');
+    ensureLocalCacheMetadata(localStorage.getItem(STORAGE_KEY), {
+      source: 'local',
+      databasePath: state.databasePath || ''
+    });
+  }
 
-    if (localStorage.getItem('morpheus-webhub-state')) return; // already have local state
-    const loaded = await bridge.loadState();
-    if (!loaded?.json) return;
-    restoreStateSnapshot(loaded.json);
-    localStorage.setItem('morpheus-webhub-state', JSON.stringify(state));
-    renderAll();
-  });
+  renderAll();
+  if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
+  updateUndoRedoUI();
+  isDirty = false;
+  document.documentElement.classList.remove('hub-booting');
+  lastBridgeNativeReady = typeof bridge !== 'undefined' && bridge.isAvailable() && bridge.nativeIsAvailable() && !!state.databasePath;
+  lastBridgeRecoveryPath = (state.databasePath || '').trim();
+  startSharedRecoveryPolling();
+
+  try {
+    const sharedDiskNotice = sessionStorage.getItem(SHARED_DISK_NOTICE_KEY);
+    if (sharedDiskNotice) {
+      sessionStorage.removeItem(SHARED_DISK_NOTICE_KEY);
+      requestAnimationFrame(() => showNotice(sharedDiskNotice));
+    }
+  } catch {}
 }
+
+initializeHubState();

@@ -5,6 +5,26 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.52] — 2026-04-28
+
+### Added
+
+- **Manual hub reload control** — General Settings now includes a `Reload Now` action that reloads from the shared database when available, otherwise from the browser cache.
+
+### Changed
+
+- **Shared/local startup authority** — hub startup now decides the authoritative source up front, preferring the shared database when the extension/native host is available and otherwise falling back cleanly to browser cache.
+- **Warm browser-cache metadata** — local cache now keeps source/freshness metadata alongside the saved snapshot so the app can reason about shared-vs-local recovery without guessing.
+- **Auto-refresh notice preference** — General Settings now includes a toggle for whether automatic shared-disk refreshes show a post-refresh notice or stay silent.
+
+### Fixed
+
+- **In-app shared-disk reloads** — external shared-disk changes now reload data in-app instead of relying on normal page refreshes, while transient panels/modals are cleared safely during reload.
+- **Recovered shared-storage reconciliation** — when the extension/native host comes back, the hub now compares cached local state against shared state, prompts to push the newer local copy when appropriate, and pauses sync safely if you decline.
+- **Bridge availability tracking** — bridge connection status now updates more honestly after failed calls, which improves storage-status UI and recovery detection when the extension/native host disappears or returns.
+
+---
+
 ## [0.11.51] — 2026-04-28
 
 ### Changed

@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'morpheus-webhub-state';
+const LOCAL_CACHE_META_KEY = 'morpheus-webhub-state-meta';
 const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SPEED_DIAL_SLOT_COUNT = 8;
 
@@ -17,6 +18,7 @@ const defaultSettings = {
   confirmDeleteFolder: false,
   confirmDeleteTitleDivider: false,
   confirmDeleteTag: false,
+  sharedAutoRefreshNotice: true,
   globalFontScale: 'medium',
   globalFontColor: '#e5e7eb',
   globalFontColorFromTheme: true,
@@ -161,11 +163,52 @@ const defaultState = {
   ]
 };
 
-let state = loadState();
+let state = cloneData(defaultState);
 let sharedDiskBaselineVersion = null;
 let sharedDiskBaselinePath = '';
 let sharedDiskWritesBlocked = false;
 let sharedDiskHasPendingChanges = false;
+let localCacheMeta = loadLocalCacheMeta();
+
+function normalizeLocalCacheMeta(meta) {
+  return {
+    cachedAt: typeof meta?.cachedAt === 'string' ? meta.cachedAt : null,
+    source: meta?.source === 'shared' ? 'shared' : 'local',
+    snapshotHash: typeof meta?.snapshotHash === 'string' ? meta.snapshotHash : '',
+    databasePath: typeof meta?.databasePath === 'string' ? meta.databasePath.trim() : '',
+    sharedBaselineVersion: meta?.sharedBaselineVersion ?? null,
+    sharedBaselinePath: typeof meta?.sharedBaselinePath === 'string' ? meta.sharedBaselinePath.trim() : '',
+    sharedSeenAt: typeof meta?.sharedSeenAt === 'string' ? meta.sharedSeenAt : null
+  };
+}
+
+function loadLocalCacheMeta() {
+  try {
+    return normalizeLocalCacheMeta(JSON.parse(localStorage.getItem(LOCAL_CACHE_META_KEY) || 'null'));
+  } catch {
+    return normalizeLocalCacheMeta(null);
+  }
+}
+
+function computeSnapshotHash(text) {
+  const value = String(text || '');
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function persistLocalCacheMeta(metaPatch = {}) {
+  localCacheMeta = normalizeLocalCacheMeta({ ...localCacheMeta, ...metaPatch });
+  localStorage.setItem(LOCAL_CACHE_META_KEY, JSON.stringify(localCacheMeta));
+  return localCacheMeta;
+}
+
+function getLocalCacheMeta() {
+  return cloneData(localCacheMeta);
+}
 
 function migrateStyleSettings(settings) {
   if (!settings.styleOverrides) settings.styleOverrides = cloneData(defaultSettings.styleOverrides);
@@ -665,11 +708,52 @@ function loadState() {
   return parseStateJson(localStorage.getItem(STORAGE_KEY));
 }
 
+function ensureLocalCacheMetadata(snapshot = null, options = {}) {
+  const currentSnapshot = snapshot ?? localStorage.getItem(STORAGE_KEY) ?? '';
+  if (localCacheMeta.cachedAt && localCacheMeta.snapshotHash) return localCacheMeta;
+  return persistLocalCacheMeta({
+    cachedAt: localCacheMeta.cachedAt || new Date().toISOString(),
+    source: options.source === 'shared' ? 'shared' : (localCacheMeta.source || 'local'),
+    snapshotHash: computeSnapshotHash(currentSnapshot),
+    databasePath: options.databasePath ?? state?.databasePath ?? localCacheMeta.databasePath ?? '',
+    sharedBaselineVersion: options.sharedBaselineVersion ?? sharedDiskBaselineVersion ?? localCacheMeta.sharedBaselineVersion ?? null,
+    sharedBaselinePath: options.sharedBaselinePath ?? getSharedDiskBaselinePath() ?? localCacheMeta.sharedBaselinePath ?? '',
+    sharedSeenAt: options.sharedSeenAt ?? localCacheMeta.sharedSeenAt ?? null
+  });
+}
+
+function persistStateToLocalCache(json = null, options = {}) {
+  const snapshot = json ?? serializeStateSnapshot();
+  localStorage.setItem(STORAGE_KEY, snapshot);
+  const now = new Date().toISOString();
+  const source = options.source === 'shared' ? 'shared' : 'local';
+  const sharedVersion = options.sharedBaselineVersion ?? sharedDiskBaselineVersion ?? null;
+  const sharedPath = (options.sharedBaselinePath ?? getSharedDiskBaselinePath() ?? '').trim();
+  persistLocalCacheMeta({
+    cachedAt: now,
+    source,
+    snapshotHash: computeSnapshotHash(snapshot),
+    databasePath: (options.databasePath ?? state?.databasePath ?? '').trim(),
+    sharedBaselineVersion: sharedVersion,
+    sharedBaselinePath: sharedPath,
+    sharedSeenAt: source === 'shared'
+      ? now
+      : (options.sharedSeenAt ?? localCacheMeta.sharedSeenAt ?? null)
+  });
+  return snapshot;
+}
+
 function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
   sharedDiskBaselineVersion = fileInfo?.version || null;
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
   sharedDiskHasPendingChanges = false;
+  persistLocalCacheMeta({
+    databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
+    sharedBaselineVersion: sharedDiskBaselineVersion,
+    sharedBaselinePath: sharedDiskBaselinePath,
+    sharedSeenAt: new Date().toISOString()
+  });
 }
 
 function resetSharedDiskBaseline(path = state?.databasePath || '') {
@@ -677,6 +761,11 @@ function resetSharedDiskBaseline(path = state?.databasePath || '') {
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
   sharedDiskHasPendingChanges = false;
+  persistLocalCacheMeta({
+    databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
+    sharedBaselineVersion: null,
+    sharedBaselinePath: sharedDiskBaselinePath
+  });
 }
 
 function getSharedDiskBaselineVersion() {
@@ -695,9 +784,18 @@ function sharedDiskSyncIsBlocked() {
   return sharedDiskWritesBlocked;
 }
 
-function notifySharedDiskConflict(detail = {}) {
+function blockSharedDiskSync(path = state?.databasePath || sharedDiskBaselinePath || '') {
   sharedDiskWritesBlocked = true;
   sharedDiskHasPendingChanges = true;
+  sharedDiskBaselinePath = (path || '').trim();
+  persistLocalCacheMeta({
+    databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
+    sharedBaselinePath: sharedDiskBaselinePath
+  });
+}
+
+function notifySharedDiskConflict(detail = {}) {
+  blockSharedDiskSync(detail.databasePath || getSharedDiskBaselinePath());
   window.dispatchEvent(new CustomEvent('morpheus:shared-disk-conflict', {
     detail: {
       ...detail,
@@ -715,7 +813,7 @@ function serializeStateSnapshot() {
 function saveState(options = {}) {
   const { skipDiskSync = false } = options;
   const json = serializeStateSnapshot();
-  localStorage.setItem(STORAGE_KEY, json);
+  persistStateToLocalCache(json);
   isDirty = true;
   if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
     const shouldSyncSharedDisk = !skipDiskSync && bridge.nativeIsAvailable() && !!(state.databasePath || sharedDiskBaselinePath);

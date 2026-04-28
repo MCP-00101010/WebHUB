@@ -4,6 +4,23 @@
 
 - we can save the current theme... however we have actually no way of editing theme colors in the Hub. Theme Editor is needed inside the Theme Settings.
 
+## Load/Save Database
+
+- occasionally the hub randomly detects "The shared database changed on disk before this browser finished saving to F:\Projects\Coding\Morpheus WebHub\extension\native\morpheus-webhub.json. Reload the latest shared copy now?". Never able to 100% reproduce this problem but mostly seems to occur when i make changes in quick succession. particular when changing/adding something and then going into an edit/create dialogue. the most occurrences of this problem are when adjusting the amount of speed dial slots in board settings
+
+## Boards
+
+- board UI: Board Title Bar, Speed Dial, Tab Bar and Sets Bar should all be inside the same UI container. just draw one outside box and place them all inside it rather than each of them being in their own containers.
+- newly created boards come with an empty dummy board which the user needs to edit. instead create the board with no tabs. as we activate the new board automatically, just open the Create Tab Modal after a new board is create so the user can design the new tab straight away.
+- move the "new tab" icon in the tab bar to left next to the last tab.
+- create "tab settings" icon in the tab bar (align right) that opens the currently active tabs settings modal. 
+- tabs in the tab bar don't need to show tab icon in front of them.
+- tags between Boards and Tabs seem to overlap. when adding user defined or shared tags to a board, they disappear and the boards seems to get its tags from the currently active tab instead. double-check tag logic and check that children inside boards inherit their tags correctly.
+- boards / tabs settings for "pass-on-to-children" and "strip-on-move" dont persist. they both are enabled by default particular "strip-on-move" occassionally reverts back to disabled by itself. potentially another issue with the settings not properly split between board and board-owned tabs?
+- after moving a bookmark it to a tab inbox it randomly got an inherited tag called tag-1777384364108-rf10. this might be related to the issue listed before this one.
+- locking/unlocking boards in the sidebar currently does not work. the icon appears when hoovering over board name but clicking it does nothing.
+- when deleting an inactive tab in the tab pane via context menu, the currently active tab changes. not needed. stay on active tab. active tab only needs to change when we delete the currently active tab.
+
 ## Sets
 
 - when deleting a set it should show up in the trash

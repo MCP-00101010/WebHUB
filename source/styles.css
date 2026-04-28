@@ -1113,6 +1113,12 @@ button {
   display: none;
 }
 
+.hub-booting #essentialsSection,
+.hub-booting #navList,
+.hub-booting #mainPanel {
+  visibility: hidden;
+}
+
 
 .board-header,
 .board-toolbar,

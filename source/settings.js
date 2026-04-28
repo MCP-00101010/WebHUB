@@ -542,6 +542,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;
   document.getElementById('stgShowTags').checked = s.showTags;
   document.getElementById('stgWarnOnClose').checked = s.warnOnClose;
+  document.getElementById('stgSharedAutoRefreshNotice').checked = s.sharedAutoRefreshNotice !== false;
   document.getElementById('stgConfirmDeleteBoard').checked = s.confirmDeleteBoard;
   document.getElementById('stgConfirmDeleteBookmark').checked = s.confirmDeleteBookmark;
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
@@ -1582,6 +1583,7 @@ function attachSettingsListeners() {
   });
   boolSetting('stgShowTags',                 'showTags');
   boolSetting('stgWarnOnClose',              'warnOnClose');
+  boolSetting('stgSharedAutoRefreshNotice',  'sharedAutoRefreshNotice');
   boolSetting('stgConfirmDeleteBoard',       'confirmDeleteBoard');
   boolSetting('stgConfirmDeleteBookmark',    'confirmDeleteBookmark');
   boolSetting('stgConfirmDeleteFolder',      'confirmDeleteFolder');
@@ -1780,6 +1782,9 @@ function attachSettingsListeners() {
 
   const importFile = document.getElementById('stgImportFile');
   document.getElementById('stgImportBtn').addEventListener('click', () => importFile.click());
+  document.getElementById('stgReloadHubBtn').addEventListener('click', () => {
+    if (typeof reloadHubDataManually === 'function') reloadHubDataManually();
+  });
   importFile.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;

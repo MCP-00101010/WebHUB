@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="hub-booting">
 <head>
   <meta charset="UTF-8" />
   <meta name="morpheus-webhub" content="1.0" />
@@ -221,7 +221,7 @@
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
         <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.51</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.52</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -892,10 +892,24 @@
             <button type="button" id="stgImportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Load JSON</button>
             <input type="file" id="stgImportFile" accept=".json" style="display:none" />
           </div>
+          <div class="settings-row">
+            <span>Reload hub data</span>
+            <button type="button" id="stgReloadHubBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Reload Now</button>
+          </div>
+          <div class="settings-row">
+            <span id="stgReloadHint" class="settings-muted">Reloads from the shared database when available, otherwise from browser cache.</span>
+          </div>
+          <div class="settings-row">
+            <span>Show auto-refresh notice</span>
+            <label class="settings-toggle">
+              <input id="stgSharedAutoRefreshNotice" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.51</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.52</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>
