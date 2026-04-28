@@ -382,7 +382,9 @@ function renderSearchResults() {
   for (const board of state.boards) {
     if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
     board.speedDial.filter(i => i && matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
-    board.columns.forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
+    for (const tab of getBoardTabs(board)) {
+      (tab.columns || []).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
+    }
   }
 
   const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.item, h.board)) : allBaseHits;
@@ -921,7 +923,12 @@ function createNavItem(item, depth = 0, parent = null) {
     lockBtn.addEventListener('click', e => {
       e.stopPropagation();
       e.preventDefault();
-      if (board) { board.locked = !board.locked; saveState(); renderNav(); if (state.activeBoardId === board.id) renderBoard(); }
+      if (board) {
+        pushUndoSnapshot();
+        board.locked = !board.locked;
+        renderAll();
+        saveState();
+      }
     });
     el.appendChild(lockBtn);
     el.addEventListener('click', () => {
@@ -1044,6 +1051,7 @@ function _setTabDropDecoration(tabEl, position) {
 function _handleBoardTabBarDragOver(event, board, activeTab) {
   const tabBar = elements.collectionTabBar;
   if (!tabBar || !board || !Array.isArray(board.tabs)) return;
+  if (board.locked) return;
   const isInternalTab = dragPayload?.area === 'board-tab' && dragPayload?.boardId === board.id;
   if (!isInternalTab) return;
   event.preventDefault();
@@ -1065,6 +1073,7 @@ function _handleBoardTabBarDragOver(event, board, activeTab) {
 function _handleBoardTabBarDrop(event, board) {
   const tabBar = elements.collectionTabBar;
   if (!tabBar || !board) return;
+  if (board.locked) return;
   const isInternalTab = dragPayload?.area === 'board-tab' && dragPayload?.boardId === board.id;
   if (!isInternalTab) return;
   event.preventDefault();
@@ -1100,6 +1109,7 @@ function _handleBoardTabBarDrop(event, board) {
 function _handleTabSetBarDragOver(event, board, activeTab) {
   const setBar = elements.tabSetBar;
   if (!setBar || !board || !activeTab) return;
+  if (board.locked) return;
   const isInternalSet = dragPayload?.area === 'tab-set-link' && dragPayload?.boardId === board.id && dragPayload?.tabId === activeTab.id;
   const isManagerSet = dragPayload?.area === 'set-row';
   if (!isInternalSet && !isManagerSet) return;
@@ -1141,6 +1151,7 @@ function _handleTabSetBarDragOver(event, board, activeTab) {
 function _handleTabSetBarDrop(event, board, activeTab) {
   const setBar = elements.tabSetBar;
   if (!setBar || !board || !activeTab) return;
+  if (board.locked) return;
   const isInternalSet = dragPayload?.area === 'tab-set-link' && dragPayload?.boardId === board.id && dragPayload?.tabId === activeTab.id;
   const isManagerSet = dragPayload?.area === 'set-row';
   if (!isInternalSet && !isManagerSet) return;
@@ -1179,23 +1190,18 @@ function renderBoardTabBar(board, activeTab) {
   const tabBar = elements.collectionTabBar;
   if (!tabBar) return;
   tabBar.innerHTML = '';
-  if (!board || !Array.isArray(board.tabs) || !board.tabs.length) {
+  if (!board) {
     tabBar.classList.add('hidden');
     return;
   }
 
   tabBar.classList.remove('hidden');
 
-  board.tabs.forEach(tab => {
+  (board.tabs || []).forEach(tab => {
     const tabEl = document.createElement('div');
     tabEl.className = 'collection-tab' + (tab.id === activeTab?.id ? ' active' : '');
     tabEl.dataset.tabId = tab.id;
-    tabEl.draggable = true;
-
-    const iconEl = document.createElement('span');
-    iconEl.className = 'collection-tab-icon';
-    iconEl.appendChild(icon('icon-board'));
-    tabEl.appendChild(iconEl);
+    tabEl.draggable = !board.locked;
 
     const label = document.createElement('span');
     label.className = 'collection-tab-label';
@@ -1218,12 +1224,16 @@ function renderBoardTabBar(board, activeTab) {
     tabEl.addEventListener('contextmenu', event => {
       event.preventDefault();
       event.stopPropagation();
+      if (board.locked) return;
       contextTarget = { area: 'board-tab', boardId: board.id, tabId: tab.id, item: tab };
-      const actions = [{ label: 'Edit tab', action: 'editBoardTab' }];
-      if ((board.tabs || []).length > 1) actions.push({ label: 'Delete tab', action: 'deleteBoardTab' });
+      const actions = [
+        { label: 'Edit tab', action: 'editBoardTab' },
+        { label: 'Delete tab', action: 'deleteBoardTab' }
+      ];
       showContextMenu(event.clientX, event.clientY, actions);
     });
     tabEl.addEventListener('dragstart', event => {
+      if (board.locked) { event.preventDefault(); return; }
       dragPayload = { area: 'board-tab', boardId: board.id, tabId: tab.id };
       event.dataTransfer.setData('text/plain', tab.id);
       event.dataTransfer.effectAllowed = 'move';
@@ -1245,6 +1255,7 @@ function renderBoardTabBar(board, activeTab) {
   addBtn.title = 'New Tab';
   addBtn.appendChild(icon('icon-board-add'));
   addBtn.addEventListener('click', () => {
+    if (board.locked) return;
     pushUndoSnapshot();
     createBoardTab(board, 'New Tab');
     renderAll();
@@ -1254,14 +1265,38 @@ function renderBoardTabBar(board, activeTab) {
   addBtn.addEventListener('contextmenu', event => {
     event.preventDefault();
     event.stopPropagation();
+    if (board.locked) return;
     contextTarget = { area: 'board-tab-bar', boardId: board.id };
     showContextMenu(event.clientX, event.clientY, [{ label: 'New Tab', action: 'addBoardTab' }]);
   });
   tabBar.appendChild(addBtn);
 
-  tabBar.oncontextmenu = event => {
-    if (event.target.closest('.collection-tab, .collection-tab-add')) return;
+  const spacer = document.createElement('div');
+  spacer.className = 'collection-tab-bar-spacer';
+  tabBar.appendChild(spacer);
+
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'collection-tab-settings-btn';
+  settingsBtn.title = activeTab ? 'Tab settings' : 'No active tab';
+  settingsBtn.setAttribute('aria-label', activeTab ? 'Tab settings' : 'No active tab');
+  settingsBtn.disabled = board.locked || !activeTab;
+  settingsBtn.appendChild(icon('icon-settings'));
+  settingsBtn.addEventListener('click', event => {
     event.preventDefault();
+    event.stopPropagation();
+    if (board.locked || !activeTab) return;
+    state.activeTabId = activeTab.id;
+    renderAll();
+    saveState();
+    showBoardSettingsPanel();
+  });
+  tabBar.appendChild(settingsBtn);
+
+  tabBar.oncontextmenu = event => {
+    if (event.target.closest('.collection-tab, .collection-tab-add, .collection-tab-settings-btn')) return;
+    event.preventDefault();
+    if (board.locked) return;
     contextTarget = { area: 'board-tab-bar', boardId: board.id };
     showContextMenu(event.clientX, event.clientY, [{ label: 'New Tab', action: 'addBoardTab' }]);
   };
@@ -1300,7 +1335,7 @@ function renderTabSetBar(board, activeTab) {
     const setEl = document.createElement('div');
     setEl.className = 'collection-tab set-bar-item';
     setEl.dataset.setId = set.id;
-    setEl.draggable = true;
+    setEl.draggable = !board.locked;
 
     const iconEl = document.createElement('span');
     iconEl.className = 'collection-tab-icon';
@@ -1322,13 +1357,15 @@ function renderTabSetBar(board, activeTab) {
       event.preventDefault();
       event.stopPropagation();
       contextTarget = { area: 'tab-set-link', boardId: board.id, tabId: activeTab.id, setId: set.id, item: set };
-      showContextMenu(event.clientX, event.clientY, [
+      const actions = [
         { label: 'Open set', action: 'openSet' },
-        { label: 'Edit set', action: 'editSet' },
-        { label: 'Remove from bar', action: 'removeSetFromTabBar' }
-      ]);
+        { label: 'Edit set', action: 'editSet' }
+      ];
+      if (!board.locked) actions.push({ label: 'Remove from bar', action: 'removeSetFromTabBar' });
+      showContextMenu(event.clientX, event.clientY, actions);
     });
     setEl.addEventListener('dragstart', event => {
+      if (board.locked) { event.preventDefault(); return; }
       dragPayload = { area: 'tab-set-link', boardId: board.id, tabId: activeTab.id, setId: set.id };
       event.dataTransfer.setData('text/plain', set.id);
       event.dataTransfer.effectAllowed = 'move';
@@ -1357,6 +1394,7 @@ function renderTabSetBar(board, activeTab) {
   addBtn.addEventListener('click', event => {
     event.preventDefault();
     event.stopPropagation();
+    if (board.locked) return;
     contextTarget = { area: 'tab-set-bar', boardId: board.id, tabId: activeTab.id };
     const rect = addBtn.getBoundingClientRect();
     showContextMenu(rect.left, rect.bottom + 4, availableSetActions.length ? availableSetActions : [{ label: 'No unlinked sets available', action: '' }]);
@@ -1364,6 +1402,7 @@ function renderTabSetBar(board, activeTab) {
   addBtn.addEventListener('contextmenu', event => {
     event.preventDefault();
     event.stopPropagation();
+    if (board.locked) return;
     contextTarget = { area: 'tab-set-bar', boardId: board.id, tabId: activeTab.id };
     showContextMenu(event.clientX, event.clientY, availableSetActions.length ? availableSetActions : [{ label: 'No unlinked sets available', action: '' }]);
   });
@@ -1383,7 +1422,7 @@ function renderBoard() {
 
   renderBoardTabBar(board, activeTab);
   renderTabSetBar(board, activeTab);
-  const hasShellBars = board && ((board.tabs || []).length > 0 || activeTab?.showSetBar !== false);
+  const hasShellBars = !!(board && (((board.tabs || []).length > 0) || !activeTab || (activeTab && activeTab.showSetBar !== false)));
   elements.mainPanel.classList.toggle('has-context-tabs', !!hasShellBars);
 
   if (!board) {
@@ -1407,12 +1446,12 @@ function renderBoard() {
 
   elements.mainPanel.classList.remove('no-board');
   elements.boardTitle.textContent = board.title;
-  elements.bookmarkColumns.style.setProperty('--columns', activeTab?.columnCount || board.columnCount);
+  elements.bookmarkColumns.style.setProperty('--columns', activeTab?.columnCount || Math.max(1, board.columnCount || 1));
   applyBoardBackground(board);
   elements.boardSettingsBtn.disabled = !!board.locked;
   elements.speedDialToggleBtn?.classList.toggle('is-inactive', board.showSpeedDial === false);
   elements.setBarToggleBtn?.classList.toggle('is-inactive', activeTab?.showSetBar === false);
-  const inboxUnavailable = !!board.locked;
+  const inboxUnavailable = !!board.locked || !activeTab;
   elements.inboxBtn.disabled = inboxUnavailable;
   if (inboxUnavailable && typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
 
@@ -1420,7 +1459,7 @@ function renderBoard() {
   if (speedDialPanel) speedDialPanel.classList.toggle('hidden', board.showSpeedDial === false);
   renderSpeedDial(board, false);
 
-  renderColumns(board);
+  renderColumns(board, activeTab);
 }
 
 function renderSpeedDial(board) {
@@ -1555,9 +1594,10 @@ function renderFolderTabBar(folder) {
   addBtn.addEventListener('click', () => {
     pushUndoSnapshot();
     const board = createBoardInFolder(folder, 'New Board');
+    if (board) createBoardTab(board, 'New Tab');
     renderAll();
     saveState();
-    if (board) showBoardMetaModal('edit', board);
+    if (board) showBoardSettingsPanel(true);
   });
   addBtn.addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -1575,10 +1615,11 @@ function renderFolderTabBar(folder) {
   });
 }
 
-function renderColumns(board) {
+function renderColumns(board, activeTab = null) {
   clearColumnWidgetTimers();
   elements.bookmarkColumns.innerHTML = '';
-  board.columns.forEach(column => {
+  const columns = activeTab?.columns || board.columns || [];
+  columns.forEach(column => {
     const columnEl = document.createElement('div');
     columnEl.className = 'board-column';
     columnEl.dataset.columnId = column.id;

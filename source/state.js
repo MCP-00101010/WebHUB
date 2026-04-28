@@ -168,6 +168,9 @@ let sharedDiskBaselineVersion = null;
 let sharedDiskBaselinePath = '';
 let sharedDiskWritesBlocked = false;
 let sharedDiskHasPendingChanges = false;
+let sharedDiskSaveInFlight = false;
+let sharedDiskQueuedSnapshot = null;
+let sharedDiskQueuedPath = '';
 let localCacheMeta = loadLocalCacheMeta();
 
 function normalizeLocalCacheMeta(meta) {
@@ -417,7 +420,18 @@ function migrateWidgetServiceSettings(parsed) {
 
 function getBoardTabs(board) {
   if (!board) return [];
-  return Array.isArray(board.tabs) && board.tabs.length ? board.tabs : [board];
+  if (Array.isArray(board.tabs)) return board.tabs;
+  return [board];
+}
+
+function clearBoardCompatibilityFields(board) {
+  if (!board) return;
+  board.columnCount = 0;
+  board.backgroundImage = '';
+  board.backgroundFit = 'cover';
+  board.containerOpacity = 100;
+  board.columns = [];
+  board.inbox = null;
 }
 
 function normalizeBoardInboxRecord(inbox, tabId) {
@@ -488,13 +502,8 @@ function syncBoardCompatibilityFields(board, preferredTabId = null) {
   board.backgroundImage = tab.backgroundImage;
   board.backgroundFit = tab.backgroundFit;
   board.containerOpacity = tab.containerOpacity;
-  board.sharedTags = tab.sharedTags;
-  board.tags = tab.tags;
-  board.inheritTags = tab.inheritTags;
-  board.autoRemoveTags = tab.autoRemoveTags;
   board.columns = tab.columns;
   board.inbox = tab.inbox;
-  board.locked = tab.locked === true;
   return board;
 }
 
@@ -506,7 +515,7 @@ function syncBoardCompatibilityState() {
 
 function normalizeBoardRecord(board, index = 0) {
   const id = board?.id || `board-${Date.now()}-${index}`;
-  const tabs = Array.isArray(board?.tabs) && board.tabs.length
+  const tabs = Array.isArray(board?.tabs)
     ? board.tabs.map((tab, tabIndex) => normalizeBoardTabRecord(tab, id, tabIndex))
     : [normalizeBoardTabRecord({
         id: board?.tabId || `${id}-tab-1`,
@@ -533,7 +542,13 @@ function normalizeBoardRecord(board, index = 0) {
     showSpeedDial: board?.showSpeedDial !== false,
     speedDialSlotCount: board?.speedDialSlotCount,
     speedDial: Array.isArray(board?.speedDial) ? board.speedDial : [],
-    tabs
+    tabs,
+    columnCount: Array.isArray(board?.columns) ? board.columns.length : 0,
+    backgroundImage: typeof board?.backgroundImage === 'string' ? board.backgroundImage : '',
+    backgroundFit: board?.backgroundFit === 'contain' ? 'contain' : 'cover',
+    containerOpacity: board?.containerOpacity === undefined ? 100 : board.containerOpacity,
+    columns: Array.isArray(board?.columns) ? board.columns : [],
+    inbox: board?.inbox || null
   };
   normalizeSpeedDialSlots(normalized);
   for (const item of (normalized.speedDial || [])) {
@@ -542,7 +557,7 @@ function normalizeBoardRecord(board, index = 0) {
     if (!item.tags) item.tags = [];
     if (item.faviconCache === undefined) item.faviconCache = '';
   }
-  syncBoardCompatibilityFields(normalized, tabs[0]?.id);
+  if (tabs.length) syncBoardCompatibilityFields(normalized, tabs[0]?.id);
   return normalized;
 }
 
@@ -747,7 +762,7 @@ function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
   sharedDiskBaselineVersion = fileInfo?.version || null;
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
-  sharedDiskHasPendingChanges = false;
+  sharedDiskHasPendingChanges = !!sharedDiskQueuedSnapshot;
   persistLocalCacheMeta({
     databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
     sharedBaselineVersion: sharedDiskBaselineVersion,
@@ -760,7 +775,7 @@ function resetSharedDiskBaseline(path = state?.databasePath || '') {
   sharedDiskBaselineVersion = null;
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
-  sharedDiskHasPendingChanges = false;
+  sharedDiskHasPendingChanges = !!sharedDiskQueuedSnapshot;
   persistLocalCacheMeta({
     databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
     sharedBaselineVersion: null,
@@ -788,6 +803,8 @@ function blockSharedDiskSync(path = state?.databasePath || sharedDiskBaselinePat
   sharedDiskWritesBlocked = true;
   sharedDiskHasPendingChanges = true;
   sharedDiskBaselinePath = (path || '').trim();
+  sharedDiskQueuedSnapshot = null;
+  sharedDiskQueuedPath = '';
   persistLocalCacheMeta({
     databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
     sharedBaselinePath: sharedDiskBaselinePath
@@ -810,6 +827,50 @@ function serializeStateSnapshot() {
   return JSON.stringify(state);
 }
 
+function queueSharedDiskSave(snapshot, path = state?.databasePath || sharedDiskBaselinePath || '') {
+  if (sharedDiskWritesBlocked) return;
+  sharedDiskQueuedSnapshot = snapshot;
+  sharedDiskQueuedPath = (path || '').trim();
+  sharedDiskHasPendingChanges = true;
+  if (!sharedDiskSaveInFlight) void flushSharedDiskSaveQueue();
+}
+
+async function flushSharedDiskSaveQueue() {
+  if (sharedDiskSaveInFlight || sharedDiskWritesBlocked) return;
+  if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable()) return;
+
+  while (sharedDiskQueuedSnapshot && !sharedDiskWritesBlocked && bridge.isAvailable() && bridge.nativeIsAvailable()) {
+    const snapshot = sharedDiskQueuedSnapshot;
+    const path = sharedDiskQueuedPath || (state?.databasePath || sharedDiskBaselinePath || '').trim();
+    const expectedVersion = sharedDiskBaselineVersion;
+    sharedDiskQueuedSnapshot = null;
+    sharedDiskQueuedPath = '';
+    sharedDiskSaveInFlight = true;
+
+    try {
+      const result = await bridge.saveState(snapshot, { expectedVersion });
+      if (!result?.ok) continue;
+      if (result.conflict) {
+        notifySharedDiskConflict({
+          fileInfo: result.fileInfo || null,
+          databasePath: result.databasePath || path || state.databasePath || ''
+        });
+        break;
+      }
+      if (result.fileInfo) {
+        setSharedDiskBaseline(result.fileInfo, result.databasePath || path || state.databasePath || '');
+      } else {
+        resetSharedDiskBaseline(result.databasePath || path || state.databasePath || '');
+      }
+      if (sharedDiskQueuedSnapshot) sharedDiskHasPendingChanges = true;
+    } catch {
+      break;
+    } finally {
+      sharedDiskSaveInFlight = false;
+    }
+  }
+}
+
 function saveState(options = {}) {
   const { skipDiskSync = false } = options;
   const json = serializeStateSnapshot();
@@ -821,22 +882,7 @@ function saveState(options = {}) {
       resetSharedDiskBaseline(state.databasePath || '');
     }
     if (shouldSyncSharedDisk && sharedDiskWritesBlocked) return;
-    if (shouldSyncSharedDisk) sharedDiskHasPendingChanges = true;
-    bridge.saveState(json, {
-      expectedVersion: shouldSyncSharedDisk ? sharedDiskBaselineVersion : null
-    }).then(result => {
-      if (!result?.ok) return;
-      if (result.conflict) {
-        notifySharedDiskConflict({
-          fileInfo: result.fileInfo || null,
-          databasePath: result.databasePath || state.databasePath || ''
-        });
-        return;
-      }
-      if (shouldSyncSharedDisk && result.fileInfo) {
-        setSharedDiskBaseline(result.fileInfo, result.databasePath || state.databasePath || '');
-      }
-    }).catch(() => {});
+    if (shouldSyncSharedDisk) queueSharedDiskSave(json, state.databasePath || sharedDiskBaselinePath);
   }
 }
 
@@ -853,7 +899,8 @@ function getActiveBoardContainer() {
 
 function getBoardTab(board, tabId = null) {
   if (!board) return null;
-  if (!Array.isArray(board.tabs) || !board.tabs.length) return board;
+  if (!Array.isArray(board.tabs)) return board;
+  if (!board.tabs.length) return null;
   const preferredTabId = tabId || (board.id === state.activeBoardId ? state.activeTabId : null);
   return board.tabs.find(tab => tab.id === preferredTabId) || board.tabs[0] || null;
 }
@@ -901,6 +948,21 @@ function findBoardTabByInboxId(board, inboxId) {
   return getBoardTabs(board).find(tab => getTabInbox(tab, tab.id)?.id === inboxId) || null;
 }
 
+function findBoardTabByColumnId(board, columnId) {
+  if (!board || !columnId) return null;
+  return getBoardTabs(board).find(tab => (tab.columns || []).some(column => column.id === columnId)) || null;
+}
+
+function findBoardTabContainingItem(board, itemId) {
+  if (!board || !itemId) return null;
+  for (const tab of getBoardTabs(board)) {
+    for (const container of getBoardItemContainers(board, tab)) {
+      if (findBoardItemInList(container.items, itemId)) return tab;
+    }
+  }
+  return null;
+}
+
 function createBoardTab(board, title = 'New Tab', options = {}) {
   if (!board) return null;
   if (!Array.isArray(board.tabs)) board.tabs = [];
@@ -919,14 +981,22 @@ function createBoardTab(board, title = 'New Tab', options = {}) {
   return tab;
 }
 
-function removeBoardTab(board, tabId) {
-  if (!board || !Array.isArray(board.tabs) || board.tabs.length <= 1) return false;
+function removeBoardTab(board, tabId, options = {}) {
+  if (!board || !Array.isArray(board.tabs) || board.tabs.length === 0) return false;
   const index = board.tabs.findIndex(tab => tab.id === tabId);
   if (index === -1) return false;
+  const deletingActiveTab = board.id === state.activeBoardId && state.activeTabId === tabId;
   board.tabs.splice(index, 1);
-  const fallback = board.tabs[Math.max(0, index - 1)] || board.tabs[0] || null;
-  state.activeTabId = fallback?.id || null;
-  syncBoardCompatibilityFields(board, state.activeTabId);
+  if (!board.tabs.length) {
+    state.activeTabId = null;
+    clearBoardCompatibilityFields(board);
+    return true;
+  }
+  if (deletingActiveTab) {
+    const fallback = board.tabs[Math.max(0, index - 1)] || board.tabs[0] || null;
+    state.activeTabId = fallback?.id || null;
+  }
+  syncBoardCompatibilityFields(board, deletingActiveTab ? state.activeTabId : (state.activeTabId || board.tabs[0]?.id || null));
   return true;
 }
 
@@ -1030,6 +1100,20 @@ function getBoardNavInheritedTags(boardId) {
   return [...new Set(tags)];
 }
 
+function getBoardInheritedTagIds(board) {
+  if (!board) return [];
+  const inheritedFromNav = board.inheritTags !== false ? getBoardNavInheritedTags(board.id) : [];
+  const ownShared = board.inheritTags !== false ? (board.sharedTags || []) : [];
+  return [...new Set([...inheritedFromNav, ...ownShared])];
+}
+
+function getTabInheritedTagIds(board, tab) {
+  if (!board || !tab) return [];
+  const inheritedFromBoard = getBoardInheritedTagIds(board);
+  const tabShared = tab.inheritTags !== false ? (tab.sharedTags || []) : [];
+  return [...new Set([...inheritedFromBoard, ...tabShared])];
+}
+
 function findNavParentFolder(boardId, list = state.navItems, parent = null) {
   for (const item of list) {
     if (item.type === 'board' && item.boardId === boardId) return parent;
@@ -1046,7 +1130,8 @@ function collectFolderAncestorTags(board, folderId) {
   const found = findBoardItemInColumns(board, folderId);
   if (!found?.item) return [];
   const parentTags = found.parent ? collectFolderAncestorTags(board, found.parent.id) : [];
-  return [...parentTags, ...(found.item.sharedTags || [])];
+  const ownShared = found.item.inheritTags !== false ? (found.item.sharedTags || []) : [];
+  return [...parentTags, ...ownShared];
 }
 
 function findNextNavBoard(list) {
@@ -1148,7 +1233,8 @@ function addBoardItemToColumn(columnId, item) {
 
 function createBoardRecord(title, options = {}) {
   const id = options.id || `board-${Date.now()}`;
-  const initialTab = normalizeBoardTabRecord({
+  const createEmpty = options.createEmpty === true;
+  const tabs = createEmpty ? [] : [normalizeBoardTabRecord({
     id: options.initialTabId || `${id}-tab-1`,
     title: options.initialTabTitle || title,
     columnCount: options.columnCount || 3,
@@ -1156,15 +1242,15 @@ function createBoardRecord(title, options = {}) {
     backgroundImage: options.backgroundImage,
     backgroundFit: options.backgroundFit,
     containerOpacity: options.containerOpacity,
-    sharedTags: options.tabSharedTags || options.sharedTags,
-    tags: options.tabTags || options.tags,
-    inheritTags: options.tabInheritTags ?? options.inheritTags,
-    autoRemoveTags: options.tabAutoRemoveTags ?? options.autoRemoveTags,
+    sharedTags: options.tabSharedTags,
+    tags: options.tabTags,
+    inheritTags: options.tabInheritTags,
+    autoRemoveTags: options.tabAutoRemoveTags,
     showSetBar: options.showSetBar,
     setBar: options.setBar,
     inbox: options.inbox,
     locked: options.locked
-  }, id, 0);
+  }, id, 0)];
   const board = {
     id,
     title,
@@ -1175,10 +1261,16 @@ function createBoardRecord(title, options = {}) {
     tags: Array.isArray(options.tags) ? options.tags : [],
     inheritTags: options.inheritTags !== false,
     autoRemoveTags: options.autoRemoveTags === true,
-    tabs: [initialTab],
+    tabs,
+    columnCount: tabs[0]?.columnCount || 0,
+    backgroundImage: tabs[0]?.backgroundImage || '',
+    backgroundFit: tabs[0]?.backgroundFit || 'cover',
+    containerOpacity: tabs[0]?.containerOpacity ?? 100,
+    columns: tabs[0]?.columns || [],
+    inbox: tabs[0]?.inbox || null,
     ...(options.extra || {})
   };
-  syncBoardCompatibilityFields(board, initialTab.id);
+  if (tabs[0]) syncBoardCompatibilityFields(board, tabs[0].id);
   normalizeSpeedDialSlots(board);
   return board;
 }
@@ -1194,7 +1286,8 @@ function createBoard(title, options = {}) {
     tags: options.tags,
     inheritTags: options.inheritTags,
     autoRemoveTags: options.autoRemoveTags,
-    initialTabTitle: options.initialTabTitle || title
+    initialTabTitle: options.initialTabTitle || title,
+    createEmpty: options.createEmpty === true
   });
   state.boards.push(board);
   state.activeBoardId = id;
@@ -1326,7 +1419,7 @@ function findBoardFolder(boardId) {
 
 function createBoardInFolder(folder, title) {
   const id = `board-${Date.now()}`;
-  const board = createBoardRecord(title, { id });
+  const board = createBoardRecord(title, { id, createEmpty: true });
   state.boards.push(board);
   if (!folder.children) folder.children = [];
   folder.children.push({ id: `nav-${Date.now()}`, type: 'board', title, boardId: id });
@@ -1408,9 +1501,16 @@ function computeInheritedTags(item, board) {
     }
     return null;
   }
+  const tab = findBoardTabContainingItem(board, item.id) || getBoardTab(board);
+  if (!tab) return [];
+  const chainBase = [];
+  if (board.inheritTags !== false) {
+    chainBase.push({ sharedTags: getBoardNavInheritedTags(board.id), inheritTags: true });
+  }
+  chainBase.push(board, tab);
   let chain = null;
-  for (const col of getBoardItemContainers(board)) {
-    chain = findParentChain(item.id, col.items, [board]);
+  for (const col of getBoardItemContainers(board, tab)) {
+    chain = findParentChain(item.id, col.items, chainBase);
     if (chain) break;
   }
   if (!chain) return [];

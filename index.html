@@ -221,7 +221,7 @@
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
         <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.52</button>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.53</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -229,39 +229,41 @@
     </aside>
 
     <main id="mainPanel" class="main-panel">
-      <section class="board-header">
-        <div class="board-title-group">
-          <h2 id="boardTitle">Board</h2>
-        </div>
-        <div class="board-header-actions">
-          <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-undo"/></svg>
-          </button>
-          <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-redo"/></svg>
-          </button>
-          <button id="inboxBtn" class="icon-btn inbox-btn" title="Board Inbox" aria-label="Board Inbox">
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-inbox"/></svg>
-            <span id="inboxBadge" class="inbox-badge hidden">0</span>
-          </button>
-          <button id="speedDialToggleBtn" class="icon-btn board-shell-toggle" title="Toggle speed dial" aria-label="Toggle speed dial">
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-bookmark-add"/></svg>
-          </button>
-          <button id="setBarToggleBtn" class="icon-btn board-shell-toggle" title="Toggle set bar" aria-label="Toggle set bar">
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-set"/></svg>
-          </button>
-          <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
-            <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
-          </button>
-        </div>
-      </section>
+      <section class="board-shell">
+        <section class="board-header">
+          <div class="board-title-group">
+            <h2 id="boardTitle">Board</h2>
+          </div>
+          <div class="board-header-actions">
+            <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-undo"/></svg>
+            </button>
+            <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-redo"/></svg>
+            </button>
+            <button id="inboxBtn" class="icon-btn inbox-btn" title="Board Inbox" aria-label="Board Inbox">
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-inbox"/></svg>
+              <span id="inboxBadge" class="inbox-badge hidden">0</span>
+            </button>
+            <button id="speedDialToggleBtn" class="icon-btn board-shell-toggle" title="Toggle speed dial" aria-label="Toggle speed dial">
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-bookmark-add"/></svg>
+            </button>
+            <button id="setBarToggleBtn" class="icon-btn board-shell-toggle" title="Toggle set bar" aria-label="Toggle set bar">
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-set"/></svg>
+            </button>
+            <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
+              <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
+            </button>
+          </div>
+        </section>
 
-      <section class="speed-dial-panel">
-        <div id="speedDial" class="speed-dial"></div>
-      </section>
+        <section class="speed-dial-panel">
+          <div id="speedDial" class="speed-dial"></div>
+        </section>
 
-      <section id="collectionTabBar" class="collection-tab-bar hidden"></section>
-      <section id="tabSetBar" class="collection-tab-bar collection-tab-set-bar hidden"></section>
+        <section id="collectionTabBar" class="collection-tab-bar hidden"></section>
+        <section id="tabSetBar" class="collection-tab-bar collection-tab-set-bar hidden"></section>
+      </section>
 
       <section class="bookmark-pane">
         <div id="bookmarkColumns" class="columns"></div>

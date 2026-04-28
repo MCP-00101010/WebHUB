@@ -5,6 +5,22 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.53] — 2026-04-28
+
+### Changed
+
+- **Board/tab data split cleanup** — board-level and tab-level metadata now stay separated more reliably, with corrected inheritance layering for board tags, tab tags, nav-folder inheritance, and pass-on/strip settings.
+- **Board creation flow** — new boards now support a true empty state, open straight into `Create Tab`, and can remain empty if tab creation is cancelled or the last tab is deleted later.
+- **Board shell polish** — the board title bar, speed dial, tab bar, and set bar now share one outer shell, tabs use cleaner text-only labels, and the active tab settings entry lives on the right side of the tab bar.
+
+### Fixed
+
+- **Board lock coverage** — locked boards now consistently block tab and set-bar mutations, including add/remove/reorder actions from the board shell.
+- **Tab behavior edge cases** — deleting an inactive tab no longer changes the active tab, and empty boards now keep enough shell UI visible to let you add tabs back in normally.
+- **False shared-disk save conflicts** — shared-disk writes now run through a single-flight queue so bursts of local edits do not race the bridge against itself and trigger spurious save-conflict warnings as easily.
+
+---
+
 ## [0.11.52] — 2026-04-28
 
 ### Added

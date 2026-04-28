@@ -132,7 +132,7 @@ function handleContextMenuAction(action) {
     }
     case 'addBoardTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
-      if (!board) break;
+      if (!board || board.locked) break;
       pushUndoSnapshot();
       createBoardTab(board, 'New Tab');
       renderAll();
@@ -143,7 +143,7 @@ function handleContextMenuAction(action) {
     case 'editBoardTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
       const tab = findBoardTabById(board, contextTarget.tabId);
-      if (!tab) break;
+      if (!tab || board?.locked) break;
       state.activeBoardId = board.id;
       state.activeTabId = tab.id;
       renderAll();
@@ -154,7 +154,7 @@ function handleContextMenuAction(action) {
     case 'deleteBoardTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
       const tab = findBoardTabById(board, contextTarget.tabId);
-      if (!board || !tab) break;
+      if (!board || !tab || board.locked) break;
       confirmDelete('confirmDeleteTab', `Delete tab "${tab.title}" and all its content?`, () => {
         pushUndoSnapshot();
         if (!removeBoardTab(board, tab.id)) return;
@@ -172,7 +172,7 @@ function handleContextMenuAction(action) {
     case 'removeSetFromTabBar': {
       const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
       const tab = findBoardTabById(board, contextTarget.tabId);
-      if (!tab || !contextTarget.setId) break;
+      if (!tab || !contextTarget.setId || board?.locked) break;
       pushUndoSnapshot();
       tab.setBar = (tab.setBar || []).filter(id => id !== contextTarget.setId);
       syncBoardCompatibilityFields(board, tab.id);
@@ -397,9 +397,10 @@ function handleContextMenuAction(action) {
       if (!folderForAdd) break;
       pushUndoSnapshot();
       const board = createBoardInFolder(folderForAdd, 'New Board');
+      if (board) createBoardTab(board, 'New Tab');
       renderAll();
       saveState();
-      if (board) showBoardMetaModal('edit', board);
+      if (board) showBoardSettingsPanel(true);
       break;
     }
     case 'addNavFolder':

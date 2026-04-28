@@ -1,10 +1,23 @@
 // --- Inherited tag helpers ---
 
-function getContextInheritedTags(contextTarget) {
-  const area = contextTarget?.area;
+function getContextBoardAndTab(contextTarget) {
   const board = contextTarget?.boardId
     ? state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoard()
     : getActiveBoard();
+  if (!board) return { board: null, tab: null };
+
+  let tab = null;
+  if (contextTarget?.tabId) tab = findBoardTabById(board, contextTarget.tabId);
+  if (!tab && contextTarget?.columnId) tab = findBoardTabByColumnId(board, contextTarget.columnId);
+  if (!tab && contextTarget?.itemId) tab = findBoardTabContainingItem(board, contextTarget.itemId);
+  if (!tab && contextTarget?.parentId) tab = findBoardTabContainingItem(board, contextTarget.parentId);
+  if (!tab) tab = getBoardTab(board);
+
+  return { board, tab };
+}
+
+function getContextInheritedTags(contextTarget) {
+  const area = contextTarget?.area;
   if (area === 'nav-subfolder' || area === 'nav-item') {
     const collectNavFolderTags = folder => {
       const tags = [];
@@ -19,18 +32,19 @@ function getContextInheritedTags(contextTarget) {
     const path = contextTarget?.itemId ? findNavItemPath(contextTarget.itemId) : null;
     return collectNavFolderTags(path?.parent || null);
   }
+  const { board, tab } = getContextBoardAndTab(contextTarget);
   if (!board) return [];
   if (area === 'speed-dial' || area === 'speed-dial-item' || area === 'essential') {
-    return [...new Set(board.sharedTags || [])];
+    return getBoardInheritedTagIds(board);
   }
   if (area === 'board-item' || area === 'board-empty' || area === 'board-subfolder' || area === 'board-folder-item') {
-    const boardTags = board.sharedTags || [];
+    const inheritedBoardAndTabTags = getTabInheritedTagIds(board, tab || getBoardTab(board));
     let parentFolderId = null;
     if (area === 'board-subfolder') parentFolderId = contextTarget.item?.id;
     else if (contextTarget.parentId) parentFolderId = contextTarget.parentId;
     else if (contextTarget.itemId) parentFolderId = findBoardItemInColumns(board, contextTarget.itemId)?.parent?.id || null;
     const folderTags = parentFolderId ? collectFolderAncestorTags(board, parentFolderId) : [];
-    return [...new Set([...boardTags, ...folderTags])];
+    return [...new Set([...inheritedBoardAndTabTags, ...folderTags])];
   }
   return [];
 }
@@ -38,7 +52,7 @@ function getContextInheritedTags(contextTarget) {
 function getBoardInheritedTags() {
   const board = getActiveBoard();
   if (!board) return [];
-  return getBoardNavInheritedTags(board.id);
+  return getBoardInheritedTagIds(board);
 }
 
 function tagDisplayName(id) {
@@ -435,19 +449,21 @@ function handleModalSubmit(event) {
     case 'addCollection': {
       const slotsInput = document.getElementById('modalSpeedDialSlots');
       const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
-      createBoard(value1, {
+      const board = createBoard(value1, {
         showSpeedDial: document.getElementById('cmCollectionShowSpeedDial')?.checked !== false,
         speedDialSlotCount: requested,
         tags,
         sharedTags: sharedTagsFromModal,
         inheritTags: document.getElementById('cmInheritTags')?.checked !== false,
         autoRemoveTags: document.getElementById('cmAutoRemove')?.checked === true,
-        initialTabTitle: 'New Tab'
+        createEmpty: true
       });
-      const sdSection = document.getElementById('modalSpeedDialSection');
+      if (board) createBoardTab(board, 'New Tab');
+      hideModal();
       renderAll();
       saveState();
-      break;
+      if (board) showBoardSettingsPanel(true);
+      return;
     }
     case 'moveToBoard': {
       const { board: targetBoard, tab: targetTab } = parseBoardTabTargetValue(elements.modalSelect.value);

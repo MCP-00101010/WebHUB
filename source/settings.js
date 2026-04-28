@@ -82,7 +82,7 @@ function _findNavBoardItem(items, boardId) {
 function cancelBoardSettingsPanel() {
   if (boardSettingsCreatingId) {
     const board = getActiveBoardContainer();
-    if (board) removeBoardTab(board, boardSettingsCreatingId);
+    if (board) removeBoardTab(board, boardSettingsCreatingId, { allowEmpty: true });
     renderAll();
     saveState();
   } else if (_boardSettingsCancelSnapshot) {

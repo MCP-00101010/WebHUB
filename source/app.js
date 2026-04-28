@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.52';
+const APP_VERSION = '0.11.53';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -960,8 +960,9 @@ function attachEventListeners() {
 
     if (!inInput && (event.key === 'n' || event.key === 'N') && elements.modalOverlay.classList.contains('hidden')) {
       const board = getActiveBoard();
-      if (board) {
-        const columnId = lastActiveColumnId || board.columns[0]?.id;
+      const tab = getActiveTab();
+      if (board && tab && (tab.columns || []).length) {
+        const columnId = lastActiveColumnId || tab.columns[0]?.id;
         contextTarget = { area: 'board-empty', columnId };
         showModal('addBookmark', {
           title: 'New Bookmark', placeholder1: 'New Bookmark',
