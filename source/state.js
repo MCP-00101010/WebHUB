@@ -140,9 +140,9 @@ const defaultState = {
           columns: [
             { id: 'col-1', title: 'Column 1', items: [] },
             { id: 'col-2', title: 'Column 2', items: [] },
-            { id: 'col-3', title: 'Column 3', items: [] },
-            { id: 'board-1-tab-1-inbox', title: 'Inbox', isInbox: true, items: [] }
-          ]
+            { id: 'col-3', title: 'Column 3', items: [] }
+          ],
+          inbox: { id: 'board-1-tab-1-inbox', title: 'Inbox', isInbox: true, items: [] }
         }
       ]
     }
@@ -377,12 +377,23 @@ function getBoardTabs(board) {
   return Array.isArray(board.tabs) && board.tabs.length ? board.tabs : [board];
 }
 
+function normalizeBoardInboxRecord(inbox, tabId) {
+  const normalized = inbox && typeof inbox === 'object'
+    ? { ...inbox }
+    : { id: `${tabId}-inbox`, title: 'Inbox', isInbox: true, items: [] };
+  normalized.id = normalized.id || `${tabId}-inbox`;
+  normalized.title = normalized.title || 'Inbox';
+  normalized.isInbox = true;
+  if (!Array.isArray(normalized.items)) normalized.items = [];
+  migrateItems(normalized.items);
+  return normalized;
+}
+
 function ensureBoardTabColumns(tab, fallbackId) {
   const tabId = tab?.id || fallbackId || `tab-${Date.now()}`;
   const requestedCount = Math.max(1, parseInt(tab?.columnCount, 10) || 0);
   const existingColumns = Array.isArray(tab?.columns) ? tab.columns : [];
   const regularColumns = existingColumns.filter(col => !col?.isInbox);
-  const inboxColumn = existingColumns.find(col => col?.isInbox) || { id: `${tabId}-inbox`, title: 'Inbox', isInbox: true, items: [] };
   const targetCount = Math.max(requestedCount || regularColumns.length || 3, regularColumns.length || 0, 1);
   while (regularColumns.length < targetCount) {
     regularColumns.push({
@@ -391,16 +402,18 @@ function ensureBoardTabColumns(tab, fallbackId) {
       items: []
     });
   }
-  return [...regularColumns, inboxColumn];
+  return regularColumns;
 }
 
 function normalizeBoardTabRecord(tab, boardId, index = 0) {
   const id = tab?.id || `${boardId}-tab-${index + 1}`;
   const columns = ensureBoardTabColumns({ ...tab, id }, id);
+  const legacyInbox = Array.isArray(tab?.columns) ? tab.columns.find(col => col?.isInbox) : null;
+  const inbox = normalizeBoardInboxRecord(tab?.inbox || legacyInbox, id);
   const normalized = {
     id,
     title: (tab?.title || '').trim() || (index === 0 ? 'Home' : `Tab ${index + 1}`),
-    columnCount: columns.filter(col => !col.isInbox).length,
+    columnCount: columns.length,
     backgroundImage: typeof tab?.backgroundImage === 'string' ? tab.backgroundImage : '',
     backgroundFit: tab?.backgroundFit === 'contain' ? 'contain' : 'cover',
     containerOpacity: tab?.containerOpacity === undefined ? 100 : tab.containerOpacity,
@@ -411,6 +424,7 @@ function normalizeBoardTabRecord(tab, boardId, index = 0) {
     showSetBar: tab?.showSetBar !== false,
     setBar: Array.isArray(tab?.setBar) ? [...new Set(tab.setBar.filter(Boolean))] : [],
     columns,
+    inbox,
     locked: tab?.locked === true
   };
   for (const col of normalized.columns) {
@@ -436,6 +450,7 @@ function syncBoardCompatibilityFields(board, preferredTabId = null) {
   board.inheritTags = tab.inheritTags;
   board.autoRemoveTags = tab.autoRemoveTags;
   board.columns = tab.columns;
+  board.inbox = tab.inbox;
   board.locked = tab.locked === true;
   return board;
 }
@@ -514,6 +529,7 @@ function deleteTag(id) {
     strip(board.speedDial);
     for (const tab of getBoardTabs(board)) {
       for (const col of (tab.columns || [])) strip(col.items);
+      strip(getTabInbox(tab, tab.id)?.items || []);
     }
   }
 }
@@ -556,6 +572,7 @@ function migrateToIdTags(parsed) {
     (board.speedDial || []).forEach(migrateItemTags);
     for (const tab of getBoardTabs(board)) {
       for (const col of (tab.columns || [])) col.items.forEach(migrateItemTags);
+      (getTabInbox(tab, tab.id)?.items || []).forEach(migrateItemTags);
     }
   }
   (parsed.navItems  || []).forEach(migrateItemTags);
@@ -739,7 +756,8 @@ function getActiveBoardContainer() {
 function getBoardTab(board, tabId = null) {
   if (!board) return null;
   if (!Array.isArray(board.tabs) || !board.tabs.length) return board;
-  return board.tabs.find(tab => tab.id === (tabId || state.activeTabId)) || board.tabs[0] || null;
+  const preferredTabId = tabId || (board.id === state.activeBoardId ? state.activeTabId : null);
+  return board.tabs.find(tab => tab.id === preferredTabId) || board.tabs[0] || null;
 }
 
 function getActiveTab() {
@@ -758,6 +776,33 @@ function findBoardTabById(board, tabId) {
   return board.tabs.find(tab => tab.id === tabId) || null;
 }
 
+function getTabInbox(tab, fallbackTabId = null) {
+  if (!tab) return null;
+  if (!tab.inbox || typeof tab.inbox !== 'object') {
+    tab.inbox = normalizeBoardInboxRecord(null, tab.id || fallbackTabId || `tab-${Date.now()}`);
+  }
+  return tab.inbox;
+}
+
+function getBoardItemContainers(board, tab = null) {
+  const sourceTab = tab || getBoardTab(board);
+  if (!sourceTab) return [];
+  const containers = Array.isArray(sourceTab.columns) ? [...sourceTab.columns] : [];
+  const inbox = getTabInbox(sourceTab, sourceTab.id);
+  if (inbox) containers.push(inbox);
+  return containers;
+}
+
+function isInboxColumnId(columnId) {
+  if (!columnId) return false;
+  return state.boards.some(board => getBoardTabs(board).some(tab => getTabInbox(tab, tab.id)?.id === columnId));
+}
+
+function findBoardTabByInboxId(board, inboxId) {
+  if (!board || !inboxId) return null;
+  return getBoardTabs(board).find(tab => getTabInbox(tab, tab.id)?.id === inboxId) || null;
+}
+
 function createBoardTab(board, title = 'New Tab', options = {}) {
   if (!board) return null;
   if (!Array.isArray(board.tabs)) board.tabs = [];
@@ -767,7 +812,8 @@ function createBoardTab(board, title = 'New Tab', options = {}) {
     columnCount: options.columnCount || 3,
     showSetBar: options.showSetBar,
     setBar: options.setBar,
-    columns: options.columns
+    columns: options.columns,
+    inbox: options.inbox
   }, board.id, board.tabs.length);
   board.tabs.push(tab);
   state.activeTabId = tab.id;
@@ -959,7 +1005,7 @@ function findBoardItemInList(list, itemId, parent = null) {
 }
 
 function findBoardItemInColumns(board, itemId) {
-  for (const column of board.columns) {
+  for (const column of getBoardItemContainers(board)) {
     const found = findBoardItemInList(column.items, itemId);
     if (found) return found;
   }
@@ -979,12 +1025,12 @@ function unfoldBoardItemAncestors(board, itemId) {
     }
     return false;
   };
-  for (const column of board.columns) search(column.items);
+  for (const column of getBoardItemContainers(board)) search(column.items);
 }
 
 function removeBoardItemById(itemId) {
   const board = getActiveBoard();
-  for (const column of board.columns) {
+  for (const column of getBoardItemContainers(board)) {
     const found = findBoardItemInList(column.items, itemId);
     if (found) {
       const index = found.list.findIndex(item => item.id === itemId);
@@ -1018,6 +1064,7 @@ function createBoardRecord(title, options = {}) {
     autoRemoveTags: options.tabAutoRemoveTags ?? options.autoRemoveTags,
     showSetBar: options.showSetBar,
     setBar: options.setBar,
+    inbox: options.inbox,
     locked: options.locked
   }, id, 0);
   const board = {
@@ -1111,7 +1158,7 @@ function getBoardForContext(ct) {
 function deleteBoardTarget(contextTarget) {
   if (!contextTarget || contextTarget.area !== 'board-item') return;
   const board = getBoardForContext(contextTarget);
-  for (const column of board.columns) {
+  for (const column of getBoardItemContainers(board)) {
     const found = findBoardItemInList(column.items, contextTarget.itemId);
     if (found) {
       const index = found.list.findIndex(item => item.id === contextTarget.itemId);
@@ -1264,7 +1311,7 @@ function computeInheritedTags(item, board) {
     return null;
   }
   let chain = null;
-  for (const col of (board.columns || [])) {
+  for (const col of getBoardItemContainers(board)) {
     chain = findParentChain(item.id, col.items, [board]);
     if (chain) break;
   }
@@ -1300,23 +1347,38 @@ function findDuplicateUrl(url) {
       const r = walk(col.items, board.title);
       if (r) return r;
     }
+    for (const tab of getBoardTabs(board)) {
+      const inboxHit = walk(getBoardInbox(board, tab)?.items, `${board.title} / ${tab.title || 'Untitled Tab'} (Inbox)`);
+      if (inboxHit) return inboxHit;
+    }
   }
   return null;
 }
 
 function getBoardInbox(board, tab = null) {
-  const sourceTab = tab || (board?.tabs ? getBoardTab(board, tab?.id || state.activeTabId) : null);
-  const columns = sourceTab?.columns || board?.columns || [];
-  return columns.find(c => c.isInbox) || null;
+  const sourceTab = tab || getBoardTab(board);
+  if (!sourceTab) return board?.inbox || null;
+  return getTabInbox(sourceTab, sourceTab.id);
 }
 
 function getBoardInboxCounts(board, tab = null) {
-  const inbox = getBoardInbox(board, tab);
-  if (!inbox) return { bookmarks: 0, folders: 0 };
-  return {
-    bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
-    folders:   countItemsRecursive(inbox.items, 'folder')
-  };
+  if (!board) return { bookmarks: 0, folders: 0 };
+  if (tab) {
+    const inbox = getBoardInbox(board, tab);
+    if (!inbox) return { bookmarks: 0, folders: 0 };
+    return {
+      bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
+      folders: countItemsRecursive(inbox.items, 'folder')
+    };
+  }
+  let bookmarks = 0;
+  let folders = 0;
+  for (const boardTab of getBoardTabs(board)) {
+    const inbox = getBoardInbox(board, boardTab);
+    bookmarks += countItemsRecursive(inbox?.items, 'bookmark');
+    folders += countItemsRecursive(inbox?.items, 'folder');
+  }
+  return { bookmarks, folders };
 }
 
 function importManagerHasItems() {
@@ -1502,7 +1564,10 @@ function restoreFromTrash(trashId) {
   } else if (source.area === 'board-item') {
     const board = state.boards.find(b => b.id === source.boardId) || getActiveBoard();
     if (board) {
-      const col = board.columns.find(c => c.id === source.columnId) || board.columns[0];
+      const inboxTab = source.columnId ? findBoardTabByInboxId(board, source.columnId) : null;
+      const col = inboxTab
+        ? getBoardInbox(board, inboxTab)
+        : (board.columns.find(c => c.id === source.columnId) || board.columns[0] || getBoardInbox(board));
       if (col) col.items.push(cloneData(item));
     }
   }
@@ -1513,7 +1578,12 @@ function cleanTrashAfterRestore() {
   const liveIds = new Set();
   const walkItems = (list) => { for (const item of (list || [])) { if (item?.id) liveIds.add(item.id); if (item?.children) walkItems(item.children); } };
   const walkNav = (items) => { for (const ni of (items || [])) { liveIds.add(ni.id); if (ni.children) walkNav(ni.children); } };
-  for (const board of (state.boards || [])) { liveIds.add(board.id); for (const col of (board.columns || [])) walkItems(col.items); for (const i of (board.speedDial || [])) if (i?.id) liveIds.add(i.id); }
+  for (const board of (state.boards || [])) {
+    liveIds.add(board.id);
+    for (const col of (board.columns || [])) walkItems(col.items);
+    for (const tab of getBoardTabs(board)) walkItems(getBoardInbox(board, tab)?.items || []);
+    for (const i of (board.speedDial || [])) if (i?.id) liveIds.add(i.id);
+  }
   for (const item of (state.essentials || [])) { if (item?.id) liveIds.add(item.id); }
   walkNav(state.navItems);
   const prev = recentlyDeleted.length;
@@ -1546,6 +1616,7 @@ function trimFaviconCache(skipItem = null) {
   for (const board of state.boards) {
     walk(board.speedDial);
     for (const col of board.columns) walk(col.items);
+    for (const tab of getBoardTabs(board)) walk(getBoardInbox(board, tab)?.items || []);
   }
   walk(state.importManager?.items || []);
   let total = candidates.reduce((s, i) => s + i.faviconCache.length, 0);

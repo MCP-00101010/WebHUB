@@ -222,7 +222,7 @@ function hexToRgba(hex, alpha) {
 
 function updateInboxBadge() {
   const board = getActiveBoard();
-  const { bookmarks, folders } = getBoardInboxCounts(board);
+  const { bookmarks, folders } = getBoardInboxCounts(board, getActiveTab());
   const count = bookmarks + folders;
   const badge = document.getElementById('inboxBadge');
   if (badge) {
@@ -237,11 +237,12 @@ function updateInboxBadge() {
 
 function renderInboxPanel() {
   const board = getActiveBoard();
-  const inbox = getBoardInbox(board);
+  const activeTab = getActiveTab();
+  const inbox = getBoardInbox(board, activeTab);
   const body = document.getElementById('inboxPanelBody');
   if (!body) return;
   body.innerHTML = '';
-  const { bookmarks, folders } = getBoardInboxCounts(board);
+  const { bookmarks, folders } = getBoardInboxCounts(board, activeTab);
   const bmEl = document.getElementById('inboxPanelBmCount');
   const flEl = document.getElementById('inboxPanelFlCount');
   if (bmEl) { bmEl.textContent = bookmarks; bmEl.className = 'count-chip count-chip--bookmark'; bmEl.classList.toggle('hidden', bookmarks === 0); }
@@ -381,7 +382,7 @@ function renderSearchResults() {
   for (const board of state.boards) {
     if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
     board.speedDial.filter(i => i && matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
-    board.columns.filter(c => !c.isInbox).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
+    board.columns.forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
   }
 
   const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.item, h.board)) : allBaseHits;
@@ -1577,7 +1578,7 @@ function renderFolderTabBar(folder) {
 function renderColumns(board) {
   clearColumnWidgetTimers();
   elements.bookmarkColumns.innerHTML = '';
-  board.columns.filter(c => !c.isInbox).forEach(column => {
+  board.columns.forEach(column => {
     const columnEl = document.createElement('div');
     columnEl.className = 'board-column';
     columnEl.dataset.columnId = column.id;

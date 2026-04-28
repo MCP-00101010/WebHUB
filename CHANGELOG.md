@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.51] — 2026-04-28
+
+### Changed
+
+- **Explicit tab inbox model** — tab inboxes are now stored as real `tab.inbox` state instead of hidden pseudo-columns, while preserving the current inbox UI and delivery behavior.
+- **Backlog cleanup** — removed the now-actioned Inbox Model Cleanup section from `TODO.md`.
+
+### Fixed
+
+- **Tab inbox accounting** — inbox badges, counts, search/trash helpers, tag usage/counts, duplicate URL detection, and favicon cleanup now read from the explicit per-tab inbox model instead of the old hidden-column compatibility path.
+
+---
+
 ## [0.11.50] — 2026-04-28
 
 ### Added

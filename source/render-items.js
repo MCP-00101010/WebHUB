@@ -91,7 +91,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
         event.stopPropagation();
         item.collapsed = !item.collapsed;
         saveState();
-        const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
+        const inInbox = isInboxColumnId(columnId);
         if (inInbox) renderInboxPanel(); else renderBoard();
       });
       header.appendChild(collapseBtn);
@@ -126,7 +126,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       if (inheritedLock) return;
       item.locked = !item.locked;
       saveState();
-      const inInbox = state.boards.some(b => b.columns.some(c => c.isInbox && c.id === columnId));
+      const inInbox = isInboxColumnId(columnId);
       if (inInbox) renderInboxPanel(); else renderBoard();
     });
     header.appendChild(lockBtn);

@@ -126,18 +126,17 @@ function attachBoardSettingsListeners() {
       const tab = getActiveTab();
       if (!board || !tab) return;
       const newCount = parseInt(e.target.value, 10) || 3;
-      const regularCols = tab.columns.filter(c => !c.isInbox);
-      const inboxCol = tab.columns.find(c => c.isInbox);
+      const regularCols = [...tab.columns];
       if (newCount < regularCols.length) {
         const removed = regularCols.slice(newCount);
         const lastKept = regularCols[newCount - 1];
         for (const col of removed) lastKept.items.push(...col.items);
-        tab.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
+        tab.columns = regularCols.slice(0, newCount);
       } else {
         while (regularCols.length < newCount) {
           regularCols.push({ id: `col-${Date.now()}-${regularCols.length + 1}`, title: `Column ${regularCols.length + 1}`, items: [] });
         }
-        tab.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
+        tab.columns = regularCols;
       }
       tab.columnCount = newCount;
       syncBoardCompatibilityFields(board, tab.id);
@@ -917,7 +916,10 @@ function mergeTags(sourceId, targetId) {
   };
   for (const board of state.boards) {
     replaceIn(board.speedDial);
-    for (const col of board.columns) replaceIn(col.items);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) replaceIn(col.items);
+      replaceIn(getBoardInbox(board, tab)?.items || []);
+    }
   }
   replaceIn(state.essentials);
   deleteTag(sourceId);
@@ -938,7 +940,10 @@ function buildTagUsage(tagId) {
   for (const board of state.boards) {
     if ([...(board.tags || []), ...(board.sharedTags || [])].includes(tagId)) r.boards++;
     walk(board.speedDial);
-    for (const col of board.columns) walk(col.items);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) walk(col.items);
+      walk(getBoardInbox(board, tab)?.items || []);
+    }
   }
   walk(state.essentials);
   return r;
@@ -958,7 +963,13 @@ function buildTagCounts() {
   const counts = {};
   const tally = items => { for (const item of (items || [])) { [...(item?.tags || []), ...(item?.sharedTags || [])].forEach(t => { counts[t] = (counts[t] || 0) + 1; }); if (item?.children) tally(item.children); } };
   tally(state.essentials);
-  for (const board of state.boards) { tally(board.speedDial); for (const col of board.columns) tally(col.items); }
+  for (const board of state.boards) {
+    tally(board.speedDial);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) tally(col.items);
+      tally(getBoardInbox(board, tab)?.items || []);
+    }
+  }
   return counts;
 }
 

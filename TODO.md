@@ -4,13 +4,6 @@
 
 - we can save the current theme... however we have actually no way of editing theme colors in the Hub. Theme Editor is needed inside the Theme Settings.
 
-## Inbox Model Cleanup
-
-- stop treating inbox as a hidden compatibility column inside normal tab columns
-- move inbox to an explicit tab-owned field such as `tab.inbox`
-- update inbox counts, badges, and indicators to read from the explicit tab inbox model
-- preserve folder structure and affordances cleanly if/when Import Manager gains drag-and-drop delivery later
-
 ## Sets
 
 - when deleting a set it should show up in the trash
