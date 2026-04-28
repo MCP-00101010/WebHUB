@@ -27,7 +27,6 @@ const defaultSettings = {
     board: false,
     bookmark: false,
     folder: false,
-    collection: false,
     title: false
   },
   bookmarkFontSize: 14,
@@ -57,10 +56,6 @@ const defaultSettings = {
   boardTextAlign: 'left', boardColor: '',
   bookmarkTextAlign: 'left', bookmarkColor: '',
   folderTextAlign: 'left', folderColor: '',
-  collectionFontSize: 15,
-  collectionFontFamily: '',
-  collectionBold: false, collectionItalic: false, collectionUnderline: false,
-  collectionTextAlign: 'left', collectionColor: '',
   titleColor: '',
   tagGroups: [],
   serviceApiKeys: {
@@ -102,33 +97,53 @@ const defaultSettings = {
 
 const defaultState = {
   activeBoardId: 'board-1',
-  activeCollectionId: null,
+  activeTabId: 'board-1-tab-1',
   databasePath: '',
   hubName: 'Morpheus WebHub',
   lastExported: null,
   tags: [],
   sets: [],
+  importManager: {
+    items: [],
+    lastImportedAt: null
+  },
   settings: { ...defaultSettings },
   essentials: [],
   boards: [
     {
       id: 'board-1',
       title: 'Home Board',
-      columnCount: 3,
-      backgroundImage: '',
-      containerOpacity: 100,
       sharedTags: [],
       tags: [],
       inheritTags: true,
+      autoRemoveTags: false,
+      showSpeedDial: true,
+      speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
       speedDial: [
         { id: 'sd-1', type: 'bookmark', title: 'Inbox', url: 'https://mail.example.com', tags: [] },
         { id: 'sd-2', type: 'bookmark', title: 'Docs', url: 'https://www.example.com', tags: [] }
       ],
-      columns: [
-        { id: 'col-1', title: 'Column 1', items: [] },
-        { id: 'col-2', title: 'Column 2', items: [] },
-        { id: 'col-3', title: 'Column 3', items: [] },
-        { id: 'board-1-inbox', title: 'Inbox', isInbox: true, items: [] }
+      tabs: [
+        {
+          id: 'board-1-tab-1',
+          title: 'Home',
+          columnCount: 3,
+          backgroundImage: '',
+          backgroundFit: 'cover',
+          containerOpacity: 100,
+          sharedTags: [],
+          tags: [],
+          inheritTags: true,
+          autoRemoveTags: false,
+          showSetBar: true,
+          setBar: [],
+          columns: [
+            { id: 'col-1', title: 'Column 1', items: [] },
+            { id: 'col-2', title: 'Column 2', items: [] },
+            { id: 'col-3', title: 'Column 3', items: [] },
+            { id: 'board-1-tab-1-inbox', title: 'Inbox', isInbox: true, items: [] }
+          ]
+        }
       ]
     }
   ],
@@ -163,7 +178,6 @@ function migrateStyleSettings(settings) {
   settings.styleOverrides.board = differs('boardFontSize', 14) || !!settings.boardFontFamily || !!settings.boardBold || !!settings.boardItalic || !!settings.boardUnderline || differs('boardTextAlign', 'left') || !!settings.boardColor;
   settings.styleOverrides.bookmark = differs('bookmarkFontSize', 14) || !!settings.bookmarkFontFamily || !!settings.bookmarkBold || !!settings.bookmarkItalic || !!settings.bookmarkUnderline || differs('bookmarkTextAlign', 'left') || !!settings.bookmarkColor;
   settings.styleOverrides.folder = differs('folderFontSize', 15) || !!settings.folderFontFamily || !!settings.folderBold || !!settings.folderItalic || !!settings.folderUnderline || differs('folderTextAlign', 'left') || !!settings.folderColor;
-  settings.styleOverrides.collection = differs('collectionFontSize', 15) || !!settings.collectionFontFamily || !!settings.collectionBold || !!settings.collectionItalic || !!settings.collectionUnderline || differs('collectionTextAlign', 'left') || !!settings.collectionColor;
   settings.styleOverrides.title = differs('titleFontSize', 12) || differs('titleLineThickness', 1) || !!settings.titleLineColor || differs('titleLineStyle', 'solid') || !!settings.titleFontFamily || !!settings.titleBold || !!settings.titleItalic || !!settings.titleUnderline || !!settings.titleColor;
   settings.styleOverridesMigrated = true;
 }
@@ -194,22 +208,6 @@ function migrateItems(items) {
       if (!item.tags) item.tags = [];
       if (item.inheritTags === undefined) item.inheritTags = true;
       if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
-    }
-    if (item.type === 'collection') {
-      if (!item.speedDial) item.speedDial = [];
-      normalizeSpeedDialSlots(item);
-      for (const sd of item.speedDial) {
-        if (!sd) continue;
-        if (!sd.type) sd.type = 'bookmark';
-        if (!sd.tags) sd.tags = [];
-        if (sd.faviconCache === undefined) sd.faviconCache = '';
-      }
-      if (!item.tags) item.tags = [];
-      if (!item.sharedTags) item.sharedTags = [];
-      if (!item.boardIds) item.boardIds = [];
-      if (item.inheritTags === undefined) item.inheritTags = true;
-      if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
-      if (item.showSpeedDial === undefined) item.showSpeedDial = true;
     }
     if (item.children) migrateItems(item.children);
   }
@@ -245,6 +243,15 @@ function normalizeSetRecord(set, index = 0) {
     items: normalizeSetItems(set?.items),
     createdAt,
     updatedAt
+  };
+}
+
+function normalizeImportManagerState(importManager) {
+  const items = cloneData(Array.isArray(importManager?.items) ? importManager.items : []);
+  migrateItems(items);
+  return {
+    items,
+    lastImportedAt: typeof importManager?.lastImportedAt === 'string' ? importManager.lastImportedAt : null
   };
 }
 
@@ -357,10 +364,128 @@ function migrateWidgetServiceSettings(parsed) {
   (parsed.essentials || []).forEach(visitItem);
   (parsed.navItems || []).forEach(visitItem);
   for (const board of (parsed.boards || [])) {
-    for (const col of (board.columns || [])) {
-      (col.items || []).forEach(visitItem);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) {
+        (col.items || []).forEach(visitItem);
+      }
     }
   }
+}
+
+function getBoardTabs(board) {
+  if (!board) return [];
+  return Array.isArray(board.tabs) && board.tabs.length ? board.tabs : [board];
+}
+
+function ensureBoardTabColumns(tab, fallbackId) {
+  const tabId = tab?.id || fallbackId || `tab-${Date.now()}`;
+  const requestedCount = Math.max(1, parseInt(tab?.columnCount, 10) || 0);
+  const existingColumns = Array.isArray(tab?.columns) ? tab.columns : [];
+  const regularColumns = existingColumns.filter(col => !col?.isInbox);
+  const inboxColumn = existingColumns.find(col => col?.isInbox) || { id: `${tabId}-inbox`, title: 'Inbox', isInbox: true, items: [] };
+  const targetCount = Math.max(requestedCount || regularColumns.length || 3, regularColumns.length || 0, 1);
+  while (regularColumns.length < targetCount) {
+    regularColumns.push({
+      id: `${tabId}-col-${regularColumns.length + 1}`,
+      title: `Column ${regularColumns.length + 1}`,
+      items: []
+    });
+  }
+  return [...regularColumns, inboxColumn];
+}
+
+function normalizeBoardTabRecord(tab, boardId, index = 0) {
+  const id = tab?.id || `${boardId}-tab-${index + 1}`;
+  const columns = ensureBoardTabColumns({ ...tab, id }, id);
+  const normalized = {
+    id,
+    title: (tab?.title || '').trim() || (index === 0 ? 'Home' : `Tab ${index + 1}`),
+    columnCount: columns.filter(col => !col.isInbox).length,
+    backgroundImage: typeof tab?.backgroundImage === 'string' ? tab.backgroundImage : '',
+    backgroundFit: tab?.backgroundFit === 'contain' ? 'contain' : 'cover',
+    containerOpacity: tab?.containerOpacity === undefined ? 100 : tab.containerOpacity,
+    sharedTags: Array.isArray(tab?.sharedTags) ? tab.sharedTags : [],
+    tags: Array.isArray(tab?.tags) ? tab.tags : [],
+    inheritTags: tab?.inheritTags !== false,
+    autoRemoveTags: tab?.autoRemoveTags === true,
+    showSetBar: tab?.showSetBar !== false,
+    setBar: Array.isArray(tab?.setBar) ? [...new Set(tab.setBar.filter(Boolean))] : [],
+    columns,
+    locked: tab?.locked === true
+  };
+  for (const col of normalized.columns) {
+    if (!Array.isArray(col.items)) col.items = [];
+    migrateItems(col.items);
+  }
+  return normalized;
+}
+
+function syncBoardCompatibilityFields(board, preferredTabId = null) {
+  if (!board || !Array.isArray(board.tabs) || !board.tabs.length) return board;
+  const preferred = preferredTabId
+    || (board.id === state?.activeBoardId ? state?.activeTabId : null)
+    || board.tabs[0]?.id;
+  const tab = board.tabs.find(entry => entry.id === preferred) || board.tabs[0];
+  if (!tab) return board;
+  board.columnCount = tab.columnCount;
+  board.backgroundImage = tab.backgroundImage;
+  board.backgroundFit = tab.backgroundFit;
+  board.containerOpacity = tab.containerOpacity;
+  board.sharedTags = tab.sharedTags;
+  board.tags = tab.tags;
+  board.inheritTags = tab.inheritTags;
+  board.autoRemoveTags = tab.autoRemoveTags;
+  board.columns = tab.columns;
+  board.locked = tab.locked === true;
+  return board;
+}
+
+function syncBoardCompatibilityState() {
+  for (const board of (state?.boards || [])) {
+    syncBoardCompatibilityFields(board);
+  }
+}
+
+function normalizeBoardRecord(board, index = 0) {
+  const id = board?.id || `board-${Date.now()}-${index}`;
+  const tabs = Array.isArray(board?.tabs) && board.tabs.length
+    ? board.tabs.map((tab, tabIndex) => normalizeBoardTabRecord(tab, id, tabIndex))
+    : [normalizeBoardTabRecord({
+        id: board?.tabId || `${id}-tab-1`,
+        title: board?.tabTitle || board?.title || 'Home',
+        columnCount: board?.columnCount,
+        backgroundImage: board?.backgroundImage,
+        backgroundFit: board?.backgroundFit,
+        containerOpacity: board?.containerOpacity,
+        sharedTags: board?.sharedTags,
+        tags: board?.tags,
+        inheritTags: board?.inheritTags,
+        autoRemoveTags: board?.autoRemoveTags,
+        columns: board?.columns,
+        locked: board?.locked
+      }, id, 0)];
+  const normalized = {
+    ...board,
+    id,
+    title: (board?.title || '').trim() || `Board ${index + 1}`,
+    sharedTags: Array.isArray(board?.sharedTags) ? board.sharedTags : [],
+    tags: Array.isArray(board?.tags) ? board.tags : [],
+    inheritTags: board?.inheritTags !== false,
+    autoRemoveTags: board?.autoRemoveTags === true,
+    showSpeedDial: board?.showSpeedDial !== false,
+    speedDialSlotCount: board?.speedDialSlotCount,
+    speedDial: Array.isArray(board?.speedDial) ? board.speedDial : [],
+    tabs
+  };
+  normalizeSpeedDialSlots(normalized);
+  for (const item of (normalized.speedDial || [])) {
+    if (!item) continue;
+    if (!item.type) item.type = 'bookmark';
+    if (!item.tags) item.tags = [];
+    if (item.faviconCache === undefined) item.faviconCache = '';
+  }
+  syncBoardCompatibilityFields(normalized, tabs[0]?.id);
+  return normalized;
 }
 
 // --- Tag ID helpers ---
@@ -384,8 +509,13 @@ function deleteTag(id) {
   const strip = items => { for (const item of (items || [])) { if (item?.tags) item.tags = item.tags.filter(tid => tid !== id); if (item?.sharedTags) item.sharedTags = item.sharedTags.filter(tid => tid !== id); if (item?.children) strip(item.children); } };
   strip(state.essentials);
   strip(state.sets?.flatMap(set => set.items) || []);
-  for (const board of state.boards) { strip([board]); strip(board.speedDial); for (const col of board.columns) strip(col.items); }
-  for (const item of state.navItems) { if (item.type === 'collection') strip([item]); }
+  for (const board of state.boards) {
+    strip([board]);
+    strip(board.speedDial);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) strip(col.items);
+    }
+  }
 }
 
 // --- One-time migration: string-name tags → ID-based tag objects ---
@@ -419,17 +549,19 @@ function migrateToIdTags(parsed) {
     if (Array.isArray(item.tags))       item.tags       = item.tags.map(t => getOrCreate(t));
     if (Array.isArray(item.sharedTags)) item.sharedTags = item.sharedTags.map(t => getOrCreate(t));
     if (item.children) item.children.forEach(migrateItemTags);
-    if (item.type === 'collection') (item.speedDial || []).forEach(migrateItemTags);
   }
 
   for (const board of (parsed.boards || [])) {
     migrateItemTags(board);
     (board.speedDial || []).forEach(migrateItemTags);
-    for (const col of (board.columns || [])) col.items.forEach(migrateItemTags);
+    for (const tab of getBoardTabs(board)) {
+      for (const col of (tab.columns || [])) col.items.forEach(migrateItemTags);
+    }
   }
   (parsed.navItems  || []).forEach(migrateItemTags);
   (parsed.essentials|| []).forEach(migrateItemTags);
   (parsed.sets || []).forEach(set => (set.items || []).forEach(migrateItemTags));
+  (parsed.importManager?.items || []).forEach(migrateItemTags);
 
   for (const g of (parsed.settings?.tagGroups || [])) delete g.tags;
   if (parsed.settings) delete parsed.settings.tagColors;
@@ -439,7 +571,6 @@ function collectReferencedBoardIds(items) {
   const ids = new Set();
   for (const item of (items || [])) {
     if (item.type === 'board' && item.boardId) ids.add(item.boardId);
-    if (item.type === 'collection') for (const id of (item.boardIds || [])) ids.add(id);
     if (item.children) for (const id of collectReferencedBoardIds(item.children)) ids.add(id);
   }
   return ids;
@@ -451,34 +582,28 @@ function parseStateJson(saved) {
     const parsed = JSON.parse(saved);
     if (typeof parsed.databasePath !== 'string') parsed.databasePath = '';
     else parsed.databasePath = parsed.databasePath.trim();
+    parsed.activeTabId = typeof parsed.activeTabId === 'string' ? parsed.activeTabId : null;
     parsed.sets = Array.isArray(parsed.sets)
       ? parsed.sets.map((set, index) => normalizeSetRecord(set, index))
       : [];
-    for (const board of (parsed.boards || [])) {
-      if (board.backgroundImage === undefined) board.backgroundImage = '';
-      if (board.containerOpacity === undefined) board.containerOpacity = 100;
-      if (board.showSpeedDial === undefined) board.showSpeedDial = true;
-      normalizeSpeedDialSlots(board);
-      if (!board.sharedTags) board.sharedTags = [];
-      if (board.labels && !board.tags) board.tags = board.labels;
-      delete board.labels;
-      if (!board.tags) board.tags = [];
-      if (board.inheritTags === undefined) board.inheritTags = true;
-      if (!board.columns.some(c => c.isInbox)) {
-        board.columns.push({ id: `${board.id}-inbox`, title: 'Inbox', isInbox: true, items: [] });
+    parsed.importManager = normalizeImportManagerState(parsed.importManager);
+    parsed.boards = Array.isArray(parsed.boards)
+      ? parsed.boards.map((board, index) => normalizeBoardRecord(board, index))
+      : [];
+    const legacyImportBoard = parsed.boards.find(board => board?.isImportManager);
+    if (legacyImportBoard) {
+      const legacyItems = [];
+      for (const tab of getBoardTabs(legacyImportBoard)) {
+        for (const col of (tab.columns || [])) {
+          if (!col?.isInbox && Array.isArray(col.items) && col.items.length) legacyItems.push(...cloneData(col.items));
+        }
       }
-      for (const item of (board.speedDial || [])) {
-        if (!item) continue;
-        if (!item.type) item.type = 'bookmark';
-        if (!item.tags) item.tags = [];
-        if (item.faviconCache === undefined) item.faviconCache = '';
-      }
-      for (const col of (board.columns || [])) {
-        migrateItems(col.items);
+      if (legacyItems.length) {
+        parsed.importManager.items.push(...legacyItems);
+        if (!parsed.importManager.lastImportedAt) parsed.importManager.lastImportedAt = new Date().toISOString();
       }
     }
     migrateItems(parsed.navItems);
-    if (parsed.activeCollectionId === undefined) parsed.activeCollectionId = null;
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
@@ -496,12 +621,21 @@ function parseStateJson(saved) {
       if (!e.tags) e.tags = [];
       if (e.faviconCache === undefined) e.faviconCache = '';
     }
-    // Remove boards with no nav item referencing them (keep Import Manager)
+    // Remove boards with no nav item referencing them
     const referencedIds = collectReferencedBoardIds(parsed.navItems);
-    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id) || b.isImportManager);
+    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id));
     if (!parsed.boards.some(b => b.id === parsed.activeBoardId)) {
       const first = parsed.boards[0] || null;
       parsed.activeBoardId = first ? first.id : null;
+    }
+    const activeBoard = parsed.boards.find(b => b.id === parsed.activeBoardId) || parsed.boards[0] || null;
+    for (const board of parsed.boards) syncBoardCompatibilityFields(board);
+    if (activeBoard) {
+      const activeTab = activeBoard.tabs?.find(tab => tab.id === parsed.activeTabId) || activeBoard.tabs?.[0] || null;
+      parsed.activeTabId = activeTab?.id || null;
+      syncBoardCompatibilityFields(activeBoard, parsed.activeTabId);
+    } else {
+      parsed.activeTabId = null;
     }
     return parsed;
   } catch (error) {
@@ -555,10 +689,15 @@ function notifySharedDiskConflict(detail = {}) {
   }));
 }
 
+function serializeStateSnapshot() {
+  syncBoardCompatibilityState();
+  trimFaviconCache();
+  return JSON.stringify(state);
+}
+
 function saveState(options = {}) {
   const { skipDiskSync = false } = options;
-  trimFaviconCache();
-  const json = JSON.stringify(state);
+  const json = serializeStateSnapshot();
   localStorage.setItem(STORAGE_KEY, json);
   isDirty = true;
   if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
@@ -588,7 +727,95 @@ function saveState(options = {}) {
 
 function getActiveBoard() {
   if (!state.activeBoardId) return null;
-  return state.boards.find(b => b.id === state.activeBoardId) || null;
+  const board = state.boards.find(b => b.id === state.activeBoardId) || null;
+  if (board) syncBoardCompatibilityFields(board, state.activeTabId);
+  return board;
+}
+
+function getActiveBoardContainer() {
+  return getActiveBoard();
+}
+
+function getBoardTab(board, tabId = null) {
+  if (!board) return null;
+  if (!Array.isArray(board.tabs) || !board.tabs.length) return board;
+  return board.tabs.find(tab => tab.id === (tabId || state.activeTabId)) || board.tabs[0] || null;
+}
+
+function getActiveTab() {
+  const board = getActiveBoardContainer();
+  if (!board) return null;
+  const tab = getBoardTab(board, state.activeTabId);
+  if (tab) {
+    if (state.activeTabId !== tab.id) state.activeTabId = tab.id;
+    syncBoardCompatibilityFields(board, tab.id);
+  }
+  return tab;
+}
+
+function findBoardTabById(board, tabId) {
+  if (!board || !Array.isArray(board.tabs)) return null;
+  return board.tabs.find(tab => tab.id === tabId) || null;
+}
+
+function createBoardTab(board, title = 'New Tab', options = {}) {
+  if (!board) return null;
+  if (!Array.isArray(board.tabs)) board.tabs = [];
+  const tab = normalizeBoardTabRecord({
+    id: options.id || `${board.id}-tab-${Date.now()}`,
+    title,
+    columnCount: options.columnCount || 3,
+    showSetBar: options.showSetBar,
+    setBar: options.setBar,
+    columns: options.columns
+  }, board.id, board.tabs.length);
+  board.tabs.push(tab);
+  state.activeTabId = tab.id;
+  syncBoardCompatibilityFields(board, tab.id);
+  return tab;
+}
+
+function removeBoardTab(board, tabId) {
+  if (!board || !Array.isArray(board.tabs) || board.tabs.length <= 1) return false;
+  const index = board.tabs.findIndex(tab => tab.id === tabId);
+  if (index === -1) return false;
+  board.tabs.splice(index, 1);
+  const fallback = board.tabs[Math.max(0, index - 1)] || board.tabs[0] || null;
+  state.activeTabId = fallback?.id || null;
+  syncBoardCompatibilityFields(board, state.activeTabId);
+  return true;
+}
+
+function reorderBoardTab(board, draggedTabId, targetTabId = null, position = 'after') {
+  if (!board || !Array.isArray(board.tabs) || board.tabs.length <= 1) return false;
+  const fromIndex = board.tabs.findIndex(tab => tab.id === draggedTabId);
+  if (fromIndex === -1) return false;
+  const [dragged] = board.tabs.splice(fromIndex, 1);
+  let insertIndex = board.tabs.length;
+  if (targetTabId) {
+    const targetIndex = board.tabs.findIndex(tab => tab.id === targetTabId);
+    if (targetIndex === -1) {
+      board.tabs.splice(fromIndex, 0, dragged);
+      return false;
+    }
+    insertIndex = targetIndex + (position === 'after' ? 1 : 0);
+  }
+  board.tabs.splice(Math.max(0, Math.min(insertIndex, board.tabs.length)), 0, dragged);
+  syncBoardCompatibilityFields(board, state.activeTabId);
+  return true;
+}
+
+function insertSetLinkIntoTab(tab, setId, targetSetId = null, position = 'after') {
+  if (!tab || !setId) return false;
+  if (!Array.isArray(tab.setBar)) tab.setBar = [];
+  tab.setBar = tab.setBar.filter(id => id !== setId);
+  let insertIndex = tab.setBar.length;
+  if (targetSetId) {
+    const targetIndex = tab.setBar.findIndex(id => id === targetSetId);
+    if (targetIndex !== -1) insertIndex = targetIndex + (position === 'after' ? 1 : 0);
+  }
+  tab.setBar.splice(Math.max(0, Math.min(insertIndex, tab.setBar.length)), 0, setId);
+  return true;
 }
 
 function isValidUrl(value) {
@@ -630,11 +857,6 @@ function findNavItemPath(itemId, list = state.navItems, parent = null) {
   return null;
 }
 
-function findCollectionById(collectionId) {
-  const path = findNavItemPath(collectionId);
-  return path?.item?.type === 'collection' ? path.item : null;
-}
-
 function findNavBoardItem(boardId, list = state.navItems) {
   for (const item of list) {
     if (item.type === 'board' && item.boardId === boardId) return item;
@@ -661,8 +883,6 @@ function getBoardNavInheritedTags(boardId) {
     return false;
   }
   collect(state.navItems, []);
-  const collection = findBoardCollection(boardId);
-  if (collection?.inheritTags !== false && collection?.sharedTags?.length) tags.push(...collection.sharedTags);
   return [...new Set(tags)];
 }
 
@@ -716,11 +936,12 @@ function deleteBoardAndNavItem(navItemId, boardId) {
   removeNavItemById(navItemId);
   // Remove by explicit boardId and also sweep any boards no longer in nav
   const referenced = referencedBoardIds();
-  state.boards = state.boards.filter(b => referenced.has(b.id) || b.isImportManager);
+  state.boards = state.boards.filter(b => referenced.has(b.id));
   const activeStillExists = state.boards.some(b => b.id === state.activeBoardId);
   if (!activeStillExists) {
     const next = findNextNavBoard(state.navItems);
     state.activeBoardId = next ? next.boardId : null;
+    state.activeTabId = state.activeBoardId ? (state.boards.find(b => b.id === state.activeBoardId)?.tabs?.[0]?.id || null) : null;
   }
 }
 
@@ -783,36 +1004,58 @@ function addBoardItemToColumn(columnId, item) {
 
 function createBoardRecord(title, options = {}) {
   const id = options.id || `board-${Date.now()}`;
-  const columnCount = options.columnCount || 3;
-  const columnTitles = options.columnTitles || [];
-  const columns = Array.from({ length: columnCount }, (_, i) => ({
-    id: `${id}-col-${i + 1}`,
-    title: columnTitles[i] || `Column ${i + 1}`,
-    items: []
-  }));
-  columns.push({ id: `${id}-inbox`, title: 'Inbox', isInbox: true, items: [] });
-  return {
+  const initialTab = normalizeBoardTabRecord({
+    id: options.initialTabId || `${id}-tab-1`,
+    title: options.initialTabTitle || title,
+    columnCount: options.columnCount || 3,
+    columns: options.columns,
+    backgroundImage: options.backgroundImage,
+    backgroundFit: options.backgroundFit,
+    containerOpacity: options.containerOpacity,
+    sharedTags: options.tabSharedTags || options.sharedTags,
+    tags: options.tabTags || options.tags,
+    inheritTags: options.tabInheritTags ?? options.inheritTags,
+    autoRemoveTags: options.tabAutoRemoveTags ?? options.autoRemoveTags,
+    showSetBar: options.showSetBar,
+    setBar: options.setBar,
+    locked: options.locked
+  }, id, 0);
+  const board = {
     id,
     title,
-    columnCount,
-    backgroundImage: '',
-    containerOpacity: 100,
     showSpeedDial: options.showSpeedDial !== false,
-    sharedTags: [],
-    tags: [],
-    inheritTags: true,
-    speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
-    speedDial: [],
-    columns,
+    speedDialSlotCount: options.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT,
+    speedDial: Array.isArray(options.speedDial) ? options.speedDial : [],
+    sharedTags: Array.isArray(options.sharedTags) ? options.sharedTags : [],
+    tags: Array.isArray(options.tags) ? options.tags : [],
+    inheritTags: options.inheritTags !== false,
+    autoRemoveTags: options.autoRemoveTags === true,
+    tabs: [initialTab],
     ...(options.extra || {})
   };
+  syncBoardCompatibilityFields(board, initialTab.id);
+  normalizeSpeedDialSlots(board);
+  return board;
 }
 
-function createBoard(title) {
-  const id = `board-${Date.now()}`;
-  state.boards.push(createBoardRecord(title, { id }));
+function createBoard(title, options = {}) {
+  const id = options.id || `board-${Date.now()}`;
+  const board = createBoardRecord(title, {
+    id,
+    showSpeedDial: options.showSpeedDial,
+    speedDialSlotCount: options.speedDialSlotCount,
+    speedDial: options.speedDial,
+    sharedTags: options.sharedTags,
+    tags: options.tags,
+    inheritTags: options.inheritTags,
+    autoRemoveTags: options.autoRemoveTags,
+    initialTabTitle: options.initialTabTitle || title
+  });
+  state.boards.push(board);
   state.activeBoardId = id;
+  state.activeTabId = board.tabs?.[0]?.id || null;
   state.navItems.push({ id: `nav-${id}`, type: 'board', title, boardId: id });
+  return board;
 }
 
 function addNavSection(item) {
@@ -822,25 +1065,23 @@ function addNavSection(item) {
 }
 
 function addBookmark(title, url, columnId, tags = [], faviconCache = '') {
-  if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
+  if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
   column.items.push({ id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache });
+  return true;
 }
 
 function addSpeedDialBookmark(title, url, tags = [], faviconCache = '') {
-  if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return; }
-  const collection = contextTarget?.collectionId
-    ? findCollectionById(contextTarget.collectionId)
-    : state.activeCollectionId
-      ? findCollectionById(state.activeCollectionId)
-      : null;
-  const target = collection || getActiveBoard();
-  if (!target) return;
+  if (!isValidUrl(url)) { alert('Please enter a valid URL.'); return false; }
+  const target = getActiveBoardContainer();
+  if (!target) return false;
   const slot = Number.isInteger(contextTarget?.slot) ? contextTarget.slot : firstEmptySpeedDialSlot(target);
   if (!setSpeedDialSlot(target, slot, { id: `bm-${Date.now()}`, type: 'bookmark', title, url: normalizeUrl(url), tags, faviconCache })) {
     alert('That speed dial slot is already occupied.');
+    return false;
   }
+  return true;
 }
 
 function addBookmarkItem(type, title, columnId, options = {}) {
@@ -860,8 +1101,11 @@ function addBookmarkItem(type, title, columnId, options = {}) {
 // --- Context-driven mutations (called from UI handlers) ---
 
 function getBoardForContext(ct) {
-  if (ct?.boardId) return state.boards.find(b => b.id === ct.boardId) || getActiveBoard();
-  return getActiveBoard();
+  if (ct?.boardId) {
+    const board = state.boards.find(b => b.id === ct.boardId) || getActiveBoardContainer();
+    return board || null;
+  }
+  return getActiveBoardContainer();
 }
 
 function deleteBoardTarget(contextTarget) {
@@ -891,11 +1135,22 @@ function renameContextItem(text, contextTarget) {
         if (board) board.title = text;
       }
     }
+  } else if (contextTarget.area === 'board-tab') {
+    const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+    const tab = findBoardTabById(board, contextTarget.tabId);
+    if (tab) {
+      tab.title = text;
+      syncBoardCompatibilityFields(board, tab.id);
+    }
   }
 }
 
 function editBookmarkContext(title, url, tags = [], contextTarget) {
-  if (!contextTarget || contextTarget.area !== 'board-item') return;
+  if (!contextTarget || contextTarget.area !== 'board-item') return false;
+  if (!isValidUrl(url)) {
+    alert('Please enter a valid URL.');
+    return false;
+  }
   const board = getBoardForContext(contextTarget);
   const found = findBoardItemInColumns(board, contextTarget.itemId);
   if (found?.item?.type === 'bookmark') {
@@ -903,18 +1158,9 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
     found.item.title = title;
     found.item.url = normalizeUrl(url);
     found.item.tags = tags;
+    return true;
   }
-}
-
-function findBoardCollection(boardId) {
-  function search(items) {
-    for (const item of (items || [])) {
-      if (item.type === 'collection' && (item.boardIds || []).includes(boardId)) return item;
-      if (item.children) { const r = search(item.children); if (r) return r; }
-    }
-    return null;
-  }
-  return search(state.navItems);
+  return false;
 }
 
 function findBoardFolder(boardId) {
@@ -933,30 +1179,14 @@ function findBoardFolder(boardId) {
   return search(state.navItems);
 }
 
-function createCollection(title) {
-  const id = `col-${Date.now()}`;
-  const navItem = { id, type: 'collection', title, showSpeedDial: true, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT, speedDial: [], boardIds: [], tags: [], sharedTags: [], inheritTags: true, autoRemoveTags: false };
-  state.navItems.push(navItem);
-  state.activeCollectionId = id;
-  return navItem;
-}
-
-function createBoardInCollection(collection, title) {
-  const id = `board-${Date.now()}`;
-  state.boards.push(createBoardRecord(title, { id }));
-  if (!collection.boardIds) collection.boardIds = [];
-  collection.boardIds.push(id);
-  state.activeBoardId = id;
-  state.activeCollectionId = collection.id;
-}
-
 function createBoardInFolder(folder, title) {
   const id = `board-${Date.now()}`;
-  state.boards.push(createBoardRecord(title, { id }));
+  const board = createBoardRecord(title, { id });
+  state.boards.push(board);
   if (!folder.children) folder.children = [];
   folder.children.push({ id: `nav-${Date.now()}`, type: 'board', title, boardId: id });
   state.activeBoardId = id;
-  state.activeCollectionId = null;
+  state.activeTabId = board.tabs?.[0]?.id || null;
   return state.boards.find(b => b.id === id);
 }
 
@@ -1043,8 +1273,6 @@ function computeInheritedTags(item, board) {
   for (const ancestor of chain) {
     if (ancestor.inheritTags !== false && ancestor.sharedTags) tags.push(...ancestor.sharedTags);
   }
-  const collection = findBoardCollection(board.id);
-  if (collection?.inheritTags !== false && collection?.sharedTags?.length) tags.push(...collection.sharedTags);
   return [...new Set(tags)];
 }
 
@@ -1076,12 +1304,14 @@ function findDuplicateUrl(url) {
   return null;
 }
 
-function getBoardInbox(board) {
-  return board?.columns.find(c => c.isInbox) || null;
+function getBoardInbox(board, tab = null) {
+  const sourceTab = tab || (board?.tabs ? getBoardTab(board, tab?.id || state.activeTabId) : null);
+  const columns = sourceTab?.columns || board?.columns || [];
+  return columns.find(c => c.isInbox) || null;
 }
 
-function getBoardInboxCounts(board) {
-  const inbox = getBoardInbox(board);
+function getBoardInboxCounts(board, tab = null) {
+  const inbox = getBoardInbox(board, tab);
   if (!inbox) return { bookmarks: 0, folders: 0 };
   return {
     bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
@@ -1089,29 +1319,8 @@ function getBoardInboxCounts(board) {
   };
 }
 
-function getImportManagerBoard() {
-  return state.boards.find(b => b.isImportManager) || null;
-}
-
-function getOrCreateImportManagerBoard() {
-  let board = getImportManagerBoard();
-  if (!board) {
-    const id = 'board-import-manager';
-    board = createBoardRecord('Import Manager', {
-      id,
-      columnCount: 1,
-      columnTitles: ['Imports'],
-      showSpeedDial: false,
-      extra: { isImportManager: true }
-    });
-    state.boards.push(board);
-  }
-  return board;
-}
-
 function importManagerHasItems() {
-  const board = getImportManagerBoard();
-  return board ? board.columns.filter(c => !c.isInbox).some(c => c.items.length > 0) : false;
+  return Array.isArray(state.importManager?.items) && state.importManager.items.length > 0;
 }
 
 function countItemsRecursive(items, type = null) {
@@ -1124,13 +1333,58 @@ function countItemsRecursive(items, type = null) {
 }
 
 function getImportManagerCounts() {
-  const board = getImportManagerBoard();
-  if (!board) return { bookmarks: 0, folders: 0 };
-  const cols = board.columns.filter(c => !c.isInbox);
+  const items = state.importManager?.items || [];
   return {
-    bookmarks: cols.reduce((s, c) => s + countItemsRecursive(c.items, 'bookmark'), 0),
-    folders:   cols.reduce((s, c) => s + countItemsRecursive(c.items, 'folder'), 0)
+    bookmarks: countItemsRecursive(items, 'bookmark'),
+    folders:   countItemsRecursive(items, 'folder')
   };
+}
+
+function findImportManagerItemInList(list, itemId, parent = null) {
+  for (const item of (list || [])) {
+    if (item.id === itemId) return { item, list, parent };
+    if (item.type === 'folder' && Array.isArray(item.children)) {
+      const nested = findImportManagerItemInList(item.children, itemId, item);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function findImportManagerItemById(itemId) {
+  return findImportManagerItemInList(state.importManager?.items || [], itemId);
+}
+
+function removeImportManagerItemById(itemId, list = state.importManager?.items || []) {
+  const index = list.findIndex(item => item?.id === itemId);
+  if (index !== -1) return list.splice(index, 1)[0];
+  for (const item of list) {
+    if (item?.type === 'folder' && Array.isArray(item.children)) {
+      const removed = removeImportManagerItemById(itemId, item.children);
+      if (removed) return removed;
+    }
+  }
+  return null;
+}
+
+function collectSelectedImportManagerItems(selectionIds, list = state.importManager?.items || [], ancestorSelected = false, out = []) {
+  const selectedSet = selectionIds instanceof Set ? selectionIds : new Set(selectionIds || []);
+  for (const item of (list || [])) {
+    const isSelected = selectedSet.has(item?.id);
+    if (isSelected && !ancestorSelected) {
+      out.push(item);
+      continue;
+    }
+    if (item?.type === 'folder' && Array.isArray(item.children) && item.children.length) {
+      collectSelectedImportManagerItems(selectedSet, item.children, ancestorSelected || isSelected, out);
+    }
+  }
+  return out;
+}
+
+function clearImportManager() {
+  if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
+  state.importManager.items = [];
 }
 
 function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {
@@ -1222,15 +1476,6 @@ function restoreFromTrash(trashId) {
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(navItem); return true; }
     }
     state.navItems.push(navItem);
-  } else if (source.area === 'collection-board') {
-    if (item.board && !state.boards.some(b => b.id === item.board.id)) state.boards.push(cloneData(item.board));
-    const coll = findCollectionById(source.collectionId);
-    if (coll && item.board) {
-      coll.boardIds = coll.boardIds || [];
-      if (!coll.boardIds.includes(item.board.id)) coll.boardIds.push(item.board.id);
-    } else if (item.board) {
-      state.navItems.push({ id: `nav-${item.board.id}`, type: 'board', title: item.board.title, boardId: item.board.id });
-    }
   } else if (source.area === 'folder-board') {
     if (item.board && !state.boards.some(b => b.id === item.board.id)) state.boards.push(cloneData(item.board));
     const navItem = item.navItem
@@ -1260,13 +1505,6 @@ function restoreFromTrash(trashId) {
       const col = board.columns.find(c => c.id === source.columnId) || board.columns[0];
       if (col) col.items.push(cloneData(item));
     }
-  } else if (source.area === 'collection') {
-    const restored = cloneData(item.collection || item);
-    for (const board of (item.boards || [])) {
-      if (!state.boards.some(b => b.id === board.id)) state.boards.push(cloneData(board));
-    }
-    state.navItems = state.navItems.filter(ni => !(ni.type === 'board' && (restored.boardIds || []).includes(ni.boardId)));
-    state.navItems.push(restored);
   }
   return true;
 }
@@ -1274,13 +1512,13 @@ function restoreFromTrash(trashId) {
 function cleanTrashAfterRestore() {
   const liveIds = new Set();
   const walkItems = (list) => { for (const item of (list || [])) { if (item?.id) liveIds.add(item.id); if (item?.children) walkItems(item.children); } };
-  const walkNav = (items) => { for (const ni of (items || [])) { liveIds.add(ni.id); if (ni.type === 'collection') for (const i of (ni.speedDial || [])) if (i?.id) liveIds.add(i.id); if (ni.children) walkNav(ni.children); } };
+  const walkNav = (items) => { for (const ni of (items || [])) { liveIds.add(ni.id); if (ni.children) walkNav(ni.children); } };
   for (const board of (state.boards || [])) { liveIds.add(board.id); for (const col of (board.columns || [])) walkItems(col.items); for (const i of (board.speedDial || [])) if (i?.id) liveIds.add(i.id); }
   for (const item of (state.essentials || [])) { if (item?.id) liveIds.add(item.id); }
   walkNav(state.navItems);
   const prev = recentlyDeleted.length;
   recentlyDeleted = recentlyDeleted.filter(e => {
-    const id = e.item?.board?.id ?? e.item?.collection?.id ?? e.item?.id;
+    const id = e.item?.board?.id ?? e.item?.id;
     return !liveIds.has(id);
   });
   if (recentlyDeleted.length !== prev) saveTrash();
@@ -1309,6 +1547,7 @@ function trimFaviconCache(skipItem = null) {
     walk(board.speedDial);
     for (const col of board.columns) walk(col.items);
   }
+  walk(state.importManager?.items || []);
   let total = candidates.reduce((s, i) => s + i.faviconCache.length, 0);
   if (skipItem?.faviconCache) total += skipItem.faviconCache.length;
   for (const item of candidates) {

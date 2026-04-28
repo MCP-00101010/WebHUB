@@ -59,7 +59,7 @@
         <line x1="16" y1="12" x2="22" y2="12"/>
       </symbol>
 
-      <!-- 2×2 grid (Collection) -->
+      <!-- 2×2 grid -->
       <symbol id="icon-collection" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3"  y="3"  width="8" height="8" rx="1.5"/>
         <rect x="13" y="3"  width="8" height="8" rx="1.5"/>
@@ -197,6 +197,10 @@
           <button type="button" id="quickSetsBtn" class="icon-btn sidebar-action-btn" title="Sets" aria-label="Sets">
             <svg width="18" height="18" aria-hidden="true"><use href="#icon-set"/></svg>
           </button>
+          <button type="button" id="quickImportManagerBtn" class="icon-btn sidebar-action-btn" title="Import Manager" aria-label="Import Manager">
+            <svg width="18" height="18" aria-hidden="true"><use href="#icon-inbox"/></svg>
+            <span id="quickImportManagerBadge" class="sidebar-action-badge hidden">0</span>
+          </button>
           <button type="button" id="quickSettingsBtn" class="icon-btn sidebar-action-btn" title="Settings" aria-label="Settings">
             <svg width="18" height="18" aria-hidden="true"><use href="#icon-settings"/></svg>
           </button>
@@ -216,7 +220,8 @@
           <svg width="16" height="16" aria-hidden="true"><use href="#icon-trash"/></svg>
           <span id="trashCount" class="trash-count hidden">0</span>
         </button>
-        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.48</button>
+        <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
+        <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.50</button>
       </div>
       <button id="sidebarCollapseBtn" class="sidebar-edge-tab" title="Collapse sidebar" aria-label="Collapse sidebar">
         <svg width="10" height="10" aria-hidden="true"><use href="#icon-chevron-left"/></svg>
@@ -239,19 +244,26 @@
             <svg width="20" height="20" aria-hidden="true"><use href="#icon-inbox"/></svg>
             <span id="inboxBadge" class="inbox-badge hidden">0</span>
           </button>
+          <button id="speedDialToggleBtn" class="icon-btn board-shell-toggle" title="Toggle speed dial" aria-label="Toggle speed dial">
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-bookmark-add"/></svg>
+          </button>
+          <button id="setBarToggleBtn" class="icon-btn board-shell-toggle" title="Toggle set bar" aria-label="Toggle set bar">
+            <svg width="20" height="20" aria-hidden="true"><use href="#icon-set"/></svg>
+          </button>
           <button id="boardSettingsBtn" class="icon-btn" title="Board Settings" aria-label="Board Settings">
             <svg width="20" height="20" aria-hidden="true"><use href="#icon-settings"/></svg>
           </button>
         </div>
       </section>
 
-      <section id="collectionTabBar" class="collection-tab-bar hidden"></section>
-
       <section class="speed-dial-panel">
         <div id="speedDial" class="speed-dial"></div>
       </section>
 
-<section class="bookmark-pane">
+      <section id="collectionTabBar" class="collection-tab-bar hidden"></section>
+      <section id="tabSetBar" class="collection-tab-bar collection-tab-set-bar hidden"></section>
+
+      <section class="bookmark-pane">
         <div id="bookmarkColumns" class="columns"></div>
       </section>
     </main>
@@ -287,14 +299,14 @@
             </div>
             <div class="tag-toggle-row hidden" id="modalSharedTagsOptions">
               <div class="tag-toggle-item">
-                <span>Pass to items <span class="tooltip-icon" data-tooltip="When enabled, this collection's Shared Tags are added to all boards inside it.">?</span></span>
+                <span>Pass to tabs <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are added to all tabs inside it.">?</span></span>
                 <label class="settings-toggle">
                   <input id="cmInheritTags" type="checkbox" checked />
                   <span class="toggle-track"></span>
                 </label>
               </div>
               <div class="tag-toggle-item">
-                <span>Strip on remove <span class="tooltip-icon" data-tooltip="When enabled, this collection's Shared Tags are removed from boards removed from this collection.">?</span></span>
+                <span>Strip on remove <span class="tooltip-icon" data-tooltip="When enabled, this board's Shared Tags are removed from tabs removed from this board.">?</span></span>
                 <label class="settings-toggle">
                   <input id="cmAutoRemove" type="checkbox" />
                   <span class="toggle-track"></span>
@@ -340,9 +352,9 @@
 
     <div id="boardSettingsPanel" class="settings-panel hidden">
       <div id="bstgHeader" class="bstg-header">
-        <span id="bstgSubtitle" class="modal-card-subtitle">New Board</span>
+        <span id="bstgSubtitle" class="modal-card-subtitle">New Tab</span>
         <div class="bstg-header-row">
-          <input id="bstgTitle" type="text" class="bstg-title-input" placeholder="New Board" />
+          <input id="bstgTitle" type="text" class="bstg-title-input" placeholder="New Tab" />
           <div class="bstg-columns-radio">
             <span class="bstg-columns-label">Columns</span>
             <label class="col-radio-label" title="3 columns"><input type="radio" name="bstgCols" value="3" /><span>3</span></label>
@@ -395,7 +407,7 @@
             </div>
           </div>
 
-          <div class="settings-section">
+          <div class="settings-section" id="bstgSpeedDialSection">
             <div class="settings-section-label">Speed Dial</div>
             <div class="settings-row">
               <span>Show Speed Dial</span>
@@ -408,9 +420,6 @@
               <span>Slots</span>
               <input id="bstgSpeedDialSlots" type="number" min="1" max="48" class="settings-text-input" />
             </div>
-            <p id="bstgCollectionSpeedDialNote" class="settings-warning hidden">
-              This board's speed dial is hidden while the board belongs to a collection.
-            </p>
           </div>
 
         </div>
@@ -429,6 +438,13 @@
             <div class="settings-row">
               <button type="button" id="bstgBgBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
               <button type="button" id="bstgBgClear" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Clear image</button>
+            </div>
+            <div class="settings-row settings-row--top">
+              <span>Fit</span>
+              <div class="board-fit-radios">
+                <label class="board-fit-label"><input type="radio" name="bstgBgFit" value="cover" /><span>Cover</span></label>
+                <label class="board-fit-label"><input type="radio" name="bstgBgFit" value="contain" /><span>Contain</span></label>
+              </div>
             </div>
           </div>
 
@@ -453,7 +469,6 @@
     </div>
 
     <div id="settingsPanel" class="settings-panel hidden">
-      <div id="stgDragHandle" class="panel-drag-strip"></div>
       <div class="settings-header">
         <input id="stgHubName" class="settings-hub-name-input" type="text" placeholder="My WebHub" />
         <div class="settings-tabs">
@@ -746,46 +761,6 @@
           </div>
         </div>
 
-        <div class="settings-section style-advanced-section" data-tab="style" data-style-section="collection">
-          <div class="settings-section-label settings-section-label--row">Collections
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="collection" /> Override</label>
-          </div>
-          <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgCollectionFont" type="number" min="10" max="24" />
-              <span>px</span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Font</span>
-            <select id="stgCollectionFamily"></select>
-          </div>
-          <div class="settings-row">
-            <span>Style</span>
-            <div class="fmt-btns">
-              <button type="button" class="fmt-btn fmt-bold" data-fmt="collectionBold" title="Bold">B</button>
-              <button type="button" class="fmt-btn fmt-italic" data-fmt="collectionItalic" title="Italic">I</button>
-              <button type="button" class="fmt-btn fmt-underline" data-fmt="collectionUnderline" title="Underline">U</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Align</span>
-            <div class="fmt-btns">
-              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="left" title="Left">L</button>
-              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="center" title="Center">C</button>
-              <button type="button" class="fmt-btn align-btn" data-align-key="collectionTextAlign" data-align-val="right" title="Right">R</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Color</span>
-            <div class="color-picker-group">
-              <input type="color" id="stgCollectionColor" class="color-input" />
-              <button type="button" class="color-reset-btn" data-color-key="collectionColor" title="Reset to default">×</button>
-            </div>
-          </div>
-        </div>
-
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="title">
           <div class="settings-section-label settings-section-label--row">Titles &amp; Dividers
             <label class="settings-override-toggle"><input type="checkbox" data-style-override="title" /> Override</label>
@@ -892,24 +867,6 @@
           </div>
         </div>
 
-        <div class="settings-section span-full" data-tab="tag-manager">
-          <div class="settings-section-label settings-section-label--row">
-            Tag Groups
-            <button type="button" id="stgAddGroupBtn" class="icon-btn tag-group-add-btn" title="Add group" aria-label="Add group">
-              <svg width="15" height="15" aria-hidden="true"><use href="#icon-plus"/></svg>
-            </button>
-            <span class="stg-tag-actions">
-              <button type="button" id="stgUndoBtn" class="icon-btn" title="Undo" disabled>
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-undo"/></svg>
-              </button>
-              <button type="button" id="stgRedoBtn" class="icon-btn" title="Redo" disabled>
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-redo"/></svg>
-              </button>
-            </span>
-          </div>
-          <div id="tagGroupList"></div>
-        </div>
-
         <div class="settings-section span-full" data-tab="general">
           <div class="settings-section-label">Data</div>
           <div class="settings-row">
@@ -935,14 +892,10 @@
             <button type="button" id="stgImportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Load JSON</button>
             <input type="file" id="stgImportFile" accept=".json" style="display:none" />
           </div>
-          <div class="settings-row">
-            <span>Import bookmarks</span>
-            <label class="stg-file-label secondary-btn">Import HTML<input id="importBookmarksFile" type="file" accept=".html,.htm" /></label>
-          </div>
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.48</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.50</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Extension</span>
@@ -1122,6 +1075,28 @@
     <div id="inboxPanelBody" class="inbox-panel-body"></div>
   </div>
 
+  <div id="importManagerPanel" class="import-manager-panel hidden">
+    <div id="importManagerHeader" class="import-manager-header">
+      <span class="modal-card-subtitle">Import Manager</span>
+      <div class="import-manager-header-actions">
+        <label class="secondary-btn import-manager-file-btn">Import HTML<input id="importBookmarksFile" type="file" accept=".html,.htm" /></label>
+        <button type="button" id="importManagerClearBtn" class="danger-btn">Clear All</button>
+      </div>
+    </div>
+    <div class="import-manager-body">
+      <div class="import-manager-meta">
+        <span id="importManagerBmCount" class="count-chip count-chip--bookmark hidden"></span>
+        <span id="importManagerFolderCount" class="count-chip count-chip--folder hidden"></span>
+        <span id="importManagerStatus" class="settings-muted"></span>
+      </div>
+      <div id="importManagerEmpty" class="inbox-empty">No imported bookmarks yet.</div>
+      <div id="importManagerList" class="import-manager-list"></div>
+    </div>
+    <div class="form-actions">
+      <button type="button" id="importManagerDoneBtn" class="primary-btn">Done</button>
+    </div>
+  </div>
+
   <div id="setsManagerPanel" class="sets-panel hidden">
     <div id="setsManagerHeader" class="sets-panel-header">
       <span class="modal-card-subtitle">Sets</span>
@@ -1153,6 +1128,34 @@
     </div>
     <div class="form-actions sets-panel-footer">
       <button type="button" id="setsManagerDoneBtn" class="primary-btn">Done</button>
+    </div>
+  </div>
+
+  <div id="tagManagerPanel" class="settings-panel tag-manager-panel hidden">
+    <div class="settings-header">
+      <h3>Tag Manager</h3>
+    </div>
+    <div class="settings-body tag-manager-body">
+      <div class="settings-section span-full">
+        <div class="settings-section-label settings-section-label--row">
+          Tag Groups
+          <button type="button" id="stgAddGroupBtn" class="icon-btn tag-group-add-btn" title="Add group" aria-label="Add group">
+            <svg width="15" height="15" aria-hidden="true"><use href="#icon-plus"/></svg>
+          </button>
+          <span class="stg-tag-actions">
+            <button type="button" id="stgUndoBtn" class="icon-btn" title="Undo" disabled>
+              <svg width="16" height="16" aria-hidden="true"><use href="#icon-undo"/></svg>
+            </button>
+            <button type="button" id="stgRedoBtn" class="icon-btn" title="Redo" disabled>
+              <svg width="16" height="16" aria-hidden="true"><use href="#icon-redo"/></svg>
+            </button>
+          </span>
+        </div>
+        <div id="tagGroupList"></div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="button" id="tagManagerDoneBtn" class="primary-btn">Done</button>
     </div>
   </div>
 

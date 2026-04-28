@@ -6,43 +6,42 @@ let _pendingDatabasePath = '';
 
 function showBoardSettingsPanel(isNew = false) {
   const board = getActiveBoard();
-  if (!board) return;
+  const tab = getActiveTab();
+  if (!board || !tab) return;
   if (!isNew) {
     pushUndoSnapshot();
-    _boardSettingsCancelSnapshot = cloneData(board);
+    _boardSettingsCancelSnapshot = { board: cloneData(board), activeTabId: state.activeTabId };
   } else {
     _boardSettingsCancelSnapshot = null;
   }
-  boardSettingsCreatingId = isNew ? board.id : null;
+  boardSettingsCreatingId = isNew ? tab.id : null;
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('boardSettingsPanel');
   document.getElementById('boardSettingsDoneBtn').textContent = isNew ? 'Create' : 'OK';
-  document.getElementById('bstgSubtitle').textContent = isNew ? 'New Board' : 'Edit Board';
+  document.getElementById('bstgSubtitle').textContent = isNew ? 'New Tab' : 'Edit Tab';
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('bstgHeader'));
   const titleEl = document.getElementById('bstgTitle');
-  titleEl.placeholder = isNew ? board.title : 'Board Name';
-  titleEl.value = isNew ? '' : board.title;
+  titleEl.placeholder = tab.title || 'New Tab';
+  titleEl.value = isNew ? '' : tab.title;
   titleEl.focus();
-  const colRadio = document.querySelector(`input[name="bstgCols"][value="${board.columnCount}"]`);
+  const colRadio = document.querySelector(`input[name="bstgCols"][value="${tab.columnCount}"]`);
   if (colRadio) colRadio.checked = true;
-  document.getElementById('bstgBgUrl').value = board.backgroundImage || '';
-  updateBgDropZonePreview(board.backgroundImage || '');
-  document.getElementById('bstgOpacity').value = board.containerOpacity ?? 100;
-  document.getElementById('bstgOpacityVal').textContent = board.containerOpacity ?? 100;
+  document.getElementById('bstgBgUrl').value = tab.backgroundImage || '';
+  const bgFitRadio = document.querySelector(`input[name="bstgBgFit"][value="${tab.backgroundFit || 'cover'}"]`);
+  if (bgFitRadio) bgFitRadio.checked = true;
+  updateBgDropZonePreview(tab.backgroundImage || '');
+  document.getElementById('bstgOpacity').value = tab.containerOpacity ?? 100;
+  document.getElementById('bstgOpacityVal').textContent = tab.containerOpacity ?? 100;
   document.getElementById('bstgShowSpeedDial').checked = board.showSpeedDial !== false;
   document.getElementById('bstgSpeedDialSlots').value = getSpeedDialSlotCount(board);
-  const inCollection = !!findBoardCollection(board.id);
-  const sdNote = document.getElementById('bstgCollectionSpeedDialNote');
-  if (sdNote) sdNote.classList.toggle('hidden', !inCollection);
-  document.getElementById('bstgShowSpeedDial').disabled = inCollection;
-  document.getElementById('bstgSpeedDialSlots').disabled = inCollection;
-  document.getElementById('bstgTags').value = (board.tags || []).join(' ');
-  document.getElementById('bstgSharedTags').value = (board.sharedTags || []).join(' ');
-  document.getElementById('bstgInheritTags').checked = board.inheritTags !== false;
-  document.getElementById('bstgAutoRemove').checked = isNew ? true : board.autoRemoveTags === true;
+  document.getElementById('bstgSpeedDialSection')?.classList.add('hidden');
+  document.getElementById('bstgTags').value = (tab.tags || []).join(' ');
+  document.getElementById('bstgSharedTags').value = (tab.sharedTags || []).join(' ');
+  document.getElementById('bstgInheritTags').checked = tab.inheritTags !== false;
+  document.getElementById('bstgAutoRemove').checked = isNew ? true : tab.autoRemoveTags === true;
   const bstgInherited = getBoardInheritedTags();
   const bstgInheritedRow = document.getElementById('bstgInheritedTagsRow');
   const bstgInheritedSpan = document.getElementById('bstgInheritedTags');
@@ -57,15 +56,11 @@ function hideBoardSettingsPanel() {
   // If the title field is empty, fall back to the placeholder (the original title)
   const titleEl = document.getElementById('bstgTitle');
   const board = getActiveBoard();
-  if (board && !titleEl.value.trim()) {
-    board.title = titleEl.placeholder || 'New Board';
-    const navItem = _findNavBoardItem(state.navItems, board.id);
-    if (navItem) navItem.title = board.title;
-    if (!elements.collectionTabBar.classList.contains('hidden')) {
-      const coll = state.activeCollectionId ? findCollectionById(state.activeCollectionId) : null;
-      if (coll) renderCollectionTabBar(coll);
-      else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
-    }
+  const tab = getActiveTab();
+  if (board && tab && !titleEl.value.trim()) {
+    tab.title = titleEl.placeholder || 'New Tab';
+    syncBoardCompatibilityFields(board, tab.id);
+    renderBoard();
   }
   document.getElementById('boardSettingsDoneBtn').textContent = 'OK';
   document.getElementById('boardSettingsPanel').classList.add('hidden');
@@ -86,13 +81,14 @@ function _findNavBoardItem(items, boardId) {
 
 function cancelBoardSettingsPanel() {
   if (boardSettingsCreatingId) {
-    const navItem = findNavBoardItem(boardSettingsCreatingId);
-    if (navItem) deleteBoardAndNavItem(navItem.id, boardSettingsCreatingId);
+    const board = getActiveBoardContainer();
+    if (board) removeBoardTab(board, boardSettingsCreatingId);
     renderAll();
     saveState();
   } else if (_boardSettingsCancelSnapshot) {
-    const idx = state.boards.findIndex(b => b.id === _boardSettingsCancelSnapshot.id);
-    if (idx !== -1) state.boards[idx] = _boardSettingsCancelSnapshot;
+    const idx = state.boards.findIndex(b => b.id === _boardSettingsCancelSnapshot.board.id);
+    if (idx !== -1) state.boards[idx] = _boardSettingsCancelSnapshot.board;
+    state.activeTabId = _boardSettingsCancelSnapshot.activeTabId || state.activeTabId;
     _boardSettingsCancelSnapshot = null;
     renderAll();
   }
@@ -117,51 +113,51 @@ function updateBgDropZonePreview(imageUrl) {
 function attachBoardSettingsListeners() {
   document.getElementById('bstgTitle').addEventListener('input', e => {
     const board = getActiveBoard();
-    if (!board) return;
-    board.title = e.target.value || e.target.placeholder;
-    elements.boardTitle.textContent = board.title;
-    const findNavItem = (items) => { for (const i of items) { if (i.boardId === board.id) return i; if (i.children) { const f = findNavItem(i.children); if (f) return f; } } return null; };
-    const navItem = findNavItem(state.navItems);
-    if (navItem) navItem.title = board.title;
-    renderNav();
-    // Refresh tab bar if visible (collection or folder context)
-    if (!elements.collectionTabBar.classList.contains('hidden')) {
-      const coll = state.activeCollectionId ? findCollectionById(state.activeCollectionId) : null;
-      if (coll) renderCollectionTabBar(coll);
-      else { const folder = findBoardFolder(board.id); if (folder) renderFolderTabBar(folder); }
-    }
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    tab.title = e.target.value || e.target.placeholder;
+    syncBoardCompatibilityFields(board, tab.id);
+    renderBoard();
   });
 
   document.querySelectorAll('input[name="bstgCols"]').forEach(radio => {
     radio.addEventListener('change', e => {
       const board = getActiveBoard();
-      if (!board) return;
+      const tab = getActiveTab();
+      if (!board || !tab) return;
       const newCount = parseInt(e.target.value, 10) || 3;
-      const regularCols = board.columns.filter(c => !c.isInbox);
-      const inboxCol = board.columns.find(c => c.isInbox);
+      const regularCols = tab.columns.filter(c => !c.isInbox);
+      const inboxCol = tab.columns.find(c => c.isInbox);
       if (newCount < regularCols.length) {
         const removed = regularCols.slice(newCount);
         const lastKept = regularCols[newCount - 1];
         for (const col of removed) lastKept.items.push(...col.items);
-        board.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
+        tab.columns = [...regularCols.slice(0, newCount), ...(inboxCol ? [inboxCol] : [])];
       } else {
         while (regularCols.length < newCount) {
           regularCols.push({ id: `col-${Date.now()}-${regularCols.length + 1}`, title: `Column ${regularCols.length + 1}`, items: [] });
         }
-        board.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
+        tab.columns = [...regularCols, ...(inboxCol ? [inboxCol] : [])];
       }
-      board.columnCount = newCount;
+      tab.columnCount = newCount;
+      syncBoardCompatibilityFields(board, tab.id);
       renderBoard();
     });
   });
 
-  const applyBg = () => { const board = getActiveBoard(); if (board) applyBoardBackground(board); };
+  const applyBg = () => {
+    const board = getActiveBoard();
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    syncBoardCompatibilityFields(board, tab.id);
+    applyBoardBackground(board);
+  };
 
   document.getElementById('bstgBgUrl').addEventListener('input', e => {
-    const board = getActiveBoard();
-    if (!board) return;
-    board.backgroundImage = e.target.value.trim();
-    updateBgDropZonePreview(board.backgroundImage);
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.backgroundImage = e.target.value.trim();
+    updateBgDropZonePreview(tab.backgroundImage);
     applyBg();
   });
 
@@ -175,11 +171,11 @@ function attachBoardSettingsListeners() {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      const board = getActiveBoard();
-      if (!board) return;
-      board.backgroundImage = ev.target.result;
+      const tab = getActiveTab();
+      if (!tab) return;
+      tab.backgroundImage = ev.target.result;
       document.getElementById('bstgBgUrl').value = '';
-      updateBgDropZonePreview(board.backgroundImage);
+      updateBgDropZonePreview(tab.backgroundImage);
       applyBg();
     };
     reader.readAsDataURL(file);
@@ -192,28 +188,37 @@ function attachBoardSettingsListeners() {
     }
     const result = await bridge.openFilePicker('image', 'Select background image');
     if (!result) return;
-    const board = getActiveBoard();
-    if (!board) return;
-    board.backgroundImage = result.dataUrl;
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.backgroundImage = result.dataUrl;
     document.getElementById('bstgBgUrl').value = '';
-    updateBgDropZonePreview(board.backgroundImage);
+    updateBgDropZonePreview(tab.backgroundImage);
     applyBg();
   });
 
   document.getElementById('bstgBgClear').addEventListener('click', () => {
-    const board = getActiveBoard();
-    if (!board) return;
-    board.backgroundImage = '';
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.backgroundImage = '';
     document.getElementById('bstgBgUrl').value = '';
     updateBgDropZonePreview('');
     applyBg();
   });
 
+  document.querySelectorAll('input[name="bstgBgFit"]').forEach(radio => {
+    radio.addEventListener('change', e => {
+      const tab = getActiveTab();
+      if (!tab) return;
+      tab.backgroundFit = e.target.value === 'contain' ? 'contain' : 'cover';
+      applyBg();
+    });
+  });
+
   document.getElementById('bstgOpacity').addEventListener('input', e => {
-    const board = getActiveBoard();
-    if (!board) return;
-    board.containerOpacity = parseInt(e.target.value);
-    document.getElementById('bstgOpacityVal').textContent = board.containerOpacity;
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.containerOpacity = parseInt(e.target.value);
+    document.getElementById('bstgOpacityVal').textContent = tab.containerOpacity;
     applyBg();
   });
 
@@ -238,8 +243,10 @@ function attachBoardSettingsListeners() {
   const bstgSharedTagsEl = document.getElementById('bstgSharedTags');
   bstgSharedTagsEl.addEventListener('input', e => {
     const board = getActiveBoard();
-    if (!board) return;
-    board.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    tab.sharedTags = e.target.value.trim().split(/\s+/).filter(Boolean);
+    syncBoardCompatibilityFields(board, tab.id);
     renderBoard();
   });
   initChipInput(bstgSharedTagsEl, tagChipOpts());
@@ -247,22 +254,28 @@ function attachBoardSettingsListeners() {
   const bstgTagsEl = document.getElementById('bstgTags');
   bstgTagsEl.addEventListener('input', e => {
     const board = getActiveBoard();
-    if (!board) return;
-    board.tags = e.target.value.trim().split(/\s+/).filter(Boolean);
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    tab.tags = e.target.value.trim().split(/\s+/).filter(Boolean);
+    syncBoardCompatibilityFields(board, tab.id);
   });
   initChipInput(bstgTagsEl, tagChipOpts());
 
   document.getElementById('bstgInheritTags').addEventListener('change', e => {
     const board = getActiveBoard();
-    if (!board) return;
-    board.inheritTags = e.target.checked;
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    tab.inheritTags = e.target.checked;
+    syncBoardCompatibilityFields(board, tab.id);
     renderBoard();
   });
 
   document.getElementById('bstgAutoRemove').addEventListener('change', e => {
     const board = getActiveBoard();
-    if (!board) return;
-    board.autoRemoveTags = e.target.checked;
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    tab.autoRemoveTags = e.target.checked;
+    syncBoardCompatibilityFields(board, tab.id);
   });
 
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
@@ -348,7 +361,7 @@ async function renderThemePicker() {
 
 const COLOR_DEFAULTS = {
   hubNameColor: '#e5e7eb', boardTitleColor: '#e5e7eb', boardColor: '#e5e7eb',
-  bookmarkColor: '#e5e7eb', folderColor: '#e5e7eb', collectionColor: '#e5e7eb',
+  bookmarkColor: '#e5e7eb', folderColor: '#e5e7eb',
   titleColor: '#9ca3af', titleLineColor: '#3a3c42'
 };
 
@@ -364,10 +377,10 @@ const FONT_OPTIONS = [
   { value: 'Consolas, monospace', label: 'Consolas' },
 ];
 
-const STYLE_SECTIONS = ['hubName', 'boardTitle', 'board', 'bookmark', 'folder', 'collection', 'title'];
+const STYLE_SECTIONS = ['hubName', 'boardTitle', 'board', 'bookmark', 'folder', 'title'];
 
 function populateFontSelects() {
-  ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgCollectionFamily','stgTitleFamily'].forEach(id => {
+  ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgTitleFamily'].forEach(id => {
     const sel = document.getElementById(id);
     if (sel.options.length) return;
     FONT_OPTIONS.forEach(({ value, label }) => {
@@ -490,6 +503,18 @@ async function updateAboutBridgeStatus() {
   storageNoteEl.textContent = info.nativeReady && info.databasePath
     ? `Primary storage is the shared disk file at ${info.databasePath}. localStorage is only a browser-local cache.`
     : 'Without the native host, the hub stores data in browser localStorage. Use Export JSON in General to keep regular backups.';
+
+  updateSidebarExtensionStatus(info);
+}
+
+async function updateSidebarExtensionStatus(info = null) {
+  const el = document.getElementById('sidebarExtensionStatus');
+  if (!el) return;
+  const bridgeInfo = info || await getBridgeStorageInfo();
+  const detected = bridgeInfo.extensionReady;
+  el.textContent = detected ? 'Extension detected' : 'Extension not detected';
+  el.classList.toggle('is-detected', detected);
+  el.classList.toggle('is-missing', !detected);
 }
 
 function showSettingsPanel(tab = 'general') {
@@ -498,7 +523,7 @@ function showSettingsPanel(tab = 'general') {
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
-  makeDraggable(panel, document.getElementById('stgDragHandle'));
+  makeDraggable(panel, panel.querySelector('.settings-header'));
   const targetTab = panel.querySelector(`.settings-tab[data-tab="${tab}"]`);
   const body = panel.querySelector('.settings-body[data-active-tab]');
   if (targetTab) {
@@ -525,7 +550,6 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
   document.getElementById('stgApiKeyNasa').value = s.serviceApiKeys?.nasa || '';
   document.getElementById('stgFolderFont').value = s.folderFontSize;
-  document.getElementById('stgCollectionFont').value = s.collectionFontSize || 15;
   document.getElementById('stgTitleFont').value = s.titleFontSize;
   document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
   document.getElementById('stgBoardTitleFont').value = s.boardTitleFontSize;
@@ -537,7 +561,6 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgBoardFamily').value      = s.boardFontFamily || '';
   document.getElementById('stgBookmarkFamily').value   = s.bookmarkFontFamily || '';
   document.getElementById('stgFolderFamily').value      = s.folderFontFamily || '';
-  document.getElementById('stgCollectionFamily').value  = s.collectionFontFamily || '';
   document.getElementById('stgTitleFamily').value       = s.titleFontFamily || '';
   document.querySelectorAll('.fmt-btn').forEach(btn => btn.classList.toggle('active', !!s[btn.dataset.fmt]));
   document.querySelectorAll('.align-btn').forEach(btn => btn.classList.toggle('active', (s[btn.dataset.alignKey] || 'left') === btn.dataset.alignVal));
@@ -560,9 +583,29 @@ function showSettingsPanel(tab = 'general') {
   updateAboutBridgeStatus();
 }
 
+function showTagManagerPanel() {
+  document.getElementById('modalCard').classList.add('hidden');
+  const panel = document.getElementById('tagManagerPanel');
+  if (!panel) return;
+  panel.classList.remove('hidden');
+  elements.modalOverlay.classList.remove('hidden');
+  centerPanel(panel);
+  makeDraggable(panel, panel.querySelector('.settings-header'));
+  renderTagGroups();
+  updateUndoRedoUI();
+}
+
 function hideSettingsPanel() {
   renderAll();
   document.getElementById('settingsPanel').classList.add('hidden');
+  document.getElementById('modalCard').classList.remove('hidden');
+  elements.modalOverlay.classList.add('hidden');
+  saveState();
+}
+
+function hideTagManagerPanel() {
+  renderAll();
+  document.getElementById('tagManagerPanel')?.classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
   elements.modalOverlay.classList.add('hidden');
   saveState();
@@ -1518,7 +1561,6 @@ function attachSettingsListeners() {
   numSetting('stgBoardFont',      'boardFontSize',      10, 24);
   numSetting('stgBookmarkFont',   'bookmarkFontSize',   10, 24);
   numSetting('stgFolderFont',     'folderFontSize',     10, 24);
-  numSetting('stgCollectionFont', 'collectionFontSize', 10, 24);
   numSetting('stgTitleFont',      'titleFontSize',       8, 24);
   numSetting('stgBoardTitleFont', 'boardTitleFontSize', 14, 48);
   numSetting('stgHubNameFont',    'hubNameFontSize',    10, 48);
@@ -1550,7 +1592,6 @@ function attachSettingsListeners() {
   familySetting('stgBoardFamily',      'boardFontFamily');
   familySetting('stgBookmarkFamily',   'bookmarkFontFamily');
   familySetting('stgFolderFamily',     'folderFontFamily');
-  familySetting('stgCollectionFamily', 'collectionFontFamily');
   familySetting('stgTitleFamily',      'titleFontFamily');
 
   document.querySelectorAll('.fmt-btn').forEach(btn => {
@@ -1656,6 +1697,7 @@ function attachSettingsListeners() {
   document.getElementById('stgRedoBtn').addEventListener('click', () => { redo(); renderTagGroups(); });
 
   document.getElementById('settingsDoneBtn').addEventListener('click', hideSettingsPanel);
+  document.getElementById('tagManagerDoneBtn')?.addEventListener('click', hideTagManagerPanel);
 
   const databasePathInput = document.getElementById('stgDatabasePath');
   const applyDatabasePath = async path => {

@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.48';
+const APP_VERSION = '0.11.50';
 
 let activeModal = null;
 let contextTarget = null;
@@ -20,8 +20,11 @@ let redoStack = [];
 // --- Bulk selection ---
 
 let selectedItemIds = new Set();
+let selectionContext = null;
 
-function toggleItemSelection(itemId, itemEl) {
+function toggleItemSelection(itemId, itemEl, context = 'board') {
+  if (selectionContext && selectionContext !== context) clearSelection();
+  selectionContext = context;
   if (selectedItemIds.has(itemId)) {
     selectedItemIds.delete(itemId);
     itemEl?.classList.remove('selected');
@@ -29,11 +32,13 @@ function toggleItemSelection(itemId, itemEl) {
     selectedItemIds.add(itemId);
     itemEl?.classList.add('selected');
   }
+  if (selectedItemIds.size === 0) selectionContext = null;
   updateBulkToolbar();
 }
 
 function clearSelection() {
   selectedItemIds.clear();
+  selectionContext = null;
   document.querySelectorAll('.board-column-item.selected').forEach(el => el.classList.remove('selected'));
   updateBulkToolbar();
 }
@@ -41,10 +46,12 @@ function clearSelection() {
 function updateBulkToolbar() {
   const toolbar = document.getElementById('bulkToolbar');
   const countEl = document.getElementById('bulkCount');
+  const moveBtn = document.getElementById('bulkMoveBtn');
   if (!toolbar) return;
   const n = selectedItemIds.size;
   toolbar.classList.toggle('hidden', n === 0);
   if (countEl) countEl.textContent = `${n} selected`;
+  if (moveBtn) moveBtn.textContent = selectionContext === 'import-manager' ? 'Send to Tab Inbox…' : 'Move to Tab Inbox…';
 }
 
 function pushUndoSnapshot() {
@@ -220,6 +227,14 @@ async function checkForExternalSharedDiskChanges() {
   const baselineVersion = getSharedDiskBaselineVersion();
   if (liveVersion === baselineVersion) return;
   if (liveVersion === null && baselineVersion === null) return;
+  const loaded = await bridge.loadState();
+  const liveJson = loaded?.json || null;
+  const currentJson = typeof serializeStateSnapshot === 'function' ? serializeStateSnapshot() : JSON.stringify(state);
+  if (liveJson && liveJson === currentJson) {
+    setSharedDiskBaseline(loaded?.fileInfo || live?.fileInfo || null, livePath);
+    localStorage.setItem(STORAGE_KEY, currentJson);
+    return;
+  }
   if (sharedDiskReloadPromptOpen || confirmDialogIsOpen()) return;
   if (hasPendingSharedDiskChanges()) {
     sharedDiskReloadPromptOpen = true;
@@ -256,14 +271,12 @@ function formatTimeSince(ts) {
 function getTrashItemLabel(entry) {
   const a = entry.source?.area;
   if (a === 'nav-board') return 'Board';
-  if (a === 'collection-board') return 'Board';
   if (a === 'folder-board') return 'Board';
   if (a === 'nav-item') {
     const t = entry.item?.type;
     return t === 'folder' ? 'Nav folder' : t === 'title' ? 'Nav title' : 'Nav item';
   }
   if (a === 'speed-dial') return 'Speed dial';
-  if (a === 'collection') return 'Collection';
   if (a === 'essential') return 'Essential';
   const t = entry.item?.type;
   return t === 'folder' ? 'Folder' : t === 'bookmark' ? 'Bookmark' : t === 'title' ? 'Title' : 'Item';
@@ -285,7 +298,7 @@ function renderTrashPanel() {
   clearBtn.disabled = false;
   list.innerHTML = '';
   for (const entry of recentlyDeleted) {
-    const name = entry.item?.title || entry.item?.collection?.title || entry.item?.navItem?.title || entry.item?.board?.title || '(untitled)';
+    const name = entry.item?.title || entry.item?.navItem?.title || entry.item?.board?.title || '(untitled)';
     const div = document.createElement('div');
     div.className = 'trash-item';
     div.innerHTML = `
@@ -361,7 +374,7 @@ function centerPanel(panel) {
 function attachEventListeners() {
   document.getElementById('aboutBtn').addEventListener('click', () => showSettingsPanel('about'));
   elements.quickSearchBtn?.addEventListener('click', () => openSearchModal({}));
-  elements.quickTagManagerBtn?.addEventListener('click', () => showSettingsPanel('tag-manager'));
+  elements.quickTagManagerBtn?.addEventListener('click', showTagManagerPanel);
   elements.quickSettingsBtn?.addEventListener('click', () => showSettingsPanel('general'));
   document.getElementById('trashBtn').addEventListener('click', showTrashPanel);
   document.getElementById('trashCloseBtn').addEventListener('click', hideTrashPanel);
@@ -388,8 +401,19 @@ function attachEventListeners() {
   document.getElementById('bulkDeleteBtn').addEventListener('click', () => {
     const n = selectedItemIds.size;
     if (!n) return;
-    showConfirmDialog(`Delete ${n} selected ${n > 1 ? 'items' : 'item'}?`, () => {
+    const isImportSelection = selectionContext === 'import-manager';
+    showConfirmDialog(isImportSelection
+      ? `Delete ${n} selected imported ${n > 1 ? 'items' : 'item'}?`
+      : `Delete ${n} selected ${n > 1 ? 'items' : 'item'}?`, () => {
       pushUndoSnapshot();
+      if (isImportSelection) {
+        const toDelete = collectSelectedImportManagerItems(selectedItemIds);
+        toDelete.forEach(item => removeImportManagerItemById(item.id));
+        clearSelection();
+        renderAll();
+        saveState();
+        return;
+      }
       const board = getActiveBoard();
       for (const itemId of [...selectedItemIds]) {
         const found = findBoardItemInColumns(board, itemId);
@@ -408,17 +432,22 @@ function attachEventListeners() {
     showModal('bulkAddTags', { title: 'Add Tags to Selected', showName: false, showTags: true });
   });
   document.getElementById('bulkMoveBtn').addEventListener('click', () => {
+    const isImportSelection = selectionContext === 'import-manager';
     const ab = getActiveBoard();
-    const boards = ab?.isImportManager
-      ? state.boards.filter(b => !b.isImportManager)
-      : state.boards.filter(b => !b.isImportManager && b.id !== ab?.id);
-    if (!boards.length) { alert('No other boards to move to.'); return; }
+    const activeTab = getActiveTab();
+    const selectOptions = _sortedInboxTargetOptions(
+      state.boards.filter(b => !b.locked),
+      isImportSelection
+        ? {}
+        : { excludeBoardId: ab?.id || null, excludeTabId: activeTab?.id || null }
+    );
+    if (!selectOptions.length) { alert('No other tab inboxes to move to.'); return; }
     showModal('bulkMoveToBoard', {
-      title: 'Move Selected to Board',
+      title: isImportSelection ? 'Send Selected to Tab Inbox' : 'Move Selected to Tab Inbox',
       showName: false,
       showSelect: true,
-      selectLabel: 'Target board',
-      selectOptions: _sortedBoardOptions(boards)
+      selectLabel: 'Target tab inbox',
+      selectOptions
     });
   });
   document.getElementById('bulkDeselectBtn').addEventListener('click', clearSelection);
@@ -434,24 +463,25 @@ function attachEventListeners() {
   });
 
   elements.boardSettingsBtn.addEventListener('click', () => {
-    if (state.activeCollectionId) {
-      const coll = findCollectionById(state.activeCollectionId);
-      if (coll) {
-        contextTarget = { collectionId: coll.id, item: coll };
-        showModal('editCollection', {
-          title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
-          showTags: true, showSharedTags: true, showSharedTagsOptions: true,
-          showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(coll),
-          collectionShowSpeedDial: coll.showSpeedDial !== false,
-          inheritTags: coll.inheritTags !== false,
-          autoRemoveTags: coll.autoRemoveTags === true,
-          value3: (coll.tags || []).join(' '),
-          value4: (coll.sharedTags || []).join(' ')
-        });
-        return;
-      }
-    }
-    showBoardSettingsPanel();
+    showBoardMetaModal('edit');
+  });
+  elements.speedDialToggleBtn?.addEventListener('click', () => {
+    const board = getActiveBoardContainer();
+    if (!board) return;
+    pushUndoSnapshot();
+    board.showSpeedDial = board.showSpeedDial === false;
+    renderBoard();
+    saveState();
+  });
+  elements.setBarToggleBtn?.addEventListener('click', () => {
+    const board = getActiveBoardContainer();
+    const tab = getActiveTab();
+    if (!board || !tab) return;
+    pushUndoSnapshot();
+    tab.showSetBar = tab.showSetBar === false;
+    syncBoardCompatibilityFields(board, tab.id);
+    renderBoard();
+    saveState();
   });
   makeDraggable(document.getElementById('modalCard'), document.getElementById('modalCardHeader'));
   elements.modalCancelBtn.addEventListener('click', hideModal);
@@ -463,6 +493,8 @@ function attachEventListeners() {
       cancelBoardSettingsPanel();
     } else if (!document.getElementById('trashPanel').classList.contains('hidden')) {
       hideTrashPanel();
+    } else if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) {
+      hideImportManagerPanel();
     } else {
       hideModal();
     }
@@ -492,7 +524,7 @@ function attachEventListeners() {
   elements.speedDial.addEventListener('contextmenu', event => {
     if (event.target.closest('.speed-link')) return;
     event.preventDefault();
-    if (!state.activeCollectionId && getActiveBoard()?.locked) return;
+    if (getActiveBoard()?.locked) return;
     contextTarget = { area: 'speed-dial' };
     showContextMenu(event.clientX, event.clientY, [
       { label: 'Add bookmark', action: 'addSpeedDialBookmark' }
@@ -636,7 +668,9 @@ function attachEventListeners() {
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
     if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) { hideSetManagerPanel(); return; }
+    if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) { hideImportManagerPanel(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
+    if (!document.getElementById('tagManagerPanel').classList.contains('hidden')) { hideTagManagerPanel(); return; }
     if (!document.getElementById('settingsPanel').classList.contains('hidden')) { hideSettingsPanel(); return; }
     if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) { cancelBoardSettingsPanel(); return; }
     if (selectedItemIds.size > 0) { clearSelection(); return; }
@@ -655,7 +689,7 @@ function attachEventListeners() {
     const { url, title } = e.detail;
     const board = getActiveBoard();
     if (!board || board.locked) return;
-    const inbox = getBoardInbox(board);
+    const inbox = getBoardInbox(board, getActiveTab());
     if (!inbox) return;
     pushUndoSnapshot();
     inbox.items.push({
@@ -682,9 +716,11 @@ attachSettingsListeners();
 attachBoardSettingsListeners();
 attachFolderModalListeners();
 attachInboxListeners();
+attachImportManagerListeners();
 attachSetPanelListeners();
 attachBookmarkImportListener();
 renderAll();
+if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
 localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 updateUndoRedoUI();
 try {

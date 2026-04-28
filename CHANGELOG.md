@@ -5,6 +5,31 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.50] — 2026-04-28
+
+### Added
+
+- **Global sets** — added reusable bookmark launch groups with a dedicated Sets Manager, live inline editing, search integration, bookmark context-menu `Add to Set...`, and bulk-open support.
+- **Tab set bars** — tabs can now link global sets directly in the board shell, with context-menu launch/manage/remove actions and DnD from the Sets Manager.
+- **Import Manager panel** — bookmark HTML imports now stage in a dedicated Import Manager utility panel with its own sidebar entry, item tree, bulk selection, and tab-inbox delivery flow.
+
+### Changed
+
+- **Board/tab overhaul** — replaced the old collection-aware runtime model with top-level boards that own embedded tabs, board-level speed dial, and tab-level set bars.
+- **Board and tab editing flow** — board creation/editing now uses the old collection-style modal role, while tab editing uses the old board-settings modal role.
+- **Import delivery model** — inbox delivery is now tab-aware across Import Manager sends, bulk move flows, and extension tab send, and the Import Manager button now shows a staged-item indicator badge.
+- **UI shell cleanup** — Tag Manager, Sets Manager, and settings-style panels now follow the current modal/header patterns more closely, drag from their headers, and use the updated sidebar/footer presentation.
+- **Project backlog cleanup** — removed actioned overhaul and UI items from `TODO.md` so the backlog reflects only remaining work.
+
+### Fixed
+
+- **Set DnD polish** — set-manager reordering and copy-in drops now use stable preview-clone behavior without flicker, hidden-source glitches, or incorrect bottom-drop handling.
+- **Import Manager pseudo-board leftovers** — removed the remaining board/nav behavior assumptions so Import Manager no longer appears as a fake board or empty-state main-panel content.
+- **Tag and bookmark modal regressions** — restored inherited-tag display in bookmark/folder modals and fixed collection-speed-dial-era edit flows that surfaced blank bookmark edit dialogs.
+- **Collection-era behavior leftovers** — removed old collection-specific search, trash, move, tag inheritance, modal, context-menu, and DnD paths that no longer belonged to the live board/tab model.
+
+---
+
 ## [0.11.48] — 2026-04-26
 
 ### Added

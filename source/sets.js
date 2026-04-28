@@ -185,6 +185,7 @@ function renderSetManagerPanel() {
     row.type = 'button';
     row.className = `sets-manager-row${set.id === selectedSetId ? ' active' : ''}`;
     row.dataset.setId = set.id;
+    row.draggable = true;
 
     const iconWrap = document.createElement('span');
     iconWrap.className = 'sets-manager-row-icon';
@@ -221,6 +222,18 @@ function renderSetManagerPanel() {
         { label: 'Manage set', action: 'editSet' },
         { label: 'Delete set', action: 'deleteSet' }
       ]);
+    });
+    row.addEventListener('dragstart', event => {
+      dragPayload = { area: 'set-row', setId: set.id };
+      event.dataTransfer.setData('text/plain', set.id);
+      event.dataTransfer.effectAllowed = 'copyMove';
+      applyDragImage(event, row);
+      requestAnimationFrame(() => row.classList.add('dragging'));
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      dragPayload = null;
+      removeDragPlaceholders();
     });
 
     listEl.appendChild(row);
@@ -265,7 +278,6 @@ function _canCopyBookmarkIntoSet() {
   if (!dragPayload) return false;
   if (dragPayload.area === 'board') return dragPayload.itemType === 'bookmark';
   if (dragPayload.area === 'speed-dial') return true;
-  if (dragPayload.area === 'collection-speed-dial') return true;
   if (dragPayload.area === 'essential') return !!state.essentials?.[dragPayload.slot];
   if (dragPayload.area === 'set-manager') return dragPayload.setId !== selectedSetId;
   return false;
@@ -279,9 +291,6 @@ function _getBookmarkFromSetDragPayload() {
   }
   if (dragPayload.area === 'speed-dial') {
     return getActiveBoard()?.speedDial?.find(item => item?.id === dragPayload.itemId) || null;
-  }
-  if (dragPayload.area === 'collection-speed-dial') {
-    return findCollectionById(dragPayload.collectionId)?.speedDial?.find(item => item?.id === dragPayload.itemId) || null;
   }
   if (dragPayload.area === 'essential') {
     return state.essentials?.[dragPayload.slot] || null;

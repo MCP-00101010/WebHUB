@@ -68,21 +68,22 @@ function hideContextMenu() {
 }
 
 function _sortedBoardOptions(boards) {
-  const withMeta = boards.map(b => {
-    const coll = findBoardCollection(b.id);
-    return { value: b.id, label: coll ? `${coll.title} — ${b.title}` : b.title, collTitle: coll?.title ?? null, boardTitle: b.title };
-  });
-  withMeta.sort((a, b) => {
-    const aInColl = a.collTitle !== null;
-    const bInColl = b.collTitle !== null;
-    if (aInColl !== bInColl) return aInColl ? 1 : -1;
-    if (aInColl) {
-      const cc = a.collTitle.localeCompare(b.collTitle);
-      if (cc !== 0) return cc;
-    }
-    return a.boardTitle.localeCompare(b.boardTitle);
-  });
-  return withMeta.map(({ value, label }) => ({ value, label }));
+  return [...boards]
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+    .map(board => ({ value: board.id, label: board.title || 'Untitled Board' }));
+}
+
+function _sortedInboxTargetOptions(boards, options = {}) {
+  const excludeBoardId = options.excludeBoardId || null;
+  const excludeTabId = options.excludeTabId || null;
+  return [...boards]
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+    .flatMap(board => (board.tabs || [])
+      .filter(tab => !(board.id === excludeBoardId && tab.id === excludeTabId))
+      .map(tab => ({
+        value: `${board.id}::${tab.id}`,
+        label: `${board.title || 'Untitled Board'} / ${tab.title || 'Untitled Tab'}`
+      })));
 }
 
 function _buildAddToSetSubmenu() {
@@ -122,10 +123,44 @@ function handleContextMenuAction(action) {
       const boardId = contextTarget.item?.boardId;
       if (boardId) {
         state.activeBoardId = boardId;
+        state.activeTabId = state.boards.find(b => b.id === boardId)?.tabs?.[0]?.id || state.activeTabId;
         renderAll();
         saveState();
-        showBoardSettingsPanel();
+        showBoardMetaModal('edit', state.boards.find(b => b.id === boardId) || null);
       }
+      break;
+    }
+    case 'addBoardTab': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+      if (!board) break;
+      pushUndoSnapshot();
+      createBoardTab(board, 'New Tab');
+      renderAll();
+      saveState();
+      showBoardSettingsPanel(true);
+      break;
+    }
+    case 'editBoardTab': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+      const tab = findBoardTabById(board, contextTarget.tabId);
+      if (!tab) break;
+      state.activeBoardId = board.id;
+      state.activeTabId = tab.id;
+      renderAll();
+      saveState();
+      showBoardSettingsPanel();
+      break;
+    }
+    case 'deleteBoardTab': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+      const tab = findBoardTabById(board, contextTarget.tabId);
+      if (!board || !tab) break;
+      confirmDelete('confirmDeleteTab', `Delete tab "${tab.title}" and all its content?`, () => {
+        pushUndoSnapshot();
+        if (!removeBoardTab(board, tab.id)) return;
+        renderAll();
+        saveState();
+      });
       break;
     }
     case 'openSet':
@@ -134,6 +169,17 @@ function handleContextMenuAction(action) {
     case 'editSet':
       if (contextTarget.setId || contextTarget.item?.id) showSetManagerForSet(contextTarget.setId || contextTarget.item.id, { focusTitle: true });
       break;
+    case 'removeSetFromTabBar': {
+      const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+      const tab = findBoardTabById(board, contextTarget.tabId);
+      if (!tab || !contextTarget.setId) break;
+      pushUndoSnapshot();
+      tab.setBar = (tab.setBar || []).filter(id => id !== contextTarget.setId);
+      syncBoardCompatibilityFields(board, tab.id);
+      renderAll();
+      saveState();
+      break;
+    }
     case 'editSpeedDial':
     case 'editBookmark':
       showModal('editBookmark', {
@@ -234,74 +280,64 @@ function handleContextMenuAction(action) {
       }, 'Remove');
       break;
     }
+    case 'sendImportToInbox': {
+      const boards = state.boards.filter(b => !b.locked);
+      const options = _sortedInboxTargetOptions(boards);
+      if (!options.length) break;
+      showModal('moveToBoard', {
+        title: 'Send to Tab Inbox',
+        showName: false,
+        showSelect: true,
+        selectLabel: 'Target tab inbox',
+        selectOptions: options,
+        contextTarget
+      });
+      break;
+    }
+    case 'deleteImportItem': {
+      const item = findImportManagerItemById(contextTarget.itemId)?.item || contextTarget.item;
+      if (!item) break;
+      const label = item.type === 'folder'
+        ? `Delete folder "${item.title}" and all imported contents?`
+        : `Delete "${item.title || item.url || 'bookmark'}" from Import Manager?`;
+      showConfirmDialog(label, () => {
+        pushUndoSnapshot();
+        removeImportManagerItemById(item.id);
+        renderImportManagerPanel();
+        saveState();
+      }, 'Delete');
+      break;
+    }
+    case 'openAllImports':
+      if (contextTarget.item?.type === 'folder') _openImportFolder(contextTarget.item);
+      break;
     case 'addBoard':
-      pushUndoSnapshot();
-      createBoard('New Board');
-      renderAll();
-      saveState();
-      showBoardSettingsPanel(true);
+      showBoardMetaModal('create');
       break;
     case 'addCollection':
-      showModal('addCollection', {
-        title: 'New Collection', placeholder1: 'Collection Name', value1: '',
-        showTags: true, showSharedTags: true, showSharedTagsOptions: true,
-        showSpeedDialSlots: true, speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
-        collectionShowSpeedDial: true,
-        autoRemoveTags: true
-      });
+      showBoardMetaModal('create');
       break;
     case 'editCollection': {
-      const coll = contextTarget.item;
-      if (!coll) break;
-      contextTarget = { ...contextTarget, collectionId: coll.id };
-      showModal('editCollection', {
-        title: 'Edit Collection', placeholder1: 'Collection Name', value1: coll.title,
-        showTags: true, showSharedTags: true, showSharedTagsOptions: true,
-        showSpeedDialSlots: true, speedDialSlotCount: getSpeedDialSlotCount(coll),
-        collectionShowSpeedDial: coll.showSpeedDial !== false,
-        inheritTags: coll.inheritTags !== false,
-        autoRemoveTags: coll.autoRemoveTags === true,
-        value3: (coll.tags || []).join(' '),
-        value4: (coll.sharedTags || []).join(' ')
-      });
-      break;
-    }
-    case 'addBoardToCollection': {
-      const coll = contextTarget.item || findCollectionById(contextTarget.collectionId);
-      if (!coll) break;
-      pushUndoSnapshot();
-      createBoardInCollection(coll, 'New Board');
+      const board = contextTarget.item?.boardId
+        ? state.boards.find(b => b.id === contextTarget.item.boardId)
+        : (contextTarget.item?.id ? state.boards.find(b => b.id === contextTarget.item.id) : getActiveBoardContainer());
+      if (!board) break;
+      state.activeBoardId = board.id;
+      state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
       renderAll();
       saveState();
-      showBoardSettingsPanel(true);
-      break;
-    }
-    case 'deleteCollection': {
-      const coll = contextTarget.item;
-      if (!coll) break;
-      const boardCount = (coll.boardIds || []).length;
-      const msg = boardCount
-        ? `Delete collection "${coll.title}" and its ${boardCount} board${boardCount > 1 ? 's' : ''}?`
-        : `Delete collection "${coll.title}"?`;
-      showConfirmDialog(msg, () => {
-        pushUndoSnapshot();
-        const boardIds = new Set(coll.boardIds || []);
-        const boards = state.boards.filter(b => boardIds.has(b.id)).map(b => cloneData(b));
-        pushToTrash({ collection: cloneData(coll), boards }, { area: 'collection' });
-        removeNavItemById(coll.id);
-        state.boards = state.boards.filter(b => !boardIds.has(b.id));
-        if (state.activeCollectionId === coll.id || boardIds.has(state.activeBoardId)) {
-          const next = findNextNavBoard(state.navItems);
-          state.activeCollectionId = null;
-          state.activeBoardId = next ? next.boardId : null;
-        }
-        renderAll(); saveState(); updateTrashBadge();
-      }, 'Delete');
+      showBoardMetaModal('edit', board);
       break;
     }
     case 'editBoardFromTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) { state.activeBoardId = board.id; renderBoard(); showBoardSettingsPanel(); }
+      if (board) {
+        state.activeBoardId = board.id;
+        state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
+        renderBoard();
+        saveState();
+        showBoardMetaModal('edit', board);
+      }
       break;
     }
     case 'unlockBoardFromTab': {
@@ -309,48 +345,15 @@ function handleContextMenuAction(action) {
       if (board) { board.locked = false; renderAll(); saveState(); }
       break;
     }
-    case 'removeFromCollection': {
-      const coll = findCollectionById(contextTarget.collectionId);
-      if (!coll) break;
-      pushUndoSnapshot();
-      coll.boardIds = (coll.boardIds || []).filter(id => id !== contextTarget.boardId);
-      const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) {
-        if (coll.autoRemoveTags && coll.sharedTags?.length) {
-          const toStrip = new Set(coll.sharedTags);
-          board.tags = (board.tags || []).filter(t => !toStrip.has(t));
-        }
-        state.navItems.push({ id: `nav-${contextTarget.boardId}`, type: 'board', title: board.title, boardId: contextTarget.boardId });
-      }
-      if (state.activeBoardId === contextTarget.boardId) {
-        state.activeCollectionId = coll.boardIds.length ? coll.id : null;
-        if (coll.boardIds.length) state.activeBoardId = coll.boardIds[0];
-      }
-      renderAll(); saveState();
-      break;
-    }
-    case 'deleteBoardFromCollection': {
-      const coll = findCollectionById(contextTarget.collectionId);
-      const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (!coll || !board) break;
-      const boardId = contextTarget.boardId;
-      const collectionId = contextTarget.collectionId;
-      confirmDelete('confirmDeleteBoard', `Delete board "${board.title}" and all its content?`, () => {
-        pushUndoSnapshot();
-        pushToTrash({ board: cloneData(board) }, { area: 'collection-board', collectionId });
-        coll.boardIds = (coll.boardIds || []).filter(id => id !== boardId);
-        state.boards = state.boards.filter(b => b.id !== boardId);
-        if (state.activeBoardId === boardId) {
-          state.activeBoardId = coll.boardIds[0] || null;
-          if (!coll.boardIds.length) state.activeCollectionId = null;
-        }
-        renderAll(); saveState(); updateTrashBadge();
-      });
-      break;
-    }
     case 'editBoardFromFolderTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) { state.activeBoardId = board.id; renderBoard(); showBoardSettingsPanel(); }
+      if (board) {
+        state.activeBoardId = board.id;
+        state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
+        renderBoard();
+        saveState();
+        showBoardMetaModal('edit', board);
+      }
       break;
     }
     case 'unlockBoardFromFolderTab': {
@@ -393,36 +396,10 @@ function handleContextMenuAction(action) {
       const folderForAdd = _findNavItem(contextTarget.folderId || contextTarget.itemId);
       if (!folderForAdd) break;
       pushUndoSnapshot();
-      createBoardInFolder(folderForAdd, 'New Board');
-      renderAll(); saveState(); showBoardSettingsPanel(true);
-      break;
-    }
-    case 'editCollectionSpeedDial':
-      showModal('editBookmark', { item: contextTarget.item, area: 'collection-speed-dial', collectionId: contextTarget.collectionId });
-      break;
-    case 'duplicateCollectionSpeedDial': {
-      const srcColl = findCollectionById(contextTarget.collectionId);
-      if (srcColl) {
-        pushUndoSnapshot();
-        const dup = { ...cloneData(contextTarget.item), id: `bm-${Date.now()}` };
-        const slot = firstEmptySpeedDialSlot(srcColl);
-        if (slot === -1 || !setSpeedDialSlot(srcColl, slot, dup)) alert('No empty speed dial slot available.');
-        renderAll(); saveState();
-      }
-      break;
-    }
-    case 'refreshCollectionSpeedDialFavicon': {
-      const item = contextTarget.item;
-      if (item?.url) { item.faviconCache = ''; renderAll(); saveState(); }
-      break;
-    }
-    case 'deleteCollectionSpeedDial': {
-      const srcColl = findCollectionById(contextTarget.collectionId);
-      if (srcColl) {
-        pushUndoSnapshot();
-        removeSpeedDialItemById(srcColl, contextTarget.itemId);
-        renderAll(); saveState();
-      }
+      const board = createBoardInFolder(folderForAdd, 'New Board');
+      renderAll();
+      saveState();
+      if (board) showBoardMetaModal('edit', board);
       break;
     }
     case 'addNavFolder':
@@ -493,7 +470,8 @@ function handleContextMenuAction(action) {
     case 'addEssential':
       showModal('addBookmark', {
         title: 'New Bookmark', placeholder1: 'New Bookmark',
-        showUrl: true, placeholder2: 'Bookmark URL', showTags: true
+        showUrl: true, placeholder2: 'Bookmark URL', showTags: true,
+        contextTarget, inheritedTags: getContextInheritedTags(contextTarget)
       });
       break;
     case 'editEssential':
@@ -564,21 +542,16 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'moveToBoard': {
-      const cab = getActiveBoard();
       const area = contextTarget.area;
-      // Speed dial and essentials are not board-scoped, so offer all boards.
-      // Board items exclude the current board (already there); import manager gets all regular boards.
-      const boards = (area === 'speed-dial-item' || area === 'essential' || area === 'collection-speed-dial')
-        ? state.boards.filter(b => !b.isImportManager && !b.locked)
-        : cab?.isImportManager
-          ? state.boards.filter(b => !b.isImportManager && !b.locked)
-          : state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== cab?.id);
+      const boards = state.boards.filter(b => !b.locked);
+      const selectOptions = _sortedInboxTargetOptions(boards);
+      if (!selectOptions.length) break;
       showModal('moveToBoard', {
-        title: 'Move to Board',
+        title: 'Move to Tab Inbox',
         showName: false,
         showSelect: true,
-        selectLabel: 'Target board',
-        selectOptions: _sortedBoardOptions(boards),
+        selectLabel: 'Target tab inbox',
+        selectOptions,
         contextTarget
       });
       break;
@@ -684,14 +657,17 @@ function handleContextMenuAction(action) {
           }
         }
       } else if (action.startsWith('moveToBoard:')) {
-        const targetBoardId = action.slice('moveToBoard:'.length);
+        const targetValue = action.slice('moveToBoard:'.length);
+        const [targetBoardId, targetTabId] = targetValue.split('::');
         const targetBoard = state.boards.find(b => b.id === targetBoardId);
-        if (targetBoard && !targetBoard.locked && contextTarget?.item) {
+        const targetTab = targetBoard ? findBoardTabById(targetBoard, targetTabId) : null;
+        const targetInbox = targetBoard && targetTab ? getBoardInbox(targetBoard, targetTab) : null;
+        if (targetBoard && targetTab && targetInbox && !targetBoard.locked && contextTarget?.item) {
           pushUndoSnapshot();
           const capturedItem = cloneData(contextTarget.item);
           if (!capturedItem.tags) capturedItem.tags = [];
           deleteBoardTarget(contextTarget);
-          (getBoardInbox(targetBoard) || targetBoard.columns[0]).items.push(capturedItem);
+          targetInbox.items.push(capturedItem);
           renderAll();
           saveState();
         }
@@ -707,6 +683,19 @@ function handleContextMenuAction(action) {
             : 'Unable to add this bookmark to the selected set.');
           return;
         }
+        renderAll();
+        saveState();
+      } else if (action.startsWith('addSetToTabBar:')) {
+        const setId = action.slice('addSetToTabBar:'.length);
+        const board = state.boards.find(b => b.id === contextTarget.boardId) || getActiveBoardContainer();
+        const tab = findBoardTabById(board, contextTarget.tabId || state.activeTabId);
+        const set = findSetById(setId);
+        if (!board || !tab || !set) return;
+        if ((tab.setBar || []).includes(setId)) return;
+        pushUndoSnapshot();
+        if (!Array.isArray(tab.setBar)) tab.setBar = [];
+        tab.setBar.push(setId);
+        syncBoardCompatibilityFields(board, tab.id);
         renderAll();
         saveState();
       } else if (action === 'createSetFromBookmark') {
@@ -738,24 +727,22 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
   }
 
   const activeBoard = getActiveBoard();
-  const regularBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
-  const canMoveToBoard = activeBoard?.isImportManager
-    ? regularBoards.length > 0
-    : regularBoards.filter(b => b.id !== activeBoard?.id).length > 0;
+  const regularBoards = state.boards.filter(b => !b.locked);
+  const canMoveToBoard = regularBoards.some(board => (board.tabs || []).length > 0);
 
   if (item.type === 'folder') {
     options.push({ label: 'Edit folder', action: 'editFolder' });
     options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
     options.push({ label: 'Open all', action: 'openAll' });
     if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
-    if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });
+    if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     options.push({ label: 'Delete folder', action: 'deleteItem' });
   } else if (item.type === 'bookmark') {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
     options.push({ label: 'Add to Set...', action: '', submenu: _buildAddToSetSubmenu() });
     options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
-    if (canMoveToBoard) options.push({ label: 'Move to board', action: 'moveToBoard' });
+    if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
@@ -790,28 +777,11 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
     options.push({ label: 'Delete', action: 'deleteNavItem' });
-  } else if (item.type === 'collection') {
-    options.push({ label: 'Edit collection', action: 'editCollection' });
-    options.push({ label: 'Add board', action: 'addBoardToCollection' });
-    options.push({ label: 'Delete collection', action: 'deleteCollection' });
   } else if (item.type === 'widget') {
     options.push({ label: 'Widget settings', action: 'editWidget' });
     options.push({ label: 'Delete widget', action: 'deleteNavItem' });
   }
 
-  showContextMenu(event.clientX, event.clientY, options);
-}
-
-function handleCollectionTabContextMenu(event, boardId, collection) {
-  contextTarget = { area: 'collection-tab', boardId, collectionId: collection.id };
-  const board = state.boards.find(b => b.id === boardId);
-  const options = board?.locked
-    ? [{ label: 'Unlock board', action: 'unlockBoardFromTab' }]
-    : [
-        { label: 'Edit board', action: 'editBoardFromTab' },
-        { label: 'Remove from collection', action: 'removeFromCollection' },
-        { label: 'Delete board', action: 'deleteBoardFromCollection' }
-      ];
   showContextMenu(event.clientX, event.clientY, options);
 }
 
@@ -828,19 +798,6 @@ function handleFolderTabContextMenu(event, navItem, folder) {
   showContextMenu(event.clientX, event.clientY, options);
 }
 
-function handleCollectionSpeedDialContextMenu(event, item, collection, slot = findSpeedDialSlot(collection, item.id)) {
-  contextTarget = { area: 'collection-speed-dial', itemId: item.id, collectionId: collection.id, slot, item };
-  const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked);
-  showContextMenu(event.clientX, event.clientY, [
-    { label: 'Edit bookmark', action: 'editCollectionSpeedDial' },
-    { label: 'Add to Set...', action: '', submenu: _buildAddToSetSubmenu() },
-    { label: 'Duplicate', action: 'duplicateCollectionSpeedDial' },
-    { label: 'Refresh favicon', action: 'refreshCollectionSpeedDialFavicon' },
-    ...(allBoards.length ? [{ label: 'Move to board', action: 'moveToBoard' }] : []),
-    { label: 'Delete bookmark', action: 'deleteCollectionSpeedDial' }
-  ]);
-}
-
 function handleEssentialContextMenu(event, slot, item) {
   contextTarget = { area: 'essential', slot, item };
   const options = item
@@ -849,7 +806,7 @@ function handleEssentialContextMenu(event, slot, item) {
         { label: 'Add to Set...',    action: '', submenu: _buildAddToSetSubmenu() },
         { label: 'Duplicate',        action: 'duplicateBookmark' },
         { label: 'Refresh favicon',  action: 'refreshFavicon' },
-        { label: 'Move to board',    action: 'moveToBoard' },
+        { label: 'Move to tab inbox', action: 'moveToBoard' },
         { label: 'Delete bookmark',  action: 'deleteEssential' }
       ]
     : [{ label: 'Add bookmark', action: 'addEssential' }];
@@ -859,16 +816,15 @@ function handleEssentialContextMenu(event, slot, item) {
 function handleSpeedDialContextMenu(event, item, slot = findSpeedDialSlot(getActiveBoard(), item.id)) {
   if (getActiveBoard()?.locked) return;
   contextTarget = { area: 'speed-dial-item', itemId: item.id, slot, item };
-  const cab = getActiveBoard();
-  const boards = state.boards.filter(b => !b.isImportManager && !b.locked);
-  const canMove = boards.length > 0;
+  const boards = state.boards.filter(b => !b.locked);
+  const canMove = boards.some(board => (board.tabs || []).length > 0);
   const options = [
     { label: 'Edit bookmark',   action: 'editSpeedDial' },
     { label: 'Add to Set...',   action: '', submenu: _buildAddToSetSubmenu() },
     { label: 'Duplicate',       action: 'duplicateBookmark' },
     { label: 'Refresh favicon', action: 'refreshFavicon' },
   ];
-  if (canMove) options.push({ label: 'Move to board', action: 'moveToBoard' });
+  if (canMove) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
   options.push({ label: 'Delete bookmark', action: 'deleteSpeedDial' });
   showContextMenu(event.clientX, event.clientY, options);
 }
@@ -930,9 +886,9 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Add to Set...',   action: '', submenu: _buildAddToSetSubmenu() });
     options.push({ label: 'Duplicate',        action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
-    const allBoards = state.boards.filter(b => !b.isImportManager && !b.locked && b.id !== meta.boardId);
+    const allBoards = state.boards.filter(b => !b.locked);
     if (allBoards.length) {
-      options.push({ label: 'Move to board', submenu: _sortedBoardOptions(allBoards).map(o => ({ ...o, action: `moveToBoard:${o.value}` })) });
+      options.push({ label: 'Move to tab inbox', submenu: _sortedInboxTargetOptions(allBoards).map(o => ({ ...o, action: `moveToBoard:${o.value}` })) });
     }
     options.push({ label: 'Show in board',   action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
@@ -952,7 +908,6 @@ function handleNavListContextMenu(event) {
     .map(([type, def]) => ({ label: def.name, action: `addNavWidget:${type}` }));
   const items = [
     { label: 'Add board', action: 'addBoard' },
-    { label: 'Add collection', action: 'addCollection' },
     { label: 'Add folder', action: 'addNavFolder' },
     { label: 'Add title', action: 'addNavTitle' },
     { label: 'Add divider', action: 'addNavDivider' }

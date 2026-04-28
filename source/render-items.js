@@ -76,7 +76,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     const checkbox = document.createElement('div');
     checkbox.className = 'item-checkbox';
     if (!effectiveLocked) {
-      checkbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl); });
+      checkbox.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); toggleItemSelection(item.id, itemEl, 'board'); });
     }
     header.appendChild(checkbox);
 
@@ -138,14 +138,13 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     const inherited = computeInheritedTags(item, board);
     const ownTags = item.tags || [];
     const sharedTags = item.type === 'folder' ? (item.sharedTags || []) : [];
+    const allTags = [...new Set([...ownTags, ...inherited, ...sharedTags])];
 
-    if (ownTags.length || inherited.length || sharedTags.length) {
-      const tagGrid = document.createElement('div');
-      tagGrid.className = 'item-tag-grid';
-      if (ownTags.length) appendTagRow(tagGrid, 'Tags', ownTags);
-      if (inherited.length) appendTagRow(tagGrid, 'Inherited', inherited);
-      if (sharedTags.length) appendTagRow(tagGrid, 'Shared', sharedTags);
-      itemEl.appendChild(tagGrid);
+    if (allTags.length) {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'item-tag-chips';
+      renderTagsInto(tagsEl, allTags);
+      itemEl.appendChild(tagsEl);
     }
 
     // --- Bookmark-specific ---
