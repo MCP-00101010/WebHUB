@@ -5,6 +5,25 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.54] — 2026-04-29
+
+### Added
+
+- **Live Theme Editor** — Theme Settings now includes a full in-app editor for theme colors, scheme, radius, and shadow with immediate preview while you edit.
+
+### Changed
+
+- **Theme workflow** — added `New`, `Duplicate`, `Save`, `Save As…`, `Delete`, and `Revert Preview` flows for custom themes, using hub-native modals instead of system prompts.
+- **Theme picker polish** — built-in and custom themes now have clearer active and edited states, plus collapsible sections to reduce scrolling while editing.
+- **Theme scope simplification** — removed the temporary disk-theme UI path again so themes stay focused on built-ins and in-app custom themes only.
+
+### Fixed
+
+- **Theme modal layering** — duplicate/save-as naming modals now stay above Settings without closing the underlying settings panel.
+- **Theme delete fallback** — deleting a duplicated custom theme now returns to its source theme instead of always falling back to `Default Dark`.
+
+---
+
 ## [0.11.53] — 2026-04-28
 
 ### Changed
