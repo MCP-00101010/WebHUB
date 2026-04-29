@@ -24,14 +24,14 @@ const BUILTIN_THEMES = [
     }
   },
   {
-    id: 'dracula',
-    name: 'Dracula',
+    id: 'lcars',
+    name: 'LCARS',
     builtin: true,
     colorScheme: 'dark',
     colors: {
-      bg: '#282a36', panel: '#21222c', panelStrong: '#343746', panelMuted: '#2a2c3a',
-      border: '#44475a', text: '#f8f8f2', textMuted: '#6272a4',
-      accent: '#bd93f9', accentStrong: '#9d79d9', danger: '#ff5555',
+      bg: '#120d1a', panel: '#1d1528', panelStrong: '#2c2140', panelMuted: '#231934',
+      border: '#7a4f3a', text: '#ffe7bf', textMuted: '#d1a679',
+      accent: '#ff9f43', accentStrong: '#ff7a3d', danger: '#ff5f6d',
       radius: '18px', shadow: '0 20px 40px rgba(0,0,0,0.5)'
     }
   },
@@ -72,14 +72,38 @@ const BUILTIN_THEMES = [
     }
   },
   {
-    id: 'catppuccin-mocha',
-    name: 'Catppuccin Mocha',
+    id: 'matrix',
+    name: 'Matrix',
     builtin: true,
     colorScheme: 'dark',
     colors: {
-      bg: '#1e1e2e', panel: '#181825', panelStrong: '#313244', panelMuted: '#1e1e2e',
-      border: '#45475a', text: '#cdd6f4', textMuted: '#6c7086',
-      accent: '#cba6f7', accentStrong: '#b4a0f5', danger: '#f38ba8',
+      bg: '#050906', panel: '#08120b', panelStrong: '#0d1b11', panelMuted: '#09150d',
+      border: '#163824', text: '#b7ffbf', textMuted: '#5fa16b',
+      accent: '#3efc6b', accentStrong: '#16c94a', danger: '#ff5c5c',
+      radius: '18px', shadow: '0 20px 40px rgba(0,0,0,0.55)'
+    }
+  },
+  {
+    id: 'supernova',
+    name: 'Supernova',
+    builtin: true,
+    colorScheme: 'dark',
+    colors: {
+      bg: '#090d17', panel: '#11182a', panelStrong: '#18233a', panelMuted: '#121c30',
+      border: '#2e4a66', text: '#edf7ff', textMuted: '#8aa5bf',
+      accent: '#ffbf3c', accentStrong: '#ff8a1f', danger: '#ff5f6d',
+      radius: '18px', shadow: '0 20px 40px rgba(0,0,0,0.52)'
+    }
+  },
+  {
+    id: 'cyberpunk',
+    name: 'Cyberpunk',
+    builtin: true,
+    colorScheme: 'dark',
+    colors: {
+      bg: '#0f0614', panel: '#1a0c23', panelStrong: '#251235', panelMuted: '#180d27',
+      border: '#4d2a63', text: '#f8e7ff', textMuted: '#a97bc5',
+      accent: '#22f0ff', accentStrong: '#00b6d1', danger: '#ff4d8a',
       radius: '18px', shadow: '0 20px 40px rgba(0,0,0,0.5)'
     }
   }
@@ -132,6 +156,10 @@ function getThemeById(id) {
   return BUILTIN_THEMES.find(t => t.id === id)
     || custom.find(t => t.id === id)
     || BUILTIN_THEMES[0];
+}
+
+function getResolvedThemeId(id) {
+  return getThemeById(id)?.id || BUILTIN_THEMES[0].id;
 }
 
 function getAllThemes() {

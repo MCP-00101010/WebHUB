@@ -283,76 +283,624 @@ function attachBoardSettingsListeners() {
 
 // --- Theme picker ---
 
-async function renderThemePicker() {
+const THEME_EDITOR_COLOR_FIELDS = [
+  { key: 'bg', label: 'Background' },
+  { key: 'panel', label: 'Panel' },
+  { key: 'panelStrong', label: 'Panel strong' },
+  { key: 'panelMuted', label: 'Panel muted' },
+  { key: 'border', label: 'Border' },
+  { key: 'text', label: 'Text' },
+  { key: 'textMuted', label: 'Text muted' },
+  { key: 'accent', label: 'Accent' },
+  { key: 'accentStrong', label: 'Accent strong' },
+  { key: 'danger', label: 'Danger' }
+];
+
+let _themeEditorDraft = null;
+let _themeNameModalSubmit = null;
+let _themeEditorSelection = null;
+let _themeEditorSavedTheme = null;
+let _themeGroupCollapsed = { builtin: false, custom: false };
+
+function cloneThemeForEditor(theme) {
+  const base = cloneData(theme || getThemeById('default-dark'));
+  const defaults = cloneData(getThemeById('default-dark'));
+  base.id = base.id || defaults.id;
+  base.name = base.name || defaults.name;
+  base.builtin = !!base.builtin;
+  base.colorScheme = base.colorScheme === 'light' ? 'light' : 'dark';
+  base.colors = { ...(defaults.colors || {}), ...(base.colors || {}) };
+  return base;
+}
+
+function inferThemeSelection(theme) {
+  if (theme && !theme.builtin && (state.settings.customThemes || []).some(t => t.id === theme.id)) {
+    return { source: 'custom', id: theme.id || '' };
+  }
+  return { source: 'builtin', id: theme?.id || getResolvedThemeId(state.settings.activeThemeName || 'default-dark') };
+}
+
+function getThemeSelectionKey(selection = _themeEditorSelection) {
+  if (!selection) return '';
+  return `${selection.source || 'builtin'}:${selection.id || ''}`;
+}
+
+function loadThemeEditor(theme = null, selection = null) {
+  const loadedTheme = cloneThemeForEditor(theme || getThemeById(state.settings.activeThemeName || 'default-dark'));
+  _themeEditorDraft = cloneThemeForEditor(loadedTheme);
+  _themeEditorSavedTheme = cloneThemeForEditor(loadedTheme);
+  _themeEditorSelection = selection || inferThemeSelection(theme || loadedTheme);
+  if (_themeEditorSelection?.source) _themeGroupCollapsed[_themeEditorSelection.source] = false;
+  renderThemeEditor();
+}
+
+function showThemeNameModal({ title, submitLabel, initialName = '', placeholder = 'Theme name', onSubmit }) {
+  _themeNameModalSubmit = async value => {
+    try {
+      return await onSubmit(value);
+    } finally {
+      _themeNameModalSubmit = null;
+    }
+  };
+  showModal('themeName', {
+    title,
+    value1: initialName,
+    placeholder1: placeholder,
+    submitLabel
+  });
+}
+
+function _themeEditorApplyDraft() {
+  if (!_themeEditorDraft) return;
+  applyTheme(_themeEditorDraft);
+}
+
+function _themeEditorIsValidHex(value) {
+  return /^#[0-9a-f]{6}$/i.test((value || '').trim());
+}
+
+function _themeEditorSerialize(theme) {
+  const normalized = cloneThemeForEditor(theme);
+  return JSON.stringify({
+    id: normalized.id,
+    name: normalized.name,
+    builtin: normalized.builtin,
+    colorScheme: normalized.colorScheme,
+    colors: normalized.colors
+  });
+}
+
+function _themeEditorGetSavedTheme() {
+  return cloneThemeForEditor(_themeEditorSavedTheme || getThemeById(state.settings.activeThemeName || 'default-dark'));
+}
+
+function _themeEditorSlugify(name) {
+  return (name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || `theme-${Date.now()}`;
+}
+
+function _themeEditorCanDirectSave() {
+  if (!_themeEditorDraft || _themeEditorDraft.builtin) return false;
+  return (state.settings.customThemes || []).some(theme => theme.id === _themeEditorDraft.id);
+}
+
+function _themeEditorCanDeleteSavedTheme() {
+  if (!_themeEditorDraft) return false;
+  return !!(!_themeEditorDraft.builtin && _themeEditorDraft.id === state.settings.activeThemeName);
+}
+
+function _themeEditorResolveSourceThemeId(theme = _themeEditorDraft) {
+  const draftSourceId = theme?.sourceThemeId;
+  if (draftSourceId && draftSourceId !== theme?.id && getThemeById(draftSourceId)) return draftSourceId;
+  const activeId = state.settings.activeThemeName || 'default-dark';
+  if (activeId && activeId !== theme?.id && getThemeById(activeId)) return activeId;
+  return 'default-dark';
+}
+
+function _themeEditorAllThemeNames() {
+  return getAllThemes().map(theme => theme.name || '').filter(Boolean);
+}
+
+function _themeEditorEnsureUniqueName(baseName) {
+  const existing = new Set(_themeEditorAllThemeNames());
+  if (!existing.has(baseName)) return baseName;
+  let i = 2;
+  while (existing.has(`${baseName} ${i}`)) i++;
+  return `${baseName} ${i}`;
+}
+
+function _themeEditorEnsureUniqueId(baseId) {
+  const existing = new Set(getAllThemes().map(theme => theme.id));
+  if (!existing.has(baseId)) return baseId;
+  let i = 2;
+  while (existing.has(`${baseId}-${i}`)) i++;
+  return `${baseId}-${i}`;
+}
+
+function _themeEditorUpdateActionButtons() {
+  const duplicateBtn = document.getElementById('stgDuplicateThemeBtn');
+  const deleteBtn = document.getElementById('stgDeleteThemeBtn');
+  const saveBtn = document.getElementById('stgSaveThemeBtn');
+  const saveAsBtn = document.getElementById('stgSaveThemeAsBtn');
+  if (duplicateBtn) duplicateBtn.disabled = !_themeEditorDraft;
+  if (deleteBtn) deleteBtn.disabled = !_themeEditorCanDeleteSavedTheme();
+  if (saveBtn) {
+    saveBtn.disabled = !_themeEditorDraft;
+    saveBtn.textContent = _themeEditorCanDirectSave() ? 'Save' : 'Save As…';
+  }
+  if (saveAsBtn) saveAsBtn.disabled = !_themeEditorDraft;
+}
+
+function _themePickerBuildBadges(card, { isActive, isEdited, isBuiltin }) {
+  let badges = card.querySelector('.theme-card-badges');
+  if (!badges) {
+    badges = document.createElement('div');
+    badges.className = 'theme-card-badges';
+    card.prepend(badges);
+  }
+  badges.innerHTML = '';
+
+  if (isActive) {
+    const activeBadge = document.createElement('span');
+    activeBadge.className = 'theme-card-badge theme-card-badge--active';
+    activeBadge.textContent = 'Active';
+    badges.appendChild(activeBadge);
+  }
+
+  if (isEdited) {
+    const editedBadge = document.createElement('span');
+    editedBadge.className = 'theme-card-badge theme-card-badge--edited';
+    editedBadge.textContent = 'Edited';
+    badges.appendChild(editedBadge);
+  } else if (!isBuiltin) {
+    const customBadge = document.createElement('span');
+    customBadge.className = 'theme-card-badge theme-card-badge--custom';
+    customBadge.textContent = 'Custom';
+    badges.appendChild(customBadge);
+  }
+}
+
+function toggleThemeGroupCollapsed(source) {
+  if (!source) return;
+  _themeGroupCollapsed[source] = !_themeGroupCollapsed[source];
+  syncThemeGroupVisibility();
+}
+
+function syncThemeGroupVisibility() {
+  document.querySelectorAll('.theme-group').forEach(section => {
+    const source = section.dataset.themeGroup || '';
+    const collapsed = !!_themeGroupCollapsed[source];
+    section.classList.toggle('is-collapsed', collapsed);
+    const toggle = section.querySelector('.theme-group-toggle');
+    if (toggle) toggle.textContent = collapsed ? '+' : '−';
+  });
+}
+
+function syncThemePickerUiState() {
   const container = document.getElementById('stgThemePicker');
-  const hint = document.getElementById('stgThemeHint');
-  const active = state.settings.activeThemeName || 'default-dark';
+  if (!container) return;
+  const active = getResolvedThemeId(state.settings.activeThemeName || 'default-dark');
+  const selectedKey = getThemeSelectionKey() || `builtin:${active}`;
+  const hasEditedPreview = themeEditorHasUnsavedPreview();
+  container.querySelectorAll('.theme-card').forEach(card => {
+    const isActive = card.dataset.themeKey === selectedKey;
+    const isEdited = isActive && hasEditedPreview;
+    const isBuiltin = card.dataset.themeBuiltin === '1';
+    card.classList.toggle('active', isActive);
+    card.classList.toggle('theme-card--edited', isEdited);
+    _themePickerBuildBadges(card, { isActive, isEdited, isBuiltin });
+  });
+  syncThemeGroupVisibility();
+}
 
-  let diskThemes = [];
-  if (typeof bridge !== 'undefined' && bridge.nativeIsAvailable()) {
-    diskThemes = await bridge.listThemes();
-    const count = diskThemes.length;
-    hint.textContent = count ? `${count} theme${count !== 1 ? 's' : ''} in ./themes/` : '';
-  } else {
-    hint.textContent = '';
+function themeEditorHasUnsavedPreview() {
+  if (!_themeEditorDraft) return false;
+  return _themeEditorSerialize(_themeEditorDraft) !== _themeEditorSerialize(_themeEditorGetSavedTheme());
+}
+
+function updateThemeEditorDraftUiState() {
+  const meta = document.getElementById('stgThemeEditorMeta');
+  const revertBtn = document.getElementById('stgThemeEditorRevertBtn');
+  const draft = _themeEditorDraft;
+  const dirty = themeEditorHasUnsavedPreview();
+  if (meta && draft) {
+    meta.textContent = `${draft.builtin ? 'Built-in' : 'Custom'} theme · ${dirty ? 'preview modified' : 'live preview'}`;
   }
+  if (revertBtn) revertBtn.disabled = !dirty;
+  _themeEditorUpdateActionButtons();
+  syncThemePickerUiState();
+}
 
-  const allThemes = [...getAllThemes()];
-  for (const dt of diskThemes) {
-    if (!allThemes.find(t => t.id === dt.id)) allThemes.push(dt);
+function revertThemeEditorToSavedTheme() {
+  const saved = _themeEditorGetSavedTheme();
+  _themeEditorDraft = saved;
+  applyTheme(saved);
+  renderThemeEditor();
+}
+
+function createNewThemeDraft() {
+  const draft = cloneThemeForEditor(getThemeById('default-dark'));
+  draft.id = `draft-${Date.now()}`;
+  draft.name = 'New Theme';
+  draft.builtin = false;
+  _themeEditorDraft = draft;
+  _themeEditorSelection = { source: 'draft', id: draft.id };
+  _themeEditorApplyDraft();
+  renderThemeEditor();
+}
+
+async function duplicateThemeDraft() {
+  const source = cloneThemeForEditor(_themeEditorDraft || _themeEditorGetSavedTheme());
+  const sourceThemeId = source.id;
+  showThemeNameModal({
+    title: 'Duplicate Theme',
+    submitLabel: 'Duplicate',
+    initialName: `${source.name || 'Theme'} Copy`,
+    onSubmit: async requestedName => {
+      if (!requestedName?.trim()) return false;
+      const duplicateName = _themeEditorEnsureUniqueName(requestedName.trim());
+      source.id = _themeEditorEnsureUniqueId(_themeEditorSlugify(duplicateName));
+      source.name = duplicateName;
+      source.builtin = false;
+      source.sourceThemeId = sourceThemeId;
+      await persistThemeDraft(source);
+      return true;
+    }
+  });
+}
+
+async function persistThemeDraft(theme) {
+  if (!theme) return;
+  if (!state.settings.customThemes) state.settings.customThemes = [];
+  if (!Array.isArray(state.settings.deletedThemeIds)) state.settings.deletedThemeIds = [];
+  const savedTheme = cloneThemeForEditor(theme);
+  savedTheme.builtin = false;
+  savedTheme.sourceThemeId = _themeEditorResolveSourceThemeId(savedTheme);
+  const idx = state.settings.customThemes.findIndex(t => t.id === savedTheme.id);
+  if (idx >= 0) state.settings.customThemes[idx] = savedTheme;
+  else state.settings.customThemes.push(savedTheme);
+  state.settings.deletedThemeIds = state.settings.deletedThemeIds.filter(id => id !== savedTheme.id);
+  state.settings.activeThemeName = savedTheme.id;
+  _themeEditorDraft = cloneThemeForEditor(savedTheme);
+  _themeEditorSavedTheme = cloneThemeForEditor(savedTheme);
+  _themeEditorSelection = { source: 'custom', id: savedTheme.id };
+  applyTheme(savedTheme);
+  saveState();
+  await renderThemePicker();
+}
+
+async function deleteThemeDraft() {
+  if (!_themeEditorCanDeleteSavedTheme()) return;
+  const themeId = _themeEditorDraft.id;
+  const fallbackId = _themeEditorResolveSourceThemeId(_themeEditorDraft);
+  if (!Array.isArray(state.settings.deletedThemeIds)) state.settings.deletedThemeIds = [];
+  state.settings.customThemes = (state.settings.customThemes || []).filter(theme => theme.id !== themeId);
+  if (!state.settings.deletedThemeIds.includes(themeId)) state.settings.deletedThemeIds.push(themeId);
+  state.settings.activeThemeName = fallbackId;
+  const fallback = getThemeById(fallbackId) || getThemeById('default-dark');
+  _themeEditorDraft = cloneThemeForEditor(fallback);
+  _themeEditorSavedTheme = cloneThemeForEditor(fallback);
+  _themeEditorSelection = inferThemeSelection(fallback);
+  applyTheme(fallback);
+  saveState();
+  await renderThemePicker();
+}
+
+async function saveThemeDraftAs() {
+  if (!_themeEditorDraft) return;
+  const defaultName = _themeEditorDraft.name || 'New Theme';
+  showThemeNameModal({
+    title: 'Save Theme As',
+    submitLabel: 'Save',
+    initialName: defaultName,
+    onSubmit: async name => {
+      if (!name?.trim()) return false;
+      const trimmed = name.trim();
+      const theme = cloneThemeForEditor(_themeEditorDraft);
+      theme.id = _themeEditorSlugify(trimmed);
+      theme.name = trimmed;
+      theme.builtin = false;
+      await persistThemeDraft(theme);
+      return true;
+    }
+  });
+}
+
+async function saveThemeDraft() {
+  if (!_themeEditorDraft) return;
+  if (_themeEditorCanDirectSave()) {
+    const theme = cloneThemeForEditor(_themeEditorDraft);
+    theme.builtin = false;
+    await persistThemeDraft(theme);
+    return;
   }
+  await saveThemeDraftAs();
+}
 
+function renderThemeEditor() {
+  const container = document.getElementById('stgThemeEditor');
+  if (!container) return;
+  if (!_themeEditorDraft) _themeEditorDraft = cloneThemeForEditor(getThemeById(state.settings.activeThemeName || 'default-dark'));
+
+  const draft = _themeEditorDraft;
   container.innerHTML = '';
-  for (const theme of allThemes) {
-    const card = document.createElement('div');
-    card.className = 'theme-card' + (theme.id === active ? ' active' : '');
-    card.dataset.themeId = theme.id;
 
-    const swatches = document.createElement('div');
-    swatches.className = 'theme-swatches';
-    for (const color of [theme.colors.bg, theme.colors.panel, theme.colors.accent, theme.colors.text]) {
-      const s = document.createElement('div');
-      s.className = 'theme-swatch';
-      s.style.background = color;
-      swatches.appendChild(s);
-    }
+  const card = document.createElement('div');
+  card.className = 'theme-editor-card';
 
-    const name = document.createElement('div');
-    name.className = 'theme-name';
-    name.textContent = theme.name;
+  const header = document.createElement('div');
+  header.className = 'theme-editor-header';
 
-    card.appendChild(swatches);
-    card.appendChild(name);
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'theme-editor-title-wrap';
 
-    if (!theme.builtin) {
-      const del = document.createElement('button');
-      del.type = 'button';
-      del.className = 'theme-delete-btn';
-      del.title = 'Delete theme';
-      del.textContent = '×';
-      del.addEventListener('click', e => {
-        e.stopPropagation();
-        state.settings.customThemes = (state.settings.customThemes || []).filter(t => t.id !== theme.id);
-        if (state.settings.activeThemeName === theme.id) {
-          state.settings.activeThemeName = 'default-dark';
-          applyTheme(getThemeById('default-dark'));
-        }
-        saveState();
-        renderThemePicker();
-      });
-      card.appendChild(del);
-    }
+  const title = document.createElement('div');
+  title.className = 'theme-editor-title';
+  title.textContent = draft.name || 'Untitled Theme';
+  titleWrap.appendChild(title);
 
-    card.addEventListener('click', () => {
-      state.settings.activeThemeName = theme.id;
-      applyTheme(theme);
-      saveState();
-      container.querySelectorAll('.theme-card').forEach(c =>
-        c.classList.toggle('active', c.dataset.themeId === theme.id));
+  const meta = document.createElement('div');
+  meta.id = 'stgThemeEditorMeta';
+  meta.className = 'theme-editor-meta';
+  meta.textContent = `${draft.builtin ? 'Built-in' : 'Custom'} theme · ${themeEditorHasUnsavedPreview() ? 'preview modified' : 'live preview'}`;
+  titleWrap.appendChild(meta);
+
+  header.appendChild(titleWrap);
+
+  const headerControls = document.createElement('div');
+  headerControls.className = 'theme-editor-header-controls';
+
+  const schemeGroup = document.createElement('div');
+  schemeGroup.className = 'theme-editor-scheme';
+  ['dark', 'light'].forEach(value => {
+    const label = document.createElement('label');
+    label.className = 'theme-editor-scheme-option';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'themeEditorScheme';
+    input.value = value;
+    input.checked = draft.colorScheme === value;
+    input.addEventListener('change', () => {
+      draft.colorScheme = value;
+      _themeEditorApplyDraft();
+      updateThemeEditorDraftUiState();
+    });
+    const span = document.createElement('span');
+    span.textContent = value === 'dark' ? 'Dark' : 'Light';
+    label.appendChild(input);
+    label.appendChild(span);
+    schemeGroup.appendChild(label);
+  });
+  headerControls.appendChild(schemeGroup);
+
+  const revertBtn = document.createElement('button');
+  revertBtn.type = 'button';
+  revertBtn.id = 'stgThemeEditorRevertBtn';
+  revertBtn.className = 'secondary-btn theme-editor-revert-btn';
+  revertBtn.textContent = 'Revert Preview';
+  revertBtn.disabled = !themeEditorHasUnsavedPreview();
+  revertBtn.addEventListener('click', () => revertThemeEditorToSavedTheme());
+  headerControls.appendChild(revertBtn);
+
+  header.appendChild(headerControls);
+  card.appendChild(header);
+
+  const colorGrid = document.createElement('div');
+  colorGrid.className = 'theme-editor-grid';
+
+  THEME_EDITOR_COLOR_FIELDS.forEach(field => {
+    const row = document.createElement('label');
+    row.className = 'theme-editor-row';
+
+    const name = document.createElement('span');
+    name.className = 'theme-editor-row-label';
+    name.textContent = field.label;
+    row.appendChild(name);
+
+    const controls = document.createElement('div');
+    controls.className = 'theme-editor-row-controls';
+
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.className = 'theme-editor-color';
+    colorInput.value = draft.colors[field.key];
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.className = 'theme-editor-text';
+    textInput.value = draft.colors[field.key];
+    textInput.spellcheck = false;
+
+    colorInput.addEventListener('input', () => {
+      draft.colors[field.key] = colorInput.value;
+      textInput.value = colorInput.value;
+      textInput.classList.remove('is-invalid');
+      _themeEditorApplyDraft();
+      updateThemeEditorDraftUiState();
     });
 
-    container.appendChild(card);
-  }
+    textInput.addEventListener('input', () => {
+      const value = textInput.value.trim();
+      const valid = _themeEditorIsValidHex(value);
+      textInput.classList.toggle('is-invalid', !valid && value.length > 0);
+      if (!valid) return;
+      draft.colors[field.key] = value;
+      colorInput.value = value;
+      _themeEditorApplyDraft();
+      updateThemeEditorDraftUiState();
+    });
+
+    textInput.addEventListener('blur', () => {
+      if (_themeEditorIsValidHex(textInput.value)) return;
+      textInput.value = draft.colors[field.key];
+      textInput.classList.remove('is-invalid');
+    });
+
+    controls.appendChild(colorInput);
+    controls.appendChild(textInput);
+    row.appendChild(controls);
+    colorGrid.appendChild(row);
+  });
+
+  card.appendChild(colorGrid);
+
+  const advanced = document.createElement('div');
+  advanced.className = 'theme-editor-advanced';
+
+  const radiusRow = document.createElement('label');
+  radiusRow.className = 'theme-editor-inline-row';
+  const radiusLabel = document.createElement('span');
+  radiusLabel.textContent = 'Radius';
+  const radiusInput = document.createElement('input');
+  radiusInput.type = 'text';
+  radiusInput.className = 'theme-editor-text';
+  radiusInput.value = draft.colors.radius || '';
+  radiusInput.spellcheck = false;
+  radiusInput.addEventListener('input', () => {
+    draft.colors.radius = radiusInput.value.trim() || '18px';
+    _themeEditorApplyDraft();
+    updateThemeEditorDraftUiState();
+  });
+  radiusRow.appendChild(radiusLabel);
+  radiusRow.appendChild(radiusInput);
+
+  const shadowRow = document.createElement('label');
+  shadowRow.className = 'theme-editor-inline-row theme-editor-inline-row--wide';
+  const shadowLabel = document.createElement('span');
+  shadowLabel.textContent = 'Shadow';
+  const shadowInput = document.createElement('input');
+  shadowInput.type = 'text';
+  shadowInput.className = 'theme-editor-text';
+  shadowInput.value = draft.colors.shadow || '';
+  shadowInput.spellcheck = false;
+  shadowInput.addEventListener('input', () => {
+    draft.colors.shadow = shadowInput.value.trim() || '0 20px 40px rgba(0,0,0,0.35)';
+    _themeEditorApplyDraft();
+    updateThemeEditorDraftUiState();
+  });
+  shadowRow.appendChild(shadowLabel);
+  shadowRow.appendChild(shadowInput);
+
+  advanced.appendChild(radiusRow);
+  advanced.appendChild(shadowRow);
+  card.appendChild(advanced);
+
+  const note = document.createElement('div');
+  note.className = 'theme-editor-note';
+  note.textContent = 'Changes preview immediately. Use Save or Save As… to keep the current look.';
+  card.appendChild(note);
+
+  container.appendChild(card);
+  updateThemeEditorDraftUiState();
+}
+
+async function renderThemePicker() {
+  const container = document.getElementById('stgThemePicker');
+  const active = getResolvedThemeId(state.settings.activeThemeName || 'default-dark');
+  const hasEditedPreview = themeEditorHasUnsavedPreview();
+  if (state.settings.activeThemeName !== active) state.settings.activeThemeName = active;
+  if (!Array.isArray(state.settings.deletedThemeIds)) state.settings.deletedThemeIds = [];
+
+  const builtinThemes = BUILTIN_THEMES;
+  const customThemes = (state.settings.customThemes || []).filter(theme => !state.settings.deletedThemeIds.includes(theme.id));
+
+  container.innerHTML = '';
+  const groups = [
+    { title: 'Built-in', className: 'theme-group--builtin', source: 'builtin', themes: builtinThemes },
+    { title: 'Custom', className: 'theme-group--custom', source: 'custom', themes: customThemes }
+  ];
+
+  groups.forEach(group => {
+    if (!group.themes.length) return;
+
+    const section = document.createElement('section');
+    section.className = `theme-group ${group.className}`;
+    section.dataset.themeGroup = group.source;
+
+    const header = document.createElement('div');
+    header.className = 'theme-group-header';
+    header.role = 'button';
+    header.tabIndex = 0;
+    header.addEventListener('click', () => toggleThemeGroupCollapsed(group.source));
+    header.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleThemeGroupCollapsed(group.source);
+    });
+
+    const title = document.createElement('div');
+    title.className = 'theme-group-title';
+    title.textContent = group.title;
+    header.appendChild(title);
+
+    const count = document.createElement('div');
+    count.className = 'theme-group-count';
+    count.textContent = `${group.themes.length} theme${group.themes.length !== 1 ? 's' : ''}`;
+    header.appendChild(count);
+
+    const toggle = document.createElement('div');
+    toggle.className = 'theme-group-toggle';
+    toggle.textContent = '−';
+    header.appendChild(toggle);
+
+    section.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'theme-picker';
+
+    group.themes.forEach(theme => {
+      const selection = { source: group.source, id: theme.id };
+      const isActive = getThemeSelectionKey(selection) === (getThemeSelectionKey() || `builtin:${active}`);
+      const isEdited = isActive && hasEditedPreview;
+      const card = document.createElement('div');
+      card.className = 'theme-card'
+        + (isActive ? ' active' : '')
+        + (group.source === 'custom' ? ' theme-card--custom' : '')
+        + (isEdited ? ' theme-card--edited' : '');
+      card.dataset.themeId = theme.id;
+      card.dataset.themeBuiltin = theme.builtin ? '1' : '0';
+      card.dataset.themeKey = getThemeSelectionKey(selection);
+      _themePickerBuildBadges(card, { isActive, isEdited, isBuiltin: !!theme.builtin });
+
+      const swatches = document.createElement('div');
+      swatches.className = 'theme-swatches';
+      for (const color of [theme.colors.bg, theme.colors.panel, theme.colors.accent, theme.colors.text]) {
+        const s = document.createElement('div');
+        s.className = 'theme-swatch';
+        s.style.background = color;
+        swatches.appendChild(s);
+      }
+
+      const name = document.createElement('div');
+      name.className = 'theme-name';
+      name.textContent = theme.name;
+
+      card.appendChild(swatches);
+      card.appendChild(name);
+
+      card.addEventListener('click', async () => {
+        state.settings.activeThemeName = theme.id;
+        applyTheme(theme);
+        loadThemeEditor(theme, selection);
+        saveState();
+        syncThemePickerUiState();
+      });
+
+      grid.appendChild(card);
+    });
+
+    section.appendChild(grid);
+    container.appendChild(section);
+  });
+
+  syncThemeGroupVisibility();
+  if (!_themeEditorDraft || _themeEditorDraft.id !== active) loadThemeEditor(getThemeById(active));
+  else renderThemeEditor();
 }
 
 
@@ -554,6 +1102,9 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
   document.getElementById('stgBoardTitleFont').value = s.boardTitleFontSize;
   document.getElementById('stgBoardFont').value = s.boardFontSize;
+  _themeEditorDraft = null;
+  _themeEditorSelection = null;
+  _themeEditorSavedTheme = null;
   populateFontSelects();
   document.getElementById('stgHubNameFont').value      = s.hubNameFontSize || 18;
   document.getElementById('stgHubNameFamily').value    = s.hubNameFontFamily || '';
@@ -596,6 +1147,11 @@ function showTagManagerPanel() {
 }
 
 function hideSettingsPanel() {
+  if (themeEditorHasUnsavedPreview()) {
+    const savedTheme = _themeEditorGetSavedTheme();
+    _themeEditorDraft = savedTheme;
+    applyTheme(savedTheme);
+  }
   renderAll();
   document.getElementById('settingsPanel').classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
@@ -1668,32 +2224,11 @@ function attachSettingsListeners() {
     });
   });
 
-  document.getElementById('stgSaveThemeBtn').addEventListener('click', async () => {
-    const name = prompt('Theme name:');
-    if (!name?.trim()) return;
-    const cs = getComputedStyle(document.documentElement);
-    const get = v => cs.getPropertyValue(v).trim();
-    const id = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const theme = {
-      id, name: name.trim(), builtin: false,
-      colorScheme: document.documentElement.style.colorScheme || 'dark',
-      colors: {
-        bg: get('--bg'), panel: get('--panel'), panelStrong: get('--panel-strong'),
-        panelMuted: get('--panel-muted'), border: get('--border'),
-        text: get('--text'), textMuted: get('--text-muted'),
-        accent: get('--accent'), accentStrong: get('--accent-strong'),
-        danger: get('--danger'), radius: get('--radius'), shadow: get('--shadow')
-      }
-    };
-    if (!state.settings.customThemes) state.settings.customThemes = [];
-    const idx = state.settings.customThemes.findIndex(t => t.id === id);
-    if (idx >= 0) state.settings.customThemes[idx] = theme;
-    else state.settings.customThemes.push(theme);
-    state.settings.activeThemeName = id;
-    saveState();
-    if (typeof bridge !== 'undefined' && bridge.nativeIsAvailable()) await bridge.saveTheme(theme);
-    renderThemePicker();
-  });
+  document.getElementById('stgNewThemeBtn').addEventListener('click', () => createNewThemeDraft());
+  document.getElementById('stgDuplicateThemeBtn').addEventListener('click', async () => { await duplicateThemeDraft(); });
+  document.getElementById('stgDeleteThemeBtn').addEventListener('click', async () => { await deleteThemeDraft(); });
+  document.getElementById('stgSaveThemeBtn').addEventListener('click', async () => { await saveThemeDraft(); });
+  document.getElementById('stgSaveThemeAsBtn').addEventListener('click', async () => { await saveThemeDraftAs(); });
 
   document.getElementById('stgAddGroupBtn').addEventListener('click', () => {
     if (!state.settings.tagGroups) state.settings.tagGroups = [];

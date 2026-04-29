@@ -210,7 +210,9 @@ function applySettings() {
   const essCols = { small: 8, medium: 6, large: 4 };
   r.setProperty('--essentials-cols', essCols[s.essentialsIconSize] || 6);
 
-  applyTheme(getThemeById(s.activeThemeName || 'default-dark'));
+  const activeThemeId = getResolvedThemeId(s.activeThemeName || 'default-dark');
+  if (s.activeThemeName !== activeThemeId) s.activeThemeName = activeThemeId;
+  applyTheme(getThemeById(activeThemeId));
 }
 
 function hexToRgba(hex, alpha) {

@@ -242,6 +242,8 @@ function showModal(type, options = {}) {
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
+  const submitBtn = document.getElementById('modalSubmitBtn');
+  if (submitBtn) submitBtn.textContent = options.submitLabel || 'Save';
   const selectLabel = document.getElementById('modalSelectLabel');
   if (selectLabel) selectLabel.textContent = options.selectLabel || 'Select';
   if (options.selectOptions) {
@@ -328,10 +330,30 @@ function parseBoardTabTargetValue(value) {
   return { board, tab };
 }
 
+function shouldKeepModalOverlayVisible() {
+  const persistentPanelIds = [
+    'settingsPanel',
+    'boardSettingsPanel',
+    'trashPanel',
+    'folderModal',
+    'searchModal',
+    'tagManagerPanel',
+    'widgetSettingsPanel',
+    'inboxPanel'
+  ];
+  if (persistentPanelIds.some(id => {
+    const el = document.getElementById(id);
+    return el && !el.classList.contains('hidden');
+  })) return true;
+  if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) return true;
+  if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) return true;
+  return false;
+}
+
 function hideModal() {
   activeModal = null;
   document.getElementById('modalCard').classList.add('hidden');
-  elements.modalOverlay.classList.add('hidden');
+  if (!shouldKeepModalOverlayVisible()) elements.modalOverlay.classList.add('hidden');
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
@@ -340,7 +362,7 @@ function hideModal() {
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
 
-function handleModalSubmit(event) {
+async function handleModalSubmit(event) {
   event.preventDefault();
   const value1 = elements.modalInput1.value.trim();
   const value2 = elements.modalInput2.value.trim();
@@ -418,6 +440,12 @@ function handleModalSubmit(event) {
     case 'addTitle':
       if (area === 'nav-empty') addNavSection({ type: 'title', title: value1 });
       else addBookmarkItem('title', value1, contextTarget?.columnId);
+      break;
+    case 'themeName':
+      if (typeof _themeNameModalSubmit === 'function') {
+        const result = await _themeNameModalSubmit(value1);
+        if (result === false) return;
+      }
       break;
     case 'renameItem':
       renameContextItem(value1, contextTarget);

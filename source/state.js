@@ -65,6 +65,7 @@ const defaultSettings = {
   },
   activeThemeName: 'default-dark',
   customThemes: [],
+  deletedThemeIds: [],
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
   showEssentials: true,

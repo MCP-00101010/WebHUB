@@ -1,9 +1,5 @@
 # TODO for Morpheus WebHub
 
-## Theme Settings
-
-- we can save the current theme... however we have actually no way of editing theme colors in the Hub. Theme Editor is needed inside the Theme Settings.
-
 ## Load/Save Database
 
 - monitor for any remaining false "shared database changed on disk before this browser finished saving" warnings after the shared-disk save queue changes, especially around rapid board/settings edits
