@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.54';
+const APP_VERSION = '0.11.55';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -583,6 +583,7 @@ function getTrashItemLabel(entry) {
   const a = entry.source?.area;
   if (a === 'nav-board') return 'Board';
   if (a === 'folder-board') return 'Board';
+  if (a === 'set') return 'Set';
   if (a === 'nav-item') {
     const t = entry.item?.type;
     return t === 'folder' ? 'Nav folder' : t === 'title' ? 'Nav title' : 'Nav item';

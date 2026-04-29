@@ -4,10 +4,6 @@
 
 - monitor for any remaining false "shared database changed on disk before this browser finished saving" warnings after the shared-disk save queue changes, especially around rapid board/settings edits
 
-## Sets
-
-- when deleting a set it should show up in the trash
-
 ## Drag and Drop
 
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover`; only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
@@ -23,7 +19,8 @@
 
 ## Tag Manager
 
-- when clicking on a tag, we should be able to rename it.
+- tag context menu for move to group shows "no other groups" entry. thats not needed.
+
 
 ## Documentation, Localization & Code Health
 

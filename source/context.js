@@ -261,6 +261,7 @@ function handleContextMenuAction(action) {
       if (!set) break;
       showConfirmDialog(`Delete set "${set.title}"?`, () => {
         pushUndoSnapshot();
+        pushToTrash(set, { area: 'set' });
         deleteSetById(set.id);
         if (selectedSetId === set.id) selectedSetId = null;
         renderAll();

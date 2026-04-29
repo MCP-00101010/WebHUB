@@ -281,11 +281,17 @@ function normalizeSetItems(items) {
   return out;
 }
 
+function generateSetId() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `set-${uuid}`;
+  return `set-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function normalizeSetRecord(set, index = 0) {
   const createdAt = typeof set?.createdAt === 'string' ? set.createdAt : new Date().toISOString();
   const updatedAt = typeof set?.updatedAt === 'string' ? set.updatedAt : createdAt;
   return {
-    id: set?.id || `set-${Date.now()}-${index}`,
+    id: set?.id || generateSetId(),
     title: (set?.title || '').trim() || 'Untitled Set',
     items: normalizeSetItems(set?.items),
     createdAt,
@@ -309,7 +315,7 @@ function touchSet(set) {
 function createSetRecord(title, options = {}) {
   const createdAt = options.createdAt || new Date().toISOString();
   return normalizeSetRecord({
-    id: options.id || `set-${Date.now()}`,
+    id: options.id || generateSetId(),
     title: (title || '').trim() || 'New Set',
     items: options.items || [],
     createdAt,
@@ -384,6 +390,17 @@ function deleteSetById(setId) {
   const index = state.sets.findIndex(set => set.id === setId);
   if (index === -1) return false;
   state.sets.splice(index, 1);
+  return true;
+}
+
+function restoreSetFromTrashItem(item) {
+  if (!item) return false;
+  if (!Array.isArray(state.sets)) state.sets = [];
+  const normalized = normalizeSetRecord(item, state.sets.length);
+  if (state.sets.some(set => set.id === normalized.id)) {
+    normalized.id = generateSetId();
+  }
+  state.sets.push(normalized);
   return true;
 }
 
@@ -1769,6 +1786,8 @@ function restoreFromTrash(trashId) {
         : (board.columns.find(c => c.id === source.columnId) || board.columns[0] || getBoardInbox(board));
       if (col) col.items.push(cloneData(item));
     }
+  } else if (source.area === 'set') {
+    return restoreSetFromTrashItem(item);
   }
   return true;
 }
@@ -1783,6 +1802,7 @@ function cleanTrashAfterRestore() {
     for (const tab of getBoardTabs(board)) walkItems(getBoardInbox(board, tab)?.items || []);
     for (const i of (board.speedDial || [])) if (i?.id) liveIds.add(i.id);
   }
+  for (const set of (state.sets || [])) if (set?.id) liveIds.add(set.id);
   for (const item of (state.essentials || [])) { if (item?.id) liveIds.add(item.id); }
   walkNav(state.navItems);
   const prev = recentlyDeleted.length;

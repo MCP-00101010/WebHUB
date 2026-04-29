@@ -1704,6 +1704,77 @@ function moveTagToGroupAt(tagId, targetGroupId, beforeTagId) {
 }
 
 function attachTagChipInteractions(wrapper, sourceGroupId) {
+  const beginInlineRename = chip => {
+    if (!chip || chip.dataset.renaming === '1') return;
+    const tagId = chip.dataset.value;
+    const tag = getTagById(tagId);
+    if (!tag) return;
+    const sourceGroup = sourceGroupId ? (state.settings.tagGroups || []).find(g => g.id === sourceGroupId) : null;
+    if (sourceGroup?.locked) return;
+
+    const label = chip.querySelector(':scope > span');
+    if (!label) return;
+
+    chip.dataset.renaming = '1';
+    chip.draggable = false;
+    chip.classList.add('tag-chip--renaming');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tag-chip-inline-input';
+    input.value = tag.name || '';
+    input.spellcheck = false;
+
+    const finish = (shouldSave = true) => {
+      const nextName = input.value.trim();
+      delete chip.dataset.renaming;
+      chip.classList.remove('tag-chip--renaming');
+      chip.draggable = true;
+      input.remove();
+      label.classList.remove('hidden');
+
+      if (!shouldSave || !nextName || nextName === tag.name) return;
+
+      const conflict = (state.tags || []).find(t =>
+        t.id !== tag.id
+        && (t.groupId || null) === (tag.groupId || null)
+        && t.name.toLowerCase() === nextName.toLowerCase()
+      );
+      if (conflict) {
+        showNotice(`This group already has a tag named "${nextName}".`);
+        return;
+      }
+
+      pushUndoSnapshot();
+      tag.name = nextName;
+      saveState();
+      updateUndoRedoUI();
+      renderTagGroups();
+    };
+
+    label.classList.add('hidden');
+    chip.insertBefore(input, chip.querySelector('.chip-remove-btn') || null);
+
+    const stop = e => {
+      e.stopPropagation();
+    };
+    ['mousedown', 'click', 'dblclick'].forEach(type => input.addEventListener(type, stop));
+    input.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+
+    input.focus();
+    input.select();
+  };
+
   const attach = chip => {
     if (chip.dataset.tagInteractions) return;
     chip.dataset.tagInteractions = '1';
@@ -1727,7 +1798,17 @@ function attachTagChipInteractions(wrapper, sourceGroupId) {
       const tagId = chip.dataset.value;
       if (tagId) showTagChipContextMenu(e.clientX, e.clientY, tagId, sourceGroupId);
     });
+    chip.addEventListener('dblclick', e => {
+      if (eventTargetElement(e)?.closest('.chip-remove-btn')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      beginInlineRename(chip);
+    });
     chip.addEventListener('dragstart', e => {
+      if (chip.dataset.renaming === '1') {
+        e.preventDefault();
+        return;
+      }
       const tagId = chip.dataset.value;
       if (!tagId) return;
       const sourceGroup = sourceGroupId ? (state.settings.tagGroups || []).find(g => g.id === sourceGroupId) : null;

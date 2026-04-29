@@ -5,6 +5,19 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.55] — 2026-04-29
+
+### Changed
+
+- **Tag Manager rename flow** — tags can now be renamed inline directly on their chips with double-click, keeping the Tag Manager interaction style lightweight and consistent.
+
+### Fixed
+
+- **Set deletion safety** — deleting a set now sends it to Trash so it can be restored instead of being removed permanently.
+- **Set ID collisions** — new sets now use stronger generated IDs so restored or future sets are far less likely to accidentally collide with older deleted set references.
+
+---
+
 ## [0.11.54] — 2026-04-29
 
 ### Added
