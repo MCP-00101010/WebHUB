@@ -23,19 +23,19 @@ function getContextInheritedTags(contextTarget) {
       const tags = [];
       let current = folder;
       while (current?.type === 'folder') {
-        if (current.inheritTags !== false && current.sharedTags?.length) tags.unshift(...current.sharedTags);
+        if (current.sharedTags?.length) tags.unshift(...current.sharedTags);
         current = findNavItemPath(current.id)?.parent || null;
       }
       return [...new Set(tags)];
     };
     if (area === 'nav-subfolder') return collectNavFolderTags(contextTarget?.item || null);
     const path = contextTarget?.itemId ? findNavItemPath(contextTarget.itemId) : null;
-    return collectNavFolderTags(path?.parent || null);
+    return filterInheritedTagIdsForItem(path?.item || contextTarget?.item || null, collectNavFolderTags(path?.parent || null));
   }
   const { board, tab } = getContextBoardAndTab(contextTarget);
   if (!board) return [];
   if (area === 'speed-dial' || area === 'speed-dial-item' || area === 'essential') {
-    return getBoardInheritedTagIds(board);
+    return filterInheritedTagIdsForItem(contextTarget?.item || null, getBoardInheritedTagIds(board));
   }
   if (area === 'board-item' || area === 'board-empty' || area === 'board-subfolder' || area === 'board-folder-item') {
     const inheritedBoardAndTabTags = getTabInheritedTagIds(board, tab || getBoardTab(board));
@@ -44,7 +44,13 @@ function getContextInheritedTags(contextTarget) {
     else if (contextTarget.parentId) parentFolderId = contextTarget.parentId;
     else if (contextTarget.itemId) parentFolderId = findBoardItemInColumns(board, contextTarget.itemId)?.parent?.id || null;
     const folderTags = parentFolderId ? collectFolderAncestorTags(board, parentFolderId) : [];
-    return [...new Set([...inheritedBoardAndTabTags, ...folderTags])];
+    const inheritedTags = [...new Set([...inheritedBoardAndTabTags, ...folderTags])];
+    const currentItem = area === 'board-item'
+      ? (contextTarget?.itemId ? findBoardItemInColumns(board, contextTarget.itemId)?.item : contextTarget?.item || null)
+      : (area === 'board-empty' || area === 'board-subfolder' || area === 'board-folder-item'
+      ? null
+      : contextTarget?.item || null);
+    return filterInheritedTagIdsForItem(currentItem, inheritedTags);
   }
   return [];
 }
@@ -229,15 +235,13 @@ function showModal(type, options = {}) {
   const speedDialSection = document.getElementById('modalSpeedDialSection');
   if (speedDialSection) {
     speedDialSection.classList.toggle('hidden', !options.showSpeedDialSlots);
-    document.getElementById('modalSpeedDialSlots').value = options.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT;
+    document.getElementById('modalSpeedDialSlots').value = options.speedDialSlotCount || getDefaultSpeedDialSlotCount();
     const showToggle = document.getElementById('cmCollectionShowSpeedDial');
     if (showToggle) showToggle.checked = options.collectionShowSpeedDial !== false;
-  }
-  const sharedTagsOptsEl = document.getElementById('modalSharedTagsOptions');
-  if (sharedTagsOptsEl) {
-    sharedTagsOptsEl.classList.toggle('hidden', !options.showSharedTagsOptions);
-    document.getElementById('cmInheritTags').checked = options.inheritTags !== false;
-    document.getElementById('cmAutoRemove').checked = options.autoRemoveTags === true;
+    const wrapTabsRow = document.getElementById('modalWrapTabsRow');
+    if (wrapTabsRow) wrapTabsRow.classList.toggle('hidden', !options.showWrapTabs);
+    const wrapTabsToggle = document.getElementById('cmWrapTabs');
+    if (wrapTabsToggle) wrapTabsToggle.checked = options.wrapTabs === true;
   }
   elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
@@ -276,12 +280,11 @@ function showBoardMetaModal(mode = 'edit', board = null) {
     value1: mode === 'edit' ? (targetBoard.title || '') : '',
     showTags: true,
     showSharedTags: true,
-    showSharedTagsOptions: true,
     showSpeedDialSlots: true,
-    speedDialSlotCount: mode === 'edit' ? getSpeedDialSlotCount(targetBoard) : DEFAULT_SPEED_DIAL_SLOT_COUNT,
+    showWrapTabs: true,
+    speedDialSlotCount: mode === 'edit' ? getSpeedDialSlotCount(targetBoard) : getDefaultSpeedDialSlotCount(),
     collectionShowSpeedDial: mode === 'edit' ? targetBoard.showSpeedDial !== false : true,
-    inheritTags: mode === 'edit' ? targetBoard.inheritTags !== false : true,
-    autoRemoveTags: mode === 'edit' ? targetBoard.autoRemoveTags === true : true,
+    wrapTabs: mode === 'edit' ? targetBoard.wrapTabBar === true : false,
     value3: mode === 'edit' ? (targetBoard.tags || []).join(' ') : '',
     value4: mode === 'edit' ? (targetBoard.sharedTags || []).join(' ') : ''
   });
@@ -297,7 +300,7 @@ function applyModalCollectionSpeedDialSlots() {
     : getActiveBoardContainer();
   if (!board) return null;
   normalizeSpeedDialSlots(board);
-  const requested = Math.max(1, Math.min(48, parseInt(slotsInput.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+  const requested = Math.max(1, Math.min(48, parseInt(slotsInput.value, 10) || getDefaultSpeedDialSlotCount()));
   const lastFilled = board.speedDial.reduce((idx, item, i) => item ? i : idx, -1);
   board.speedDialSlotCount = Math.max(requested, lastFilled + 1, 1);
   slotsInput.value = board.speedDialSlotCount;
@@ -357,7 +360,6 @@ function hideModal() {
   document.getElementById('tagSuggestions')?.classList.add('hidden');
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
-  document.getElementById('modalSharedTagsOptions')?.classList.add('hidden');
   document.getElementById('modalSpeedDialSection')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
 }
@@ -464,26 +466,24 @@ async function handleModalSubmit(event) {
       const sdSection = document.getElementById('modalSpeedDialSection');
       if (sdSection && !sdSection.classList.contains('hidden')) {
         board.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial').checked;
+        const wrapTabsRow = document.getElementById('modalWrapTabsRow');
+        if (wrapTabsRow && !wrapTabsRow.classList.contains('hidden')) {
+          board.wrapTabBar = document.getElementById('cmWrapTabs').checked;
+        }
       }
       board.tags = tags;
       board.sharedTags = sharedTagsFromModal;
-      const sharedTagsOptsEl2 = document.getElementById('modalSharedTagsOptions');
-      if (sharedTagsOptsEl2 && !sharedTagsOptsEl2.classList.contains('hidden')) {
-        board.inheritTags = document.getElementById('cmInheritTags').checked;
-        board.autoRemoveTags = document.getElementById('cmAutoRemove').checked;
-      }
       break;
     }
     case 'addCollection': {
       const slotsInput = document.getElementById('modalSpeedDialSlots');
-      const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+      const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || getDefaultSpeedDialSlotCount()));
       const board = createBoard(value1, {
         showSpeedDial: document.getElementById('cmCollectionShowSpeedDial')?.checked !== false,
         speedDialSlotCount: requested,
+        wrapTabBar: document.getElementById('cmWrapTabs')?.checked === true,
         tags,
         sharedTags: sharedTagsFromModal,
-        inheritTags: document.getElementById('cmInheritTags')?.checked !== false,
-        autoRemoveTags: document.getElementById('cmAutoRemove')?.checked === true,
         createEmpty: true
       });
       if (board) createBoardTab(board, 'New Tab');
@@ -614,16 +614,12 @@ function showFolderModal(mode, ct) {
       document.getElementById('fmName').value = folderItem.title || '';
       document.getElementById('fmTags').value = (folderItem.tags || []).join(' ');
       document.getElementById('fmSharedTags').value = (folderItem.sharedTags || []).join(' ');
-      document.getElementById('fmInheritTags').checked = folderItem.inheritTags !== false;
-      document.getElementById('fmAutoRemove').checked = folderItem.autoRemoveTags === true;
     }
   } else {
     submitBtn.textContent = 'Create';
     document.getElementById('fmName').value = '';
     document.getElementById('fmTags').value = '';
     document.getElementById('fmSharedTags').value = '';
-    document.getElementById('fmInheritTags').checked = true;
-    document.getElementById('fmAutoRemove').checked = true;
   }
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('folderModalHeader'));
@@ -649,30 +645,28 @@ function handleFolderModalSubmit() {
   if (!name) { document.getElementById('fmName').focus(); return; }
   const tags = document.getElementById('fmTags').value.trim().split(/\s+/).filter(Boolean);
   const sharedTags = document.getElementById('fmSharedTags').value.trim().split(/\s+/).filter(Boolean);
-  const inheritTags = document.getElementById('fmInheritTags').checked;
-  const autoRemoveTags = document.getElementById('fmAutoRemove').checked;
   pushUndoSnapshot();
   if (folderModalMode === 'edit') {
-    editFolder(contextTarget.itemId, name, tags, sharedTags, inheritTags, autoRemoveTags);
+    editFolder(contextTarget.itemId, name, tags, sharedTags);
   } else {
     const area = contextTarget?.area;
     const parent = contextTarget?.item;
     if (area === 'nav-empty') {
-      addNavSection({ type: 'folder', title: name, tags, sharedTags, inheritTags, autoRemoveTags });
+      addNavSection({ type: 'folder', title: name, tags, sharedTags });
     } else if (area === 'nav-subfolder') {
       if (parent) {
         parent.children = parent.children || [];
-        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags, inheritTags, autoRemoveTags });
+        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags });
         parent.collapsed = false;
       }
     } else if (area === 'board-subfolder') {
       if (parent) {
         parent.children = parent.children || [];
-        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags, inheritTags, autoRemoveTags });
+        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags });
         parent.collapsed = false;
       }
     } else {
-      addBookmarkItem('folder', name, contextTarget?.columnId, { tags, sharedTags, inheritTags, autoRemoveTags });
+      addBookmarkItem('folder', name, contextTarget?.columnId, { tags, sharedTags });
     }
   }
   hideFolderModal();

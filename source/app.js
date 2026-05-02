@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.55';
+const APP_VERSION = '0.11.56';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -8,6 +8,7 @@ let lastActiveColumnId = null;
 
 let confirmCallback = null;
 let confirmCancelCallback = null;
+let confirmPreferenceSettingKey = null;
 const SHARED_DISK_POLL_MS = 5000;
 const SHARED_DISK_NOTICE_KEY = 'morpheus-shared-disk-notice';
 let sharedDiskPollTimer = null;
@@ -136,6 +137,10 @@ document.addEventListener('mouseover', e => {
   if (target === tooltipTarget) return;
   tooltipTarget = target;
   if (!target) { tooltipEl.classList.add('hidden'); return; }
+  if (target.dataset.tooltipKind === 'bookmark' && state.settings.showBookmarkTooltips === false) {
+    tooltipEl.classList.add('hidden');
+    return;
+  }
   positionTooltip(target);
 });
 
@@ -148,12 +153,24 @@ document.addEventListener('mouseout', e => {
   }
 });
 
-function showConfirmDialog(message, onConfirm, okLabel = 'Delete', onCancel = null) {
+function showConfirmDialog(message, onConfirm, okLabel = 'Delete', onCancel = null, options = {}) {
+  const confirmOptions = (options && typeof options === 'object') ? options : {};
+  const settingKey = confirmOptions.settingKey;
   confirmCallback = onConfirm;
   confirmCancelCallback = onCancel;
+  confirmPreferenceSettingKey = settingKey && Object.prototype.hasOwnProperty.call(state.settings || {}, settingKey)
+    ? settingKey
+    : null;
   document.getElementById('confirmMessage').textContent = message;
   document.getElementById('confirmOkBtn').textContent = okLabel;
+  const optOutRow = document.getElementById('confirmOptOutRow');
+  const optOutCheckbox = document.getElementById('confirmDontShowAgain');
+  if (optOutRow && optOutCheckbox) {
+    optOutRow.classList.toggle('hidden', !confirmPreferenceSettingKey);
+    optOutCheckbox.checked = false;
+  }
   document.getElementById('confirmOverlay').classList.remove('hidden');
+  centerPanel(document.getElementById('confirmCard'));
 }
 
 function hideConfirmDialog(options = {}) {
@@ -161,8 +178,13 @@ function hideConfirmDialog(options = {}) {
   const cancelCb = confirmCancelCallback;
   confirmCallback = null;
   confirmCancelCallback = null;
+  confirmPreferenceSettingKey = null;
   document.getElementById('confirmOverlay').classList.add('hidden');
   document.getElementById('confirmOkBtn').textContent = 'Delete';
+  const optOutRow = document.getElementById('confirmOptOutRow');
+  const optOutCheckbox = document.getElementById('confirmDontShowAgain');
+  if (optOutRow) optOutRow.classList.add('hidden');
+  if (optOutCheckbox) optOutCheckbox.checked = false;
   if (invokeCancel && cancelCb) cancelCb();
 }
 
@@ -630,7 +652,6 @@ function showTrashPanel() {
   document.getElementById('modalCard').classList.add('hidden');
   const panel = document.getElementById('trashPanel');
   panel.classList.remove('hidden');
-  elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, document.getElementById('trashDragHandle'));
   renderTrashPanel();
@@ -639,12 +660,11 @@ function showTrashPanel() {
 function hideTrashPanel() {
   document.getElementById('trashPanel').classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
-  elements.modalOverlay.classList.add('hidden');
 }
 
 function confirmDelete(settingKey, message, onConfirm) {
   if (!state.settings[settingKey]) { onConfirm(); return; }
-  showConfirmDialog(message, onConfirm);
+  showConfirmDialog(message, onConfirm, 'Delete', null, { settingKey });
 }
 
 // --- Draggable panels ---
@@ -796,6 +816,16 @@ function attachEventListeners() {
     saveState();
   });
   makeDraggable(document.getElementById('modalCard'), document.getElementById('modalCardHeader'));
+  makeDraggable(document.getElementById('confirmCard'), document.getElementById('confirmCardHeader'));
+  document.getElementById('confirmDontShowAgain')?.addEventListener('change', event => {
+    const settingKey = confirmPreferenceSettingKey;
+    if (!settingKey || !Object.prototype.hasOwnProperty.call(state.settings || {}, settingKey)) return;
+    state.settings[settingKey] = !event.target.checked;
+    const settingsCheckboxId = `stg${settingKey.charAt(0).toUpperCase()}${settingKey.slice(1)}`;
+    const settingsCheckbox = document.getElementById(settingsCheckboxId);
+    if (settingsCheckbox) settingsCheckbox.checked = state.settings[settingKey];
+    saveState();
+  });
   elements.modalCancelBtn.addEventListener('click', hideModal);
   elements.modalOverlay.addEventListener('click', event => {
     if (event.target !== elements.modalOverlay) return;
@@ -805,6 +835,8 @@ function attachEventListeners() {
       cancelBoardSettingsPanel();
     } else if (!document.getElementById('trashPanel').classList.contains('hidden')) {
       hideTrashPanel();
+    } else if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) {
+      hideInboxPanel();
     } else if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) {
       hideImportManagerPanel();
     } else {
@@ -875,7 +907,7 @@ function attachEventListeners() {
     }
   });
 
-  document.getElementById('searchModalCloseBtn').addEventListener('click', closeSearchModal);
+  document.getElementById('searchModalDoneBtn').addEventListener('click', closeSearchModal);
 
   document.getElementById('searchModalInput').addEventListener('input', () => {
     const q = elements.searchModalInput.value.trim();
@@ -884,18 +916,18 @@ function attachEventListeners() {
   });
 
   document.getElementById('searchModal').addEventListener('click', e => {
-    // filter chips (Name, URL, Show types)
+    if (e.target.id === 'searchTagFilterToggleBtn') {
+      const pickerEl = document.getElementById('searchTagPicker');
+      const willShow = pickerEl.classList.contains('hidden');
+      _showTagPicker(willShow);
+      if (willShow || elements.searchModalInput.value.trim() || activeTagFilters.size > 0) renderSearchResults();
+      return;
+    }
+
+    // filter chips (Name, URL, Tags, Show types)
     const chip = e.target.closest('.search-filter-chip');
     if (chip) {
       const key = chip.dataset.filter;
-      if (key === 'tags') {
-        // toggle tag picker panel
-        const pickerEl = document.getElementById('searchTagPicker');
-        const willShow = pickerEl.classList.contains('hidden');
-        _showTagPicker(willShow);
-        if (willShow) renderSearchResults();
-        return;
-      }
       searchFilters[key] = !searchFilters[key];
       chip.classList.toggle('active', searchFilters[key]);
       const q = elements.searchModalInput.value.trim();
@@ -979,6 +1011,7 @@ function attachEventListeners() {
     if (!document.getElementById('noticeOverlay').classList.contains('hidden')) { hideNotice(); return; }
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog({ invokeCancel: true }); return; }
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
+    if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) { hideInboxPanel(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
     if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) { hideSetManagerPanel(); return; }
     if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) { hideImportManagerPanel(); return; }

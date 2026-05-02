@@ -144,6 +144,16 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   titleInput.value = widget.title || '';
   body.innerHTML   = '';
   def.renderSettings(widget, body);
+  if (!body.querySelector('.settings-section')) {
+    const section = document.createElement('div');
+    section.className = 'settings-section widget-settings-section';
+    const label = document.createElement('div');
+    label.className = 'settings-section-label';
+    label.textContent = 'Settings';
+    section.appendChild(label);
+    while (body.firstChild) section.appendChild(body.firstChild);
+    body.appendChild(section);
+  }
 
   document.getElementById('modalCard').classList.add('hidden');
   panel.classList.remove('hidden');
@@ -660,22 +670,85 @@ WIDGET_REGISTRY['image'] = {
   renderSettings(widget, container) {
     const c = widget.config;
     container.innerHTML = `
-      <div class="settings-row">
-        <span>Image URL</span>
-        <input type="text" data-cfg="url" value="${c.url || ''}" placeholder="https://example.com/image.png" class="settings-text-input" />
+      <div class="settings-section widget-image-settings-section">
+        <div class="settings-section-label">Image</div>
+        <div class="settings-row widget-image-settings-url-row">
+          <input type="text" data-cfg="url" value="${c.url || ''}" placeholder="Enter URL" class="settings-text-input" />
+        </div>
+        <div class="bg-drop-zone widget-image-settings-drop-zone">
+          <span>Drop an image file here</span>
+        </div>
+        <div class="settings-row widget-image-settings-actions">
+          <button type="button" class="secondary-btn widget-image-settings-browse-btn">Browse…</button>
+          <button type="button" class="secondary-btn widget-image-settings-clear-btn">Clear image</button>
+        </div>
+        <div class="settings-row settings-row--top widget-image-settings-fit-row">
+          <div class="board-fit-radios">
+            <label class="board-fit-label"><input type="radio" name="widgetImageFit-${widget.id}" data-cfg="fit" value="cover" ${(c.fit || 'contain') === 'cover' ? 'checked' : ''}/><span>Cover</span></label>
+            <label class="board-fit-label"><input type="radio" name="widgetImageFit-${widget.id}" data-cfg="fit" value="contain" ${(c.fit || 'contain') === 'contain' ? 'checked' : ''}/><span>Contain</span></label>
+            <label class="board-fit-label"><input type="radio" name="widgetImageFit-${widget.id}" data-cfg="fit" value="fill" ${c.fit === 'fill' ? 'checked' : ''}/><span>Fill</span></label>
+          </div>
+        </div>
       </div>
-      <div class="settings-row">
-        <span>Fit</span>
-        <select data-cfg="fit">
-          <option value="contain" ${(c.fit || 'contain') === 'contain' ? 'selected' : ''}>Contain</option>
-          <option value="cover"   ${c.fit === 'cover'   ? 'selected' : ''}>Cover</option>
-          <option value="fill"    ${c.fit === 'fill'    ? 'selected' : ''}>Fill</option>
-        </select>
-      </div>
-      <div class="settings-row">
-        <span>Caption</span>
-        <input type="text" data-cfg="caption" value="${c.caption || ''}" placeholder="Optional caption" class="settings-text-input" />
+      <div class="settings-section widget-image-caption-section">
+        <div class="settings-section-label">Caption</div>
+        <div class="settings-row widget-image-caption-row">
+          <input type="text" data-cfg="caption" value="${c.caption || ''}" placeholder="Optional caption" class="settings-text-input" />
+        </div>
       </div>`;
+
+    const urlInput = container.querySelector('[data-cfg="url"]');
+    const dropZone = container.querySelector('.widget-image-settings-drop-zone');
+    const browseBtn = container.querySelector('.widget-image-settings-browse-btn');
+    const clearBtn = container.querySelector('.widget-image-settings-clear-btn');
+
+    const updatePreview = imageUrl => {
+      if (!dropZone) return;
+      if (imageUrl) {
+        dropZone.style.backgroundImage = `url(${JSON.stringify(imageUrl)})`;
+        dropZone.classList.add('has-preview');
+      } else {
+        dropZone.style.backgroundImage = '';
+        dropZone.classList.remove('has-preview');
+      }
+    };
+
+    const commitUrl = nextUrl => {
+      if (!urlInput) return;
+      urlInput.value = nextUrl;
+      urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+      updatePreview(nextUrl);
+    };
+
+    updatePreview(c.url || '');
+    urlInput?.addEventListener('input', () => updatePreview(urlInput.value.trim()));
+
+    dropZone?.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone?.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone?.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const file = e.dataTransfer?.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = ev => commitUrl(ev.target?.result || '');
+      reader.readAsDataURL(file);
+    });
+
+    browseBtn?.addEventListener('click', async () => {
+      if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable()) {
+        alert('File browsing requires the native messaging host.\nSee extension/native/install.ps1 to set it up.');
+        return;
+      }
+      const result = await bridge.openFilePicker('image', 'Select widget image');
+      if (!result?.dataUrl) return;
+      commitUrl(result.dataUrl);
+    });
+
+    clearBtn?.addEventListener('click', () => commitUrl(''));
   }
 };
 

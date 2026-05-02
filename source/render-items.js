@@ -9,7 +9,7 @@ function applyTagColor(chip, tagId) {
   const tag = resolveTag(tagId);
   const color = tag.color || (state.settings.tagGroups || []).find(g => g.id === tag.groupId)?.color || null;
   if (color) {
-    chip.style.background = hexToRgba(color, 0.15);
+    chip.style.background = hexToRgba(color, chip.closest('.board-column-item') ? 0.22 : 0.15);
     chip.style.color = color;
   }
 }
@@ -140,7 +140,11 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     const sharedTags = item.type === 'folder' ? (item.sharedTags || []) : [];
     const allTags = [...new Set([...ownTags, ...inherited, ...sharedTags])];
 
-    if (allTags.length) {
+    const showTagChips = item.type === 'folder'
+      ? state.settings.showFolderTags !== false
+      : state.settings.showBookmarkTags !== false;
+
+    if (allTags.length && showTagChips) {
       const tagsEl = document.createElement('div');
       tagsEl.className = 'item-tag-chips';
       renderTagsInto(tagsEl, allTags);
@@ -150,6 +154,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     // --- Bookmark-specific ---
     if (item.type === 'bookmark') {
       itemEl.dataset.tooltip = buildTooltip(item, getActiveBoard());
+      itemEl.dataset.tooltipKind = 'bookmark';
       itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
     }
 

@@ -175,9 +175,16 @@ function renderSetManagerPanel() {
   const detailCard = document.getElementById('setsManagerDetailCard');
   const previewEl = document.getElementById('setsManagerPreview');
   const titleInput = document.getElementById('setsManagerTitleInput');
+  const openBtn = document.getElementById('setsManagerOpenBtn');
+  const addBtn = document.getElementById('setsManagerAddBtn');
+  const deleteBtn = document.getElementById('setsManagerDeleteBtn');
   if (!listEl || !emptyEl || !detailCard || !previewEl || !titleInput) return;
 
   const selected = _ensureSelectedSet();
+  const hasSelectedSet = !!selected;
+  if (openBtn) openBtn.disabled = !hasSelectedSet;
+  if (addBtn) addBtn.disabled = !hasSelectedSet;
+  if (deleteBtn) deleteBtn.disabled = !hasSelectedSet;
   listEl.innerHTML = '';
 
   for (const set of (state.sets || [])) {
@@ -250,7 +257,6 @@ function renderSetManagerPanel() {
   emptyEl.classList.add('hidden');
   detailCard.classList.remove('hidden');
   if (document.activeElement !== titleInput) titleInput.value = selected.title || '';
-  document.getElementById('setsManagerDetailMeta').textContent = _setPanelCountLabel((selected.items || []).length);
   previewEl.innerHTML = '';
   previewEl.classList.remove('drag-over');
 

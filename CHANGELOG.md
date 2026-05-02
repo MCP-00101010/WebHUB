@@ -5,10 +5,32 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.56] — 2026-05-02
+
+### Changed
+
+- **Shared-tag model simplification** — boards, tabs, and folders no longer expose per-object `Pass to...` / `Strip on...` toggles; shared tags now always propagate by design.
+- **Shared-tag persistence cleanup** — legacy `inheritTags` / `autoRemoveTags` fields are now stripped from runtime state and saved snapshots, with the live shared database migrated to remove those obsolete fields.
+- **Import Manager tree workflow** — Import Manager now uses the same nested tree interaction model as the main hub instead of a flatter bespoke list path.
+
+### Fixed
+
+- **Inherited tag dedupe** — items that already own a tag explicitly no longer surface the same tag again as inherited when moved under a parent sharing that tag.
+- **Import Manager drag and drop** — folders and bookmarks in Import Manager now support internal nesting/reordering and drag cleanly into board, inbox, and bookmark-target destinations.
+- **Import Manager send target** — Import Manager items can now be sent directly to the active tab inbox from the context menu when a valid active tab target exists.
+
+---
+
 ## [0.11.55] — 2026-04-29
 
 ### Changed
 
+- **Sidebar overhaul** — rebuilt the sidebar into a transparent structural shell with separate top, Essentials, and navigation cards, removed the old `Essentials` / `Boards` section labels, and moved trash, extension status, and version actions into the new top card.
+- **Sidebar background treatment** — the active tab background now spans the whole app shell instead of stopping at the board pane, so the sidebar and content area share the same backdrop.
+- **Sidebar opacity controls** — Global Settings now lets sidebar cards inherit the active tab container opacity by default or use a dedicated sidebar opacity override instead.
+- **Edit/create modal unification** — create/edit flows across the hub now use the shared transparent shell, flatter inner sections, and aligned tag-field layouts, with widget editing left on the older styling for now.
+- **Utility modal refresh** — Search, Inbox, Import Manager, Tag Manager, Trash, and most utility surfaces now follow the shared header/footer/panel treatment, leaving only minor follow-up polish work around Sets Manager.
+- **Modal pattern rules** — documented the current hub modal styling rules and remaining rollout expectations in the `UI Pattern Notes` section of `TODO.md` so the remaining cleanup work has a clear visual contract.
 - **Tag Manager rename flow** — tags can now be renamed inline directly on their chips with double-click, keeping the Tag Manager interaction style lightweight and consistent.
 
 ### Fixed

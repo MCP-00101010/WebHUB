@@ -1,4 +1,5 @@
 const elements = {
+  appShell: document.querySelector('.app-shell'),
   navList: document.getElementById('navList'),
   essentialsGrid: document.getElementById('essentialsGrid'),
   hubNameEl: document.getElementById('hubNameEl'),
@@ -37,6 +38,7 @@ const elements = {
 const searchFilters = {
   name: true,
   url: true,
+  tags: false,
   typeBookmark: true,
   typeFolder: true,
   typeBoard: true
@@ -50,27 +52,58 @@ function _faviconHostname(url) {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
+function resolveSidebarContainerAlpha(board = getActiveBoard()) {
+  const settings = state.settings || {};
+  if (settings.sidebarUseActiveTabOpacity !== false) return (board?.containerOpacity ?? 100) / 100;
+  return Math.min(100, Math.max(10, settings.sidebarOpacity ?? 100)) / 100;
+}
+
 function setFavicon(img, item, sz) {
   if (item.faviconCache) {
     img.src = item.faviconCache;
     return;
   }
   if (!item.url) return;
-  const hostname = _faviconHostname(item.url);
-  if (!hostname) return;
+  let parsed;
+  try {
+    parsed = new URL(item.url);
+  } catch {
+    return;
+  }
+  const hostname = parsed.hostname;
+  const origin = parsed.origin;
+  if (!hostname || !origin) return;
   // faviconV2 returns 404 for unknown sites (unlike /s2/favicons which always returns 200+generic globe)
   // Cap request size at 64 — larger values cause some services to return icons with white backgrounds
   const srcs = [
-    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${hostname}&size=64`,
+    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(item.url)}&size=64`,
+    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=64`,
+    `https://icon.horse/icon/${encodeURIComponent(item.url)}?size=64`,
+    `https://icon.horse/icon/${hostname}?size=64`,
+    `https://ico.faviconkit.net/favicon/${hostname}?sz=64`,
     `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
-    `https://${hostname}/favicon.ico`,
+    `${origin}/favicon.ico`,
+    `${origin}/favicon.png`,
+    `${origin}/favicon.svg`,
+    `${origin}/apple-touch-icon.png`,
+    `${origin}/apple-touch-icon-precomposed.png`,
+    `${origin}/favicon-32x32.png`,
+    `${origin}/favicon-16x16.png`,
+    `${origin}/android-chrome-192x192.png`,
+    `${origin}/android-chrome-512x512.png`,
     `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`,
   ];
+  const seen = new Set();
+  const uniqueSrcs = srcs.filter(src => {
+    if (!src || seen.has(src)) return false;
+    seen.add(src);
+    return true;
+  });
   let i = 0;
   const tryNext = () => {
-    if (i >= srcs.length) { img.onerror = null; return; }
+    if (i >= uniqueSrcs.length) { img.onerror = null; return; }
     img.onerror = tryNext;
-    img.src = srcs[i++];
+    img.src = uniqueSrcs[i++];
   };
   tryNext();
 }
@@ -150,9 +183,11 @@ function applySettings() {
   r.setProperty('--folder-font-size', `${sectionSize('folder', 'folderFontSize', preset.nav + 1)}px`);
   r.setProperty('--title-font-size', `${sectionSize('title', 'titleFontSize', preset.title)}px`);
   r.setProperty('--title-line-thickness', `${overrides.title ? s.titleLineThickness : 1}px`);
+  r.setProperty('--global-font-color', globalColor);
   r.setProperty('--board-title-font-size', `${sectionSize('boardTitle', 'boardTitleFontSize', preset.boardTitle)}px`);
   r.setProperty('--tags-display', s.showTags ? 'flex' : 'none');
   r.setProperty('--tags-grid-display', s.showTags ? 'grid' : 'none');
+  r.setProperty('--sidebar-container-alpha', resolveSidebarContainerAlpha());
 
   const ff = (section, key) => overrides[section] ? (s[key] || 'inherit') : 'inherit';
   const fw = (section, key, def = 'normal') => overrides[section] ? (s[key] ? 'bold' : def) : def;
@@ -290,8 +325,8 @@ function renderAll() {
 function _showTagPicker(show) {
   const pickerEl = document.getElementById('searchTagPicker');
   pickerEl.classList.toggle('hidden', !show);
-  const tagsChip = document.querySelector('#searchModal .search-filter-chip[data-filter="tags"]');
-  if (tagsChip) tagsChip.classList.toggle('active', show);
+  const toggleBtn = document.getElementById('searchTagFilterToggleBtn');
+  if (toggleBtn) toggleBtn.classList.toggle('active', show);
 }
 
 function openSearchModal(opts = {}) {
@@ -344,11 +379,26 @@ function renderSearchResults() {
     return searchFilters.typeBookmark;
   };
 
+  const getSearchableTagNames = (item, board) => {
+    const tagIds = new Set([
+      ...(item.tags || []),
+      ...(item.sharedTags || []),
+      ...(board ? computeInheritedTags(item, board) : [])
+    ]);
+    const names = [];
+    for (const id of tagIds) {
+      const tag = resolveTag(id);
+      if (tag?.name) names.push(tag.name.toLowerCase());
+    }
+    return names;
+  };
+
   const matchesText = (item, board) => {
     if (!typeAllowed(item)) return false;
     if (!q) return true;
     if (searchFilters.name && (item.title || '').toLowerCase().includes(q)) return true;
     if (searchFilters.url && item.url && item.url.toLowerCase().includes(q)) return true;
+    if (searchFilters.tags && getSearchableTagNames(item, board).some(name => name.includes(q))) return true;
     return false;
   };
 
@@ -367,6 +417,10 @@ function renderSearchResults() {
   const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
+      if (item.type === 'title') {
+        if (item.children) hits.push(...collectFromList(item.children, board, columnId));
+        continue;
+      }
       if (matchesText(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board });
       if (item.children) hits.push(...collectFromList(item.children, board, columnId));
     }
@@ -542,6 +596,7 @@ function createSearchResultItem(item, meta = {}) {
   el.rel = 'noreferrer noopener';
   el.draggable = false;
   el.dataset.tooltip = buildTooltip(item);
+  el.dataset.tooltipKind = 'bookmark';
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
   const header = document.createElement('div');
@@ -716,6 +771,7 @@ function renderEssentials() {
       link.rel = 'noreferrer noopener';
       link.draggable = true;
       link.dataset.tooltip = buildTooltip(item);
+      link.dataset.tooltipKind = 'bookmark';
 
       if (item.url) {
         const img = document.createElement('img');
@@ -993,10 +1049,25 @@ function createNavItem(item, depth = 0, parent = null) {
 }
 
 function applyBoardBackground(board) {
+  const shell = elements.appShell;
   const mp = elements.mainPanel;
-  mp.style.backgroundImage = board.backgroundImage ? `url(${board.backgroundImage})` : '';
-  mp.style.backgroundSize = board.backgroundFit === 'contain' ? 'contain' : 'cover';
-  mp.style.setProperty('--container-alpha', (board.containerOpacity ?? 100) / 100);
+  const backgroundImage = board.backgroundImage ? `url(${board.backgroundImage})` : '';
+  const backgroundFit = board.backgroundFit === 'contain'
+    ? 'contain'
+    : board.backgroundFit === 'fill'
+      ? '100% 100%'
+      : 'cover';
+  const containerAlpha = (board.containerOpacity ?? 100) / 100;
+  const sidebarAlpha = resolveSidebarContainerAlpha(board);
+  if (shell) {
+    shell.style.backgroundImage = backgroundImage;
+    shell.style.backgroundSize = backgroundFit;
+    shell.style.setProperty('--container-alpha', containerAlpha);
+    shell.style.setProperty('--sidebar-container-alpha', sidebarAlpha);
+  }
+  mp.style.backgroundImage = '';
+  mp.style.backgroundSize = '';
+  mp.style.setProperty('--container-alpha', containerAlpha);
 }
 
 function _clearBoardShellDropDecorations() {
@@ -1029,18 +1100,31 @@ function _moveBoardShellPreview(parentEl, beforeEl, preview) {
   _insertDragPreview(preview, parentEl, beforeEl);
 }
 
-function _resolveHorizontalDrop(itemEls, clientX) {
+function _resolveHorizontalDrop(itemEls, clientX, clientY = null) {
   let nearestEl = null;
   let nearestPos = 'after';
+  let nearestDistance = Number.POSITIVE_INFINITY;
   for (const el of itemEls) {
     const rect = el.getBoundingClientRect();
-    if (clientX <= rect.right) {
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = clientX - centerX;
+    const dy = clientY === null ? 0 : (clientY - centerY);
+    const distance = (dx * dx) + (dy * dy);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
       nearestEl = el;
-      nearestPos = clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-      break;
+      nearestPos = clientX < centerX ? 'before' : 'after';
     }
   }
   return { nearestEl, nearestPos };
+}
+
+function _findBarItemAtPoint(itemEls, clientX, clientY) {
+  return itemEls.find(el => {
+    const rect = el.getBoundingClientRect();
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  }) || null;
 }
 
 function _setTabDropDecoration(tabEl, position) {
@@ -1061,7 +1145,7 @@ function _handleBoardTabBarDragOver(event, board, activeTab) {
   event.dataTransfer.dropEffect = 'move';
 
   const itemEls = Array.from(tabBar.querySelectorAll(':scope > .collection-tab[data-tab-id]:not(.drag-preview):not(.dragging)'));
-  const { nearestEl, nearestPos } = _resolveHorizontalDrop(itemEls, event.clientX);
+  const { nearestEl, nearestPos } = _resolveHorizontalDrop(itemEls, event.clientX, event.clientY);
   const beforeEl = nearestEl ? (nearestPos === 'before' ? nearestEl : nearestEl.nextSibling) : tabBar.querySelector('.collection-tab-add') || null;
   const keyTarget = nearestEl ? `${nearestEl.dataset.tabId}:${nearestPos}` : 'end';
   if (_dropTarget === keyTarget) return;
@@ -1082,10 +1166,11 @@ function _handleBoardTabBarDrop(event, board) {
   event.stopPropagation();
 
   const preview = tabBar.querySelector(':scope > .drag-preview');
-  const targetEl = Array.from(tabBar.querySelectorAll(':scope > .collection-tab[data-tab-id]:not(.drag-preview):not(.dragging)')).find(el => {
-    const rect = el.getBoundingClientRect();
-    return event.clientX >= rect.left && event.clientX <= rect.right;
-  }) || null;
+  const targetEl = _findBarItemAtPoint(
+    Array.from(tabBar.querySelectorAll(':scope > .collection-tab[data-tab-id]:not(.drag-preview):not(.dragging)')),
+    event.clientX,
+    event.clientY
+  );
   let position = 'after';
   let targetTabId = null;
   if (targetEl) {
@@ -1198,6 +1283,7 @@ function renderBoardTabBar(board, activeTab) {
   }
 
   tabBar.classList.remove('hidden');
+  tabBar.classList.toggle('collection-tab-bar--wrap', board.wrapTabBar === true);
 
   (board.tabs || []).forEach(tab => {
     const tabEl = document.createElement('div');
@@ -1430,6 +1516,10 @@ function renderBoard() {
   if (!board) {
     elements.mainPanel.classList.add('no-board');
     elements.mainPanel.style.backgroundImage = '';
+    if (elements.appShell) {
+      elements.appShell.style.backgroundImage = '';
+      elements.appShell.style.setProperty('--sidebar-container-alpha', resolveSidebarContainerAlpha(null));
+    }
     elements.boardTitle.textContent = '';
     elements.speedDial.innerHTML = '';
     elements.bookmarkColumns.innerHTML = '';
@@ -1507,6 +1597,7 @@ function renderSpeedDial(board) {
     link.rel = 'noreferrer noopener';
     link.draggable = true;
     link.dataset.tooltip = buildTooltip(item, board);
+    link.dataset.tooltipKind = 'bookmark';
 
     if (item.url) {
       const favicon = document.createElement('img');

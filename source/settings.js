@@ -4,6 +4,14 @@ let boardSettingsCreatingId = null;
 let _boardSettingsCancelSnapshot = null;
 let _pendingDatabasePath = '';
 
+function updateSidebarOpacitySettingsUi() {
+  const useActive = document.getElementById('stgSidebarUseActiveOpacity')?.checked !== false;
+  const slider = document.getElementById('stgSidebarOpacity');
+  const group = document.getElementById('stgSidebarOpacityGroup');
+  if (slider) slider.disabled = useActive;
+  if (group) group.style.opacity = useActive ? '0.5' : '1';
+}
+
 function showBoardSettingsPanel(isNew = false) {
   const board = getActiveBoard();
   const tab = getActiveTab();
@@ -40,8 +48,6 @@ function showBoardSettingsPanel(isNew = false) {
   document.getElementById('bstgSpeedDialSection')?.classList.add('hidden');
   document.getElementById('bstgTags').value = (tab.tags || []).join(' ');
   document.getElementById('bstgSharedTags').value = (tab.sharedTags || []).join(' ');
-  document.getElementById('bstgInheritTags').checked = tab.inheritTags !== false;
-  document.getElementById('bstgAutoRemove').checked = isNew ? true : tab.autoRemoveTags === true;
   const bstgInherited = getBoardInheritedTags();
   const bstgInheritedRow = document.getElementById('bstgInheritedTagsRow');
   const bstgInheritedSpan = document.getElementById('bstgInheritedTags');
@@ -208,7 +214,11 @@ function attachBoardSettingsListeners() {
     radio.addEventListener('change', e => {
       const tab = getActiveTab();
       if (!tab) return;
-      tab.backgroundFit = e.target.value === 'contain' ? 'contain' : 'cover';
+      tab.backgroundFit = e.target.value === 'contain'
+        ? 'contain'
+        : e.target.value === 'fill'
+          ? 'fill'
+          : 'cover';
       applyBg();
     });
   });
@@ -232,7 +242,7 @@ function attachBoardSettingsListeners() {
     const board = getActiveBoard();
     if (!board) return;
     normalizeSpeedDialSlots(board);
-    const requested = Math.max(1, Math.min(48, parseInt(e.target.value, 10) || DEFAULT_SPEED_DIAL_SLOT_COUNT));
+    const requested = Math.max(1, Math.min(48, parseInt(e.target.value, 10) || getDefaultSpeedDialSlotCount()));
     const lastFilled = board.speedDial.reduce((idx, item, i) => item ? i : idx, -1);
     board.speedDialSlotCount = Math.max(requested, lastFilled + 1, 1);
     e.target.value = board.speedDialSlotCount;
@@ -259,23 +269,6 @@ function attachBoardSettingsListeners() {
     syncBoardCompatibilityFields(board, tab.id);
   });
   initChipInput(bstgTagsEl, tagChipOpts());
-
-  document.getElementById('bstgInheritTags').addEventListener('change', e => {
-    const board = getActiveBoard();
-    const tab = getActiveTab();
-    if (!board || !tab) return;
-    tab.inheritTags = e.target.checked;
-    syncBoardCompatibilityFields(board, tab.id);
-    renderBoard();
-  });
-
-  document.getElementById('bstgAutoRemove').addEventListener('change', e => {
-    const board = getActiveBoard();
-    const tab = getActiveTab();
-    if (!board || !tab) return;
-    tab.autoRemoveTags = e.target.checked;
-    syncBoardCompatibilityFields(board, tab.id);
-  });
 
   document.getElementById('boardSettingsDoneBtn').addEventListener('click', hideBoardSettingsPanel);
   document.getElementById('boardSettingsCancelBtn').addEventListener('click', cancelBoardSettingsPanel);
@@ -1088,16 +1081,23 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgGlobalFontColor').disabled = s.globalFontColorFromTheme !== false;
   document.getElementById('stgShowAdvancedStyle').checked = !!s.showAdvancedStyleSettings;
   document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;
-  document.getElementById('stgShowTags').checked = s.showTags;
+  document.getElementById('stgShowBookmarkTags').checked = s.showBookmarkTags !== false;
+  document.getElementById('stgShowBookmarkTooltips').checked = s.showBookmarkTooltips !== false;
   document.getElementById('stgWarnOnClose').checked = s.warnOnClose;
   document.getElementById('stgSharedAutoRefreshNotice').checked = s.sharedAutoRefreshNotice !== false;
   document.getElementById('stgConfirmDeleteBoard').checked = s.confirmDeleteBoard;
+  document.getElementById('stgConfirmDeleteTab').checked = s.confirmDeleteTab;
+  document.getElementById('stgConfirmDeleteSet').checked = s.confirmDeleteSet;
   document.getElementById('stgConfirmDeleteBookmark').checked = s.confirmDeleteBookmark;
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
   document.getElementById('stgApiKeyNasa').value = s.serviceApiKeys?.nasa || '';
   document.getElementById('stgFolderFont').value = s.folderFontSize;
+  document.getElementById('stgShowFolderTags').checked = s.showFolderTags !== false;
+  document.getElementById('stgSidebarUseActiveOpacity').checked = s.sidebarUseActiveTabOpacity !== false;
+  document.getElementById('stgSidebarOpacity').value = s.sidebarOpacity ?? 100;
+  document.getElementById('stgSidebarOpacityVal').textContent = s.sidebarOpacity ?? 100;
   document.getElementById('stgTitleFont').value = s.titleFontSize;
   document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
   document.getElementById('stgBoardTitleFont').value = s.boardTitleFontSize;
@@ -1127,6 +1127,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
   updateLastExportedLabel();
   updateEssentialsWarning();
+  updateSidebarOpacitySettingsUi();
   updateStyleAdvancedUI();
   renderThemePicker();
   renderTagGroups();
@@ -1139,7 +1140,6 @@ function showTagManagerPanel() {
   const panel = document.getElementById('tagManagerPanel');
   if (!panel) return;
   panel.classList.remove('hidden');
-  elements.modalOverlay.classList.remove('hidden');
   centerPanel(panel);
   makeDraggable(panel, panel.querySelector('.settings-header'));
   renderTagGroups();
@@ -1163,7 +1163,6 @@ function hideTagManagerPanel() {
   renderAll();
   document.getElementById('tagManagerPanel')?.classList.add('hidden');
   document.getElementById('modalCard').classList.remove('hidden');
-  elements.modalOverlay.classList.add('hidden');
   saveState();
 }
 
@@ -2214,19 +2213,31 @@ function attachSettingsListeners() {
   numSetting('stgBoardTitleFont', 'boardTitleFontSize', 14, 48);
   numSetting('stgHubNameFont',    'hubNameFontSize',    10, 48);
 
-  const boolSetting = (id, key) => document.getElementById(id).addEventListener('change', e => {
+  const boolSetting = (id, key, live = false) => document.getElementById(id).addEventListener('change', e => {
     state.settings[key] = e.target.checked;
-    saveState();
+    if (live) { applySettings(); saveState(); }
+    else saveState();
   });
-  boolSetting('stgShowTags',                 'showTags');
+  boolSetting('stgShowBookmarkTags',         'showBookmarkTags', true);
+  boolSetting('stgShowFolderTags',           'showFolderTags', true);
+  boolSetting('stgShowBookmarkTooltips',     'showBookmarkTooltips');
+  boolSetting('stgSidebarUseActiveOpacity',  'sidebarUseActiveTabOpacity', true);
   boolSetting('stgWarnOnClose',              'warnOnClose');
   boolSetting('stgSharedAutoRefreshNotice',  'sharedAutoRefreshNotice');
   boolSetting('stgConfirmDeleteBoard',       'confirmDeleteBoard');
+  boolSetting('stgConfirmDeleteTab',         'confirmDeleteTab');
+  boolSetting('stgConfirmDeleteSet',         'confirmDeleteSet');
   boolSetting('stgConfirmDeleteBookmark',    'confirmDeleteBookmark');
   boolSetting('stgConfirmDeleteFolder',      'confirmDeleteFolder');
   boolSetting('stgConfirmDeleteTitleDivider','confirmDeleteTitleDivider');
   boolSetting('stgConfirmDeleteTag',        'confirmDeleteTag');
-  document.getElementById('stgShowTags').addEventListener('change', () => applySettings());
+  document.getElementById('stgSidebarUseActiveOpacity').addEventListener('change', () => updateSidebarOpacitySettingsUi());
+  document.getElementById('stgSidebarOpacity').addEventListener('input', e => {
+    state.settings.sidebarOpacity = Math.min(100, Math.max(10, parseInt(e.target.value, 10) || 100));
+    document.getElementById('stgSidebarOpacityVal').textContent = state.settings.sidebarOpacity;
+    applySettings();
+    saveState();
+  });
 
   const thicknessEl = document.getElementById('stgLineThicknessVal');
   document.getElementById('stgLineThicknessMinus').addEventListener('click', () => {

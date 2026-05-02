@@ -2,7 +2,7 @@ let dragPayload = null;
 let _dropTarget = null;
 let _dropPos    = null;
 
-const BOARD_DROP_AREAS = ['board', 'speed-dial', 'essential'];
+const BOARD_DROP_AREAS = ['board', 'speed-dial', 'essential', 'import-manager'];
 
 function _isBoardDropArea(area = dragPayload?.area) {
   return BOARD_DROP_AREAS.includes(area);
@@ -28,6 +28,7 @@ function _canDropAsColumnWidget() {
 function _canSendToInbox() {
   if (!dragPayload) return false;
   if (dragPayload.area === 'board') return ['bookmark', 'folder'].includes(dragPayload.itemType);
+  if (dragPayload.area === 'import-manager') return ['bookmark', 'folder'].includes(dragPayload.itemType);
   if (dragPayload.area === 'speed-dial') return true;
   if (dragPayload.area === 'essential') return !!state.essentials[dragPayload.slot];
   if (dragPayload.area === 'nav') {
@@ -36,6 +37,18 @@ function _canSendToInbox() {
     return !!item && ['bookmark', 'folder'].includes(item.type);
   }
   return false;
+}
+
+function _findDraggedImportManagerItem() {
+  if (dragPayload?.area !== 'import-manager') return null;
+  return findImportManagerItemById(dragPayload.itemId)?.item || null;
+}
+
+function _takeImportManagerDraggedItem() {
+  if (dragPayload?.area !== 'import-manager') return null;
+  const item = removeImportManagerItemById(dragPayload.itemId);
+  if (item?.type === 'bookmark' && !item.tags) item.tags = [];
+  return item;
 }
 
 function isExternalDrag(event) {
@@ -248,13 +261,12 @@ function applyDragImage(event, element) {
 // Returns the extracted item or null on failure.
 function _extractDraggedItem(board) {
   if (dragPayload.area === 'board') {
-    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
-    const oldParent = oldFound?.parent;
-    const dragged = removeBoardItemById(dragPayload.itemId);
-    if (dragged && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
-      dragged.tags = (dragged.tags || []).filter(t => !oldParent.sharedTags.includes(t));
-    }
-    return dragged;
+    // Inherited/shared tags are computed dynamically, so moving an item out of a
+    // parent must not mutate the item's explicit tags.
+    return removeBoardItemById(dragPayload.itemId);
+  }
+  if (dragPayload.area === 'import-manager') {
+    return _takeImportManagerDraggedItem();
   }
   if (dragPayload.area === 'speed-dial') {
     const dragged = removeSpeedDialItemById(board, dragPayload.itemId);
@@ -280,6 +292,8 @@ function createEssentialSlotPreview() {
   const board = getActiveBoard();
   if (dragPayload.area === 'board') {
     item = findBoardItemInColumns(board, dragPayload.itemId)?.item;
+  } else if (dragPayload.area === 'import-manager') {
+    item = _findDraggedImportManagerItem();
   } else if (dragPayload.area === 'speed-dial') {
     item = board?.speedDial.find(i => i?.id === dragPayload.itemId);
   } else if (dragPayload.area === 'essential') {
@@ -343,6 +357,13 @@ function handleEssentialSlotDrop(targetSlot) {
     state.essentials[targetSlot] = item;
   } else if (dragPayload.area === 'board') {
     const item = removeBoardItemById(dragPayload.itemId);
+    if (!item) { dragPayload = null; return; }
+    item.type = 'bookmark';
+    if (!item.tags) item.tags = [];
+    while (state.essentials.length <= targetSlot) state.essentials.push(null);
+    state.essentials[targetSlot] = item;
+  } else if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
+    const item = _takeImportManagerDraggedItem();
     if (!item) { dragPayload = null; return; }
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
@@ -453,10 +474,13 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 
   const targetPath = findBoardItemInColumns(board, targetItem.id);
 
-  if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') {
+  if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential' || dragPayload.area === 'import-manager') {
     let extracted;
     if (dragPayload.area === 'speed-dial') {
       extracted = removeSpeedDialItemById(board, dragPayload.itemId);
+      if (!extracted) { dragPayload = null; return; }
+    } else if (dragPayload.area === 'import-manager') {
+      extracted = _takeImportManagerDraggedItem();
       if (!extracted) { dragPayload = null; return; }
     } else {
       extracted = state.essentials[dragPayload.slot];
@@ -474,10 +498,14 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
     dragPayload = null; renderAll(); saveState(); return;
   }
 
-  const draggedPath = findBoardItemInColumns(board, dragPayload.itemId);
+  const draggedPath = dragPayload.area === 'board'
+    ? findBoardItemInColumns(board, dragPayload.itemId)
+    : null;
 
   if (!targetPath) {
-    const dragged = removeBoardItemById(dragPayload.itemId);
+    const dragged = dragPayload.area === 'board'
+      ? removeBoardItemById(dragPayload.itemId)
+      : null;
     if (dragged) addBoardItemToColumn(columnId, dragged);
     dragPayload = null; renderAll(); saveState(); return;
   }
@@ -589,13 +617,11 @@ function handleBoardColumnDrop(event, columnId) {
   let draggedItem;
   if (dragPayload.area === 'board') {
     const origIdx = column.items.findIndex(i => i.id === dragPayload.itemId);
-    const oldFound = findBoardItemInColumns(board, dragPayload.itemId);
-    const oldParent = oldFound?.parent;
     draggedItem = removeBoardItemById(dragPayload.itemId);
     if (draggedItem && origIdx !== -1 && origIdx < stateInsertIndex) stateInsertIndex -= 1;
-    if (draggedItem && oldParent?.autoRemoveTags && oldParent.sharedTags?.length) {
-      draggedItem.tags = (draggedItem.tags || []).filter(t => !oldParent.sharedTags.includes(t));
-    }
+  } else if (dragPayload.area === 'import-manager') {
+    draggedItem = _takeImportManagerDraggedItem();
+    if (!draggedItem) { dragPayload = null; return; }
   } else if (dragPayload.area === 'speed-dial') {
     draggedItem = removeSpeedDialItemById(board, dragPayload.itemId);
     if (!draggedItem) { dragPayload = null; return; }
@@ -760,10 +786,310 @@ function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   saveState();
 }
 
+// --- Import Manager drag & drop ---
+
+function _canDropOnImportManager() {
+  return dragPayload?.area === 'import-manager';
+}
+
+function _isDroppingImportManagerFolderIntoOwnDescendant(targetFolder) {
+  if (dragPayload?.itemType !== 'folder') return false;
+  if (dragPayload.itemId === targetFolder.id) return true;
+  const dragged = _findDraggedImportManagerItem();
+  return dragged?.type === 'folder' && isDescendant(targetFolder.id, dragged);
+}
+
+function _activateImportManagerFolderDrop(event, folderCardEl) {
+  if (!_canDropOnImportManager()) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (_dropTarget === folderCardEl) return;
+  _dropTarget = folderCardEl;
+  _dropPos = null;
+  const childrenContainer = folderCardEl.querySelector('.folder-children');
+  if (childrenContainer) {
+    _moveBoardPreview(childrenContainer, null);
+    childrenContainer.classList.add('drop-target');
+  }
+}
+
+function handleImportManagerItemDragOver(event, targetItem, parentFolder, depth) {
+  if (!_canDropOnImportManager()) return;
+
+  if (targetItem.type === 'folder' && !targetItem.collapsed) {
+    _activateImportManagerFolderDrop(event, event.currentTarget);
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = 'move';
+
+  const itemEl = event.currentTarget;
+  const rect = itemEl.getBoundingClientRect();
+  const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+  if (_dropTarget === itemEl && _dropPos === position) return;
+
+  _dropTarget = itemEl;
+  _dropPos = position;
+  _moveBoardPreview(itemEl.parentElement, position === 'before' ? itemEl : itemEl.nextSibling);
+  itemEl.dataset.dropPosition = position;
+  itemEl.classList.toggle('drop-position-before', position === 'before');
+  itemEl.classList.toggle('drop-position-after', position === 'after');
+}
+
+function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
+  if (!_canDropOnImportManager()) return;
+  if (dragPayload.itemId === targetItem.id) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  const position = _dropPos || 'before';
+  removeDragPlaceholders();
+  pushUndoSnapshot();
+
+  const targetPath = findImportManagerItemById(targetItem.id);
+  if (!targetPath) { dragPayload = null; return; }
+
+  const draggedPath = findImportManagerItemById(dragPayload.itemId);
+  const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
+  if (targetIndex === -1) { dragPayload = null; return; }
+
+  const draggedIndex = draggedPath && draggedPath.list === targetPath.list
+    ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
+    : -1;
+
+  const dragged = _takeImportManagerDraggedItem();
+  if (!dragged) { dragPayload = null; return; }
+
+  let destinationIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+  if (draggedIndex !== -1 && draggedIndex < targetIndex) destinationIndex -= 1;
+  destinationIndex = Math.max(0, Math.min(destinationIndex, targetPath.list.length));
+  targetPath.list.splice(destinationIndex, 0, dragged);
+
+  dragPayload = null;
+  renderAll();
+  saveState();
+}
+
+function handleImportManagerListDragOver(event) {
+  if (!_canDropOnImportManager()) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  event.stopPropagation();
+
+  const listEl = document.getElementById('importManagerList');
+  if (!listEl) return;
+  const itemEls = Array.from(listEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
+
+  if (itemEls.length === 0) {
+    if (_dropTarget === listEl && _dropPos === 'start') return;
+    _dropTarget = listEl;
+    _dropPos = 'start';
+    _moveBoardPreview(listEl, listEl.firstChild);
+    return;
+  }
+
+  let nearestEl = null;
+  let nearestPos = 'after';
+  for (const el of itemEls) {
+    const rect = el.getBoundingClientRect();
+    if (event.clientY <= rect.bottom) {
+      nearestEl = el;
+      nearestPos = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      break;
+    }
+  }
+
+  if (!nearestEl) {
+    if (_dropTarget === listEl && _dropPos === 'end') return;
+    _dropTarget = listEl;
+    _dropPos = 'end';
+    _moveBoardPreview(listEl, null);
+    return;
+  }
+
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
+  _dropTarget = nearestEl;
+  _dropPos = nearestPos;
+  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
+  nearestEl.dataset.dropPosition = nearestPos;
+  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
+  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+}
+
+function handleImportManagerListDrop(event) {
+  if (!_canDropOnImportManager()) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const savedTarget = _dropTarget;
+  const savedPos = _dropPos;
+  removeDragPlaceholders();
+  pushUndoSnapshot();
+
+  const rootItems = state.importManager?.items || [];
+  const draggedPath = findImportManagerItemById(dragPayload.itemId);
+  const dragged = _takeImportManagerDraggedItem();
+  if (!dragged) { dragPayload = null; return; }
+
+  let insertIndex = rootItems.length;
+  if (savedTarget?.dataset?.itemId) {
+    const targetIdx = rootItems.findIndex(item => item.id === savedTarget.dataset.itemId);
+    if (targetIdx !== -1) insertIndex = savedPos === 'after' ? targetIdx + 1 : targetIdx;
+  }
+
+  const draggedIndex = draggedPath && draggedPath.list === rootItems
+    ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
+    : -1;
+  if (draggedIndex !== -1 && draggedIndex < insertIndex) insertIndex -= 1;
+
+  rootItems.splice(Math.max(0, Math.min(insertIndex, rootItems.length)), 0, dragged);
+
+  dragPayload = null;
+  renderAll();
+  saveState();
+}
+
+function handleImportManagerFolderHeaderDragOver(event, folderCardEl, folderItem, depth) {
+  _activateImportManagerFolderDrop(event, folderCardEl);
+}
+
+function handleImportManagerFolderHeaderDrop(event, folderItem, depth) {
+  if (!_canDropOnImportManager()) return;
+  if (dragPayload.itemId === folderItem.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+  removeDragPlaceholders();
+  event.currentTarget.classList.remove('drop-target');
+
+  if (dragPayload.itemType === 'folder' && depth >= 2) {
+    showNotice('Folders can only be nested two levels deep.');
+    dragPayload = null;
+    return;
+  }
+  if (_isDroppingImportManagerFolderIntoOwnDescendant(folderItem)) {
+    showNotice('Cannot move a folder into one of its own subfolders.');
+    dragPayload = null;
+    return;
+  }
+
+  pushUndoSnapshot();
+  const dragged = _takeImportManagerDraggedItem();
+  if (!dragged) { dragPayload = null; return; }
+
+  folderItem.children = folderItem.children || [];
+  folderItem.children.push(dragged);
+
+  dragPayload = null;
+  renderAll();
+  saveState();
+}
+
+function handleImportManagerFolderContainerDragOver(event, folderCardEl, folderItem, depth) {
+  if (!_canDropOnImportManager()) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = 'move';
+
+  const containerEl = event.currentTarget;
+  containerEl.classList.add('drop-target');
+  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
+
+  if (itemEls.length === 0) {
+    if (_dropTarget === containerEl && _dropPos === 'start') return;
+    _dropTarget = containerEl;
+    _dropPos = 'start';
+    _moveBoardPreview(containerEl, containerEl.firstChild);
+    return;
+  }
+
+  let nearestEl = null;
+  let nearestPos = null;
+  let nearestDist = Infinity;
+  for (const el of itemEls) {
+    const rect = el.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const dist = Math.abs(event.clientY - midY);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestEl = el;
+      nearestPos = event.clientY <= midY ? 'before' : 'after';
+    }
+  }
+
+  if (!nearestEl) {
+    if (_dropTarget === containerEl && _dropPos === 'end') return;
+    _dropTarget = containerEl;
+    _dropPos = 'end';
+    _moveBoardPreview(containerEl, null);
+    return;
+  }
+
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
+  _dropTarget = nearestEl;
+  _dropPos = nearestPos;
+  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
+  nearestEl.dataset.dropPosition = nearestPos;
+  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
+  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+}
+
+function handleImportManagerFolderContainerDrop(event, folderItem, depth) {
+  if (!_canDropOnImportManager()) return;
+  if (dragPayload.itemId === folderItem.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const dropTargetEl = _dropTarget;
+  const dropPos = _dropPos;
+  removeDragPlaceholders();
+  event.currentTarget.classList.remove('drop-target');
+
+  if (dragPayload.itemType === 'folder' && depth >= 2) {
+    showNotice('Folders can only be nested two levels deep.');
+    dragPayload = null;
+    return;
+  }
+  if (_isDroppingImportManagerFolderIntoOwnDescendant(folderItem)) {
+    showNotice('Cannot move a folder into one of its own subfolders.');
+    dragPayload = null;
+    return;
+  }
+
+  pushUndoSnapshot();
+  const dragged = _takeImportManagerDraggedItem();
+  if (!dragged) { dragPayload = null; return; }
+
+  folderItem.children = folderItem.children || [];
+  const targetItemId = dropTargetEl?.dataset?.itemId;
+  if (targetItemId && dropPos) {
+    const targetIdx = folderItem.children.findIndex(child => child.id === targetItemId);
+    if (targetIdx !== -1) {
+      const insertIdx = Math.max(0, Math.min(
+        dropPos === 'after' ? targetIdx + 1 : targetIdx,
+        folderItem.children.length
+      ));
+      folderItem.children.splice(insertIdx, 0, dragged);
+    } else {
+      folderItem.children.push(dragged);
+    }
+  } else {
+    folderItem.children.push(dragged);
+  }
+
+  dragPayload = null;
+  renderAll();
+  saveState();
+}
+
 // --- Speed dial drag & drop ---
 
 function _speedDialAreaAllowed(area) {
-  return area === 'speed-dial' || area === 'essential' || (area === 'board' && dragPayload.itemType === 'bookmark');
+  return area === 'speed-dial'
+    || area === 'essential'
+    || (area === 'board' && dragPayload.itemType === 'bookmark')
+    || (area === 'import-manager' && dragPayload.itemType === 'bookmark');
 }
 
 function handleSpeedDialSlotDragOver(event, target, slot) {
@@ -796,6 +1122,13 @@ function _takeSpeedDialDragItem(target, slot) {
   }
   if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
     const item = removeBoardItemById(dragPayload.itemId);
+    if (!item) return null;
+    item.type = 'bookmark';
+    if (!item.tags) item.tags = [];
+    return item;
+  }
+  if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
+    const item = _takeImportManagerDraggedItem();
     if (!item) return null;
     item.type = 'bookmark';
     if (!item.tags) item.tags = [];
@@ -911,7 +1244,8 @@ function handleSpeedDialContainerDrop(event) {
 function handleNavItemDragOver(event, item, parent) {
   // Board item as inbox target — any bookmark/folder from any source
   if (item.type === 'board' && _canSendToInbox()) {
-    if (item.boardId !== state.activeBoardId) {
+    const isSameActiveBoardDrag = dragPayload?.area === 'board' && item.boardId === state.activeBoardId;
+    if (!isSameActiveBoardDrag) {
       const targetBoard = state.boards.find(b => b.id === item.boardId);
       if (!targetBoard?.locked) {
         event.preventDefault();
@@ -969,7 +1303,7 @@ function handleNavDrop(event, targetItem, parent) {
     dragPayload = null; renderAll(); saveState(); return;
   }
   if (targetItem.type === 'board' && _canSendToInbox()) {
-    if (targetItem.boardId === state.activeBoardId) { dragPayload = null; return; }
+    if (dragPayload?.area === 'board' && targetItem.boardId === state.activeBoardId) { dragPayload = null; return; }
     removeDragPlaceholders();
     pushUndoSnapshot();
     const targetBoard = state.boards.find(b => b.id === targetItem.boardId);
@@ -980,6 +1314,8 @@ function handleNavDrop(event, targetItem, parent) {
     const board = getActiveBoard();
     if (dragPayload.area === 'board') {
       dragged = removeBoardItemById(dragPayload.itemId);
+    } else if (dragPayload.area === 'import-manager') {
+      dragged = _takeImportManagerDraggedItem();
     } else if (dragPayload.area === 'nav') {
       dragged = removeNavItemById(dragPayload.itemId);
     } else if (dragPayload.area === 'speed-dial') {

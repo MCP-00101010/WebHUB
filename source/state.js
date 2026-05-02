@@ -2,6 +2,8 @@ const STORAGE_KEY = 'morpheus-webhub-state';
 const LOCAL_CACHE_META_KEY = 'morpheus-webhub-state-meta';
 const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SPEED_DIAL_SLOT_COUNT = 8;
+const COLLAPSED_SIDEBAR_WIDTH = 10;
+const EXPANDED_SIDEBAR_WIDTH = 320;
 
 let isDirty = false;
 
@@ -14,10 +16,13 @@ function cloneData(value) {
 const defaultSettings = {
   warnOnClose: false,
   confirmDeleteBoard: false,
+  confirmDeleteTab: false,
+  confirmDeleteSet: false,
   confirmDeleteBookmark: false,
   confirmDeleteFolder: false,
   confirmDeleteTitleDivider: false,
   confirmDeleteTag: false,
+  showBookmarkTooltips: true,
   sharedAutoRefreshNotice: true,
   globalFontScale: 'medium',
   globalFontColor: '#e5e7eb',
@@ -34,10 +39,11 @@ const defaultSettings = {
   bookmarkFontSize: 14,
   bookmarkFontFamily: '',
   bookmarkBold: false, bookmarkItalic: false, bookmarkUnderline: false,
-  showTags: true,
+  showBookmarkTags: true,
   folderFontSize: 15,
   folderFontFamily: '',
   folderBold: false, folderItalic: false, folderUnderline: false,
+  showFolderTags: true,
   titleFontSize: 12,
   titleLineThickness: 1,
   titleLineColor: '',
@@ -70,6 +76,8 @@ const defaultSettings = {
   essentialsIconSize: 'medium',
   showEssentials: true,
   essentialsDisplayCount: 10,
+  sidebarUseActiveTabOpacity: true,
+  sidebarOpacity: 100,
   baseTagSuggestions: [
     'work',
     'personal',
@@ -118,8 +126,7 @@ const defaultState = {
       title: 'Home Board',
       sharedTags: [],
       tags: [],
-      inheritTags: true,
-      autoRemoveTags: false,
+      wrapTabBar: false,
       showSpeedDial: true,
       speedDialSlotCount: DEFAULT_SPEED_DIAL_SLOT_COUNT,
       speedDial: [
@@ -136,8 +143,6 @@ const defaultState = {
           containerOpacity: 100,
           sharedTags: [],
           tags: [],
-          inheritTags: true,
-          autoRemoveTags: false,
           showSetBar: true,
           setBar: [],
           columns: [
@@ -217,6 +222,8 @@ function getLocalCacheMeta() {
 function migrateStyleSettings(settings) {
   if (!settings.styleOverrides) settings.styleOverrides = cloneData(defaultSettings.styleOverrides);
   else settings.styleOverrides = { ...defaultSettings.styleOverrides, ...settings.styleOverrides };
+  if (settings.showBookmarkTags === undefined) settings.showBookmarkTags = settings.showTags !== false;
+  if (settings.showFolderTags === undefined) settings.showFolderTags = settings.showTags !== false;
   if (settings.styleOverridesMigrated) return;
 
   const differs = (key, fallback) => settings[key] !== undefined && settings[key] !== fallback;
@@ -253,11 +260,38 @@ function migrateItems(items) {
       if (item.labels && !item.tags) item.tags = item.labels;
       delete item.labels;
       if (!item.tags) item.tags = [];
-      if (item.inheritTags === undefined) item.inheritTags = true;
-      if (item.autoRemoveTags === undefined) item.autoRemoveTags = false;
+      delete item.inheritTags;
+      delete item.autoRemoveTags;
     }
     if (item.children) migrateItems(item.children);
   }
+}
+
+function stripLegacySharedTagToggleFieldsInItems(items) {
+  for (const item of (items || [])) {
+    if (!item) continue;
+    if (item.type === 'folder') {
+      delete item.inheritTags;
+      delete item.autoRemoveTags;
+    }
+    if (item.children) stripLegacySharedTagToggleFieldsInItems(item.children);
+  }
+}
+
+function stripLegacySharedTagToggleFields(root = state) {
+  for (const board of (root?.boards || [])) {
+    if (!board) continue;
+    delete board.inheritTags;
+    delete board.autoRemoveTags;
+    for (const tab of getBoardTabs(board)) {
+      delete tab.inheritTags;
+      delete tab.autoRemoveTags;
+      for (const col of (tab.columns || [])) stripLegacySharedTagToggleFieldsInItems(col.items);
+      stripLegacySharedTagToggleFieldsInItems(getBoardInbox(board, tab)?.items || []);
+    }
+  }
+  stripLegacySharedTagToggleFieldsInItems(root?.navItems || []);
+  stripLegacySharedTagToggleFieldsInItems(root?.importManager?.items || []);
 }
 
 function normalizeSetItems(items) {
@@ -490,12 +524,10 @@ function normalizeBoardTabRecord(tab, boardId, index = 0) {
     title: (tab?.title || '').trim() || (index === 0 ? 'Home' : `Tab ${index + 1}`),
     columnCount: columns.length,
     backgroundImage: typeof tab?.backgroundImage === 'string' ? tab.backgroundImage : '',
-    backgroundFit: tab?.backgroundFit === 'contain' ? 'contain' : 'cover',
+    backgroundFit: tab?.backgroundFit === 'contain' ? 'contain' : (tab?.backgroundFit === 'fill' ? 'fill' : 'cover'),
     containerOpacity: tab?.containerOpacity === undefined ? 100 : tab.containerOpacity,
     sharedTags: Array.isArray(tab?.sharedTags) ? tab.sharedTags : [],
     tags: Array.isArray(tab?.tags) ? tab.tags : [],
-    inheritTags: tab?.inheritTags !== false,
-    autoRemoveTags: tab?.autoRemoveTags === true,
     showSetBar: tab?.showSetBar !== false,
     setBar: Array.isArray(tab?.setBar) ? [...new Set(tab.setBar.filter(Boolean))] : [],
     columns,
@@ -544,8 +576,6 @@ function normalizeBoardRecord(board, index = 0) {
         containerOpacity: board?.containerOpacity,
         sharedTags: board?.sharedTags,
         tags: board?.tags,
-        inheritTags: board?.inheritTags,
-        autoRemoveTags: board?.autoRemoveTags,
         columns: board?.columns,
         locked: board?.locked
       }, id, 0)];
@@ -555,19 +585,20 @@ function normalizeBoardRecord(board, index = 0) {
     title: (board?.title || '').trim() || `Board ${index + 1}`,
     sharedTags: Array.isArray(board?.sharedTags) ? board.sharedTags : [],
     tags: Array.isArray(board?.tags) ? board.tags : [],
-    inheritTags: board?.inheritTags !== false,
-    autoRemoveTags: board?.autoRemoveTags === true,
+    wrapTabBar: board?.wrapTabBar === true,
     showSpeedDial: board?.showSpeedDial !== false,
     speedDialSlotCount: board?.speedDialSlotCount,
     speedDial: Array.isArray(board?.speedDial) ? board.speedDial : [],
     tabs,
     columnCount: Array.isArray(board?.columns) ? board.columns.length : 0,
     backgroundImage: typeof board?.backgroundImage === 'string' ? board.backgroundImage : '',
-    backgroundFit: board?.backgroundFit === 'contain' ? 'contain' : 'cover',
+    backgroundFit: board?.backgroundFit === 'contain' ? 'contain' : (board?.backgroundFit === 'fill' ? 'fill' : 'cover'),
     containerOpacity: board?.containerOpacity === undefined ? 100 : board.containerOpacity,
     columns: Array.isArray(board?.columns) ? board.columns : [],
     inbox: board?.inbox || null
   };
+  delete normalized.inheritTags;
+  delete normalized.autoRemoveTags;
   normalizeSpeedDialSlots(normalized);
   for (const item of (normalized.speedDial || [])) {
     if (!item) continue;
@@ -730,6 +761,7 @@ function parseStateJson(saved) {
     } else {
       parsed.activeTabId = null;
     }
+    stripLegacySharedTagToggleFields(parsed);
     return parsed;
   } catch (error) {
     console.warn('Failed to parse saved state, resetting', error);
@@ -842,6 +874,7 @@ function notifySharedDiskConflict(detail = {}) {
 function serializeStateSnapshot() {
   syncBoardCompatibilityState();
   trimFaviconCache();
+  stripLegacySharedTagToggleFields(state);
   return JSON.stringify(state);
 }
 
@@ -1105,7 +1138,7 @@ function getBoardNavInheritedTags(boardId) {
   function collect(items, chain) {
     for (const item of (items || [])) {
       if (item.type === 'board' && item.boardId === boardId) {
-        for (const f of chain) if (f.inheritTags !== false && f.sharedTags) tags.push(...f.sharedTags);
+        for (const f of chain) if (f.sharedTags) tags.push(...f.sharedTags);
         return true;
       }
       if (item.type === 'folder' && item.children) {
@@ -1120,15 +1153,15 @@ function getBoardNavInheritedTags(boardId) {
 
 function getBoardInheritedTagIds(board) {
   if (!board) return [];
-  const inheritedFromNav = board.inheritTags !== false ? getBoardNavInheritedTags(board.id) : [];
-  const ownShared = board.inheritTags !== false ? (board.sharedTags || []) : [];
+  const inheritedFromNav = getBoardNavInheritedTags(board.id);
+  const ownShared = board.sharedTags || [];
   return [...new Set([...inheritedFromNav, ...ownShared])];
 }
 
 function getTabInheritedTagIds(board, tab) {
   if (!board || !tab) return [];
   const inheritedFromBoard = getBoardInheritedTagIds(board);
-  const tabShared = tab.inheritTags !== false ? (tab.sharedTags || []) : [];
+  const tabShared = tab.sharedTags || [];
   return [...new Set([...inheritedFromBoard, ...tabShared])];
 }
 
@@ -1148,7 +1181,7 @@ function collectFolderAncestorTags(board, folderId) {
   const found = findBoardItemInColumns(board, folderId);
   if (!found?.item) return [];
   const parentTags = found.parent ? collectFolderAncestorTags(board, found.parent.id) : [];
-  const ownShared = found.item.inheritTags !== false ? (found.item.sharedTags || []) : [];
+  const ownShared = found.item.sharedTags || [];
   return [...parentTags, ...ownShared];
 }
 
@@ -1262,8 +1295,6 @@ function createBoardRecord(title, options = {}) {
     containerOpacity: options.containerOpacity,
     sharedTags: options.tabSharedTags,
     tags: options.tabTags,
-    inheritTags: options.tabInheritTags,
-    autoRemoveTags: options.tabAutoRemoveTags,
     showSetBar: options.showSetBar,
     setBar: options.setBar,
     inbox: options.inbox,
@@ -1272,13 +1303,12 @@ function createBoardRecord(title, options = {}) {
   const board = {
     id,
     title,
+    wrapTabBar: options.wrapTabBar === true,
     showSpeedDial: options.showSpeedDial !== false,
-    speedDialSlotCount: options.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT,
+    speedDialSlotCount: options.speedDialSlotCount || getDefaultSpeedDialSlotCount(),
     speedDial: Array.isArray(options.speedDial) ? options.speedDial : [],
     sharedTags: Array.isArray(options.sharedTags) ? options.sharedTags : [],
     tags: Array.isArray(options.tags) ? options.tags : [],
-    inheritTags: options.inheritTags !== false,
-    autoRemoveTags: options.autoRemoveTags === true,
     tabs,
     columnCount: tabs[0]?.columnCount || 0,
     backgroundImage: tabs[0]?.backgroundImage || '',
@@ -1297,13 +1327,12 @@ function createBoard(title, options = {}) {
   const id = options.id || `board-${Date.now()}`;
   const board = createBoardRecord(title, {
     id,
+    wrapTabBar: options.wrapTabBar,
     showSpeedDial: options.showSpeedDial,
     speedDialSlotCount: options.speedDialSlotCount,
     speedDial: options.speedDial,
     sharedTags: options.sharedTags,
     tags: options.tags,
-    inheritTags: options.inheritTags,
-    autoRemoveTags: options.autoRemoveTags,
     initialTabTitle: options.initialTabTitle || title,
     createEmpty: options.createEmpty === true
   });
@@ -1348,8 +1377,6 @@ function addBookmarkItem(type, title, columnId, options = {}) {
     item.children = [];
     item.tags = options.tags || [];
     item.sharedTags = options.sharedTags || [];
-    item.inheritTags = options.inheritTags !== undefined ? options.inheritTags : true;
-    item.autoRemoveTags = options.autoRemoveTags || false;
   }
   column.items.push(item);
 }
@@ -1454,14 +1481,41 @@ function normalizeSpeedDialSlots(target) {
   if (!target) return;
   if (!Array.isArray(target.speedDial)) target.speedDial = [];
   const currentLength = target.speedDial.length;
-  const fallbackCount = Math.max(DEFAULT_SPEED_DIAL_SLOT_COUNT, currentLength);
+  const fallbackCount = Math.max(getDefaultSpeedDialSlotCount(), currentLength);
   target.speedDialSlotCount = Math.max(1, Math.min(48, parseInt(target.speedDialSlotCount, 10) || fallbackCount));
   if (target.speedDialSlotCount < currentLength) target.speedDialSlotCount = currentLength;
 }
 
+function getDefaultSpeedDialSlotCount() {
+  const sizeName = state?.settings?.speedDialIconSize || defaultSettings.speedDialIconSize || 'medium';
+  const slotSize = ({ small: 34, medium: 44, large: 56 })[sizeName] || 44;
+  const fallback = ({ small: 14, medium: 12, large: 10 })[sizeName] || 12;
+  if (typeof document === 'undefined') return fallback;
+
+  const appShell = document.querySelector('.app-shell');
+  const mainPanel = document.getElementById('mainPanel');
+  const speedDial = document.getElementById('speedDial');
+  const sidebarCollapsed = !!appShell?.classList.contains('sidebar-collapsed');
+  const gap = 8;
+
+  let paneWidth = 0;
+  if (!sidebarCollapsed && speedDial?.clientWidth) {
+    paneWidth = speedDial.clientWidth;
+  } else if (mainPanel?.clientWidth) {
+    paneWidth = mainPanel.clientWidth;
+    if (sidebarCollapsed) paneWidth -= (EXPANDED_SIDEBAR_WIDTH - COLLAPSED_SIDEBAR_WIDTH);
+    paneWidth -= 68;
+  } else if (typeof window !== 'undefined' && window.innerWidth) {
+    paneWidth = window.innerWidth - EXPANDED_SIDEBAR_WIDTH - 68;
+  }
+
+  if (!Number.isFinite(paneWidth) || paneWidth <= 0) return fallback;
+  return Math.max(1, Math.min(48, Math.floor((paneWidth + gap) / (slotSize + gap)) || fallback));
+}
+
 function getSpeedDialSlotCount(target) {
   normalizeSpeedDialSlots(target);
-  return target?.speedDialSlotCount || DEFAULT_SPEED_DIAL_SLOT_COUNT;
+  return target?.speedDialSlotCount || getDefaultSpeedDialSlotCount();
 }
 
 function firstEmptySpeedDialSlot(target) {
@@ -1507,6 +1561,14 @@ function removeEssential(slot) {
 
 // --- Tag inheritance ---
 
+function filterInheritedTagIdsForItem(item, tagIds = []) {
+  const explicitTagIds = new Set([
+    ...(item?.tags || []),
+    ...(item?.sharedTags || [])
+  ]);
+  return [...new Set((tagIds || []).filter(tagId => !explicitTagIds.has(tagId)))];
+}
+
 function computeInheritedTags(item, board) {
   if (!board) return [];
   function findParentChain(targetId, items, chain) {
@@ -1522,9 +1584,7 @@ function computeInheritedTags(item, board) {
   const tab = findBoardTabContainingItem(board, item.id) || getBoardTab(board);
   if (!tab) return [];
   const chainBase = [];
-  if (board.inheritTags !== false) {
-    chainBase.push({ sharedTags: getBoardNavInheritedTags(board.id), inheritTags: true });
-  }
+  chainBase.push({ sharedTags: getBoardNavInheritedTags(board.id) });
   chainBase.push(board, tab);
   let chain = null;
   for (const col of getBoardItemContainers(board, tab)) {
@@ -1534,9 +1594,9 @@ function computeInheritedTags(item, board) {
   if (!chain) return [];
   const tags = [];
   for (const ancestor of chain) {
-    if (ancestor.inheritTags !== false && ancestor.sharedTags) tags.push(...ancestor.sharedTags);
+    if (ancestor.sharedTags) tags.push(...ancestor.sharedTags);
   }
-  return [...new Set(tags)];
+  return filterInheritedTagIdsForItem(item, tags);
 }
 
 // --- Bookmark management utilities ---
@@ -1665,15 +1725,13 @@ function clearImportManager() {
   state.importManager.items = [];
 }
 
-function editFolder(itemId, title, tags, sharedTags, inheritTags, autoRemoveTags) {
+function editFolder(itemId, title, tags, sharedTags) {
   let item = findBoardItemInColumns(getActiveBoard(), itemId)?.item;
   if (!item) item = findNavItemPath(itemId)?.item;
   if (item?.type === 'folder') {
     item.title = title;
     item.tags = tags;
     item.sharedTags = sharedTags;
-    item.inheritTags = inheritTags;
-    item.autoRemoveTags = autoRemoveTags;
   }
 }
 

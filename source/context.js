@@ -259,14 +259,14 @@ function handleContextMenuAction(action) {
     case 'deleteSet': {
       const set = findSetById(contextTarget.setId || contextTarget.item?.id);
       if (!set) break;
-      showConfirmDialog(`Delete set "${set.title}"?`, () => {
+      confirmDelete('confirmDeleteSet', `Delete set "${set.title}"?`, () => {
         pushUndoSnapshot();
         pushToTrash(set, { area: 'set' });
         deleteSetById(set.id);
         if (selectedSetId === set.id) selectedSetId = null;
         renderAll();
         saveState();
-      }, 'Delete');
+      });
       break;
     }
     case 'deleteSetItem': {
@@ -293,6 +293,23 @@ function handleContextMenuAction(action) {
         selectOptions: options,
         contextTarget
       });
+      break;
+    }
+    case 'sendImportToActiveTab': {
+      const board = getActiveBoard();
+      const tab = getActiveTab();
+      const targetInbox = getBoardInbox(board, tab);
+      if (!board || !tab || board.locked || !targetInbox) {
+        showNotice('No unlocked active tab inbox is available.');
+        break;
+      }
+      pushUndoSnapshot();
+      const removed = removeImportManagerItemById(contextTarget.itemId);
+      if (!removed) break;
+      if (!removed.tags) removed.tags = [];
+      targetInbox.items.push(removed);
+      renderAll();
+      saveState();
       break;
     }
     case 'deleteImportItem': {

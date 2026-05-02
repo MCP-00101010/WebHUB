@@ -6,6 +6,11 @@ const IMPORT_MANAGER_POS_KEY = 'morpheus-import-manager-pos';
 let inboxPanelOpen = false;
 let importManagerPanelOpen = false;
 
+function _finalizeUtilityPanelClose(panel) {
+  if (panel && panel.contains(document.activeElement)) document.activeElement.blur();
+  if (!shouldKeepModalOverlayVisible()) elements.modalOverlay.classList.add('hidden');
+}
+
 function saveInboxPos() {
   const panel = document.getElementById('inboxPanel');
   if (!panel) return;
@@ -29,7 +34,9 @@ function showInboxPanel() {
 
 function hideInboxPanel() {
   inboxPanelOpen = false;
-  document.getElementById('inboxPanel').classList.add('hidden');
+  const panel = document.getElementById('inboxPanel');
+  panel?.classList.add('hidden');
+  _finalizeUtilityPanelClose(panel);
 }
 
 function _saveImportManagerPos() {
@@ -97,7 +104,9 @@ function showImportManagerPanel() {
 function hideImportManagerPanel() {
   if (selectionContext === 'import-manager') clearSelection();
   importManagerPanelOpen = false;
-  document.getElementById('importManagerPanel')?.classList.add('hidden');
+  const panel = document.getElementById('importManagerPanel');
+  panel?.classList.add('hidden');
+  _finalizeUtilityPanelClose(panel);
 }
 
 function _collectImportUrls(items) {
@@ -113,11 +122,19 @@ function _openImportFolder(item) {
   _collectImportUrls([item]).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
 }
 
-function _createImportManagerItem(item, depth = 0, parentFolder = null) {
+function _canSendImportToActiveTab() {
+  const board = getActiveBoard();
+  const tab = getActiveTab();
+  return !!board && !!tab && !board.locked && !!getBoardInbox(board, tab);
+}
+
+function _createImportManagerItem(item, depth = 1, parentFolder = null) {
   const itemEl = document.createElement('div');
   itemEl.className = 'board-column-item import-manager-item';
   itemEl.dataset.itemId = item.id;
-  itemEl.style.marginLeft = `${depth * 16}px`;
+  itemEl.dataset.columnId = 'import-manager';
+  itemEl.dataset.itemType = item.type;
+  itemEl.draggable = true;
   if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
 
   if (item.type === 'folder') {
@@ -153,11 +170,53 @@ function _createImportManagerItem(item, depth = 0, parentFolder = null) {
     header.appendChild(name);
     itemEl.appendChild(header);
 
+    const folderTags = [...new Set([...(item.tags || []), ...(item.sharedTags || [])])];
+    if (folderTags.length && state.settings.showFolderTags !== false) {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'item-tag-chips';
+      renderTagsInto(tagsEl, folderTags);
+      itemEl.appendChild(tagsEl);
+    }
+
     itemEl.addEventListener('click', () => {
       item.collapsed = !item.collapsed;
       saveState();
       renderImportManagerPanel();
     });
+
+    const onFolderTopDragOver = event => handleImportManagerFolderHeaderDragOver(event, itemEl, item, depth);
+    const onFolderTopDragLeave = event => {
+      if (itemEl.contains(event.relatedTarget)) return;
+      const childrenContainer = itemEl.querySelector('.folder-children');
+      if (childrenContainer) childrenContainer.classList.remove('drop-target');
+    };
+    const onFolderTopDrop = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleImportManagerFolderHeaderDrop(event, item, depth);
+    };
+    header.addEventListener('dragover', onFolderTopDragOver);
+    header.addEventListener('dragleave', onFolderTopDragLeave);
+    header.addEventListener('drop', onFolderTopDrop);
+
+    if (!item.collapsed) {
+      const childrenContainer = document.createElement('div');
+      childrenContainer.className = 'folder-children';
+      childrenContainer.addEventListener('dragover', event => handleImportManagerFolderContainerDragOver(event, itemEl, item, depth));
+      childrenContainer.addEventListener('dragleave', event => {
+        if (itemEl.contains(event.relatedTarget)) return;
+        event.currentTarget.classList.remove('drop-target');
+      });
+      childrenContainer.addEventListener('drop', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleImportManagerFolderContainerDrop(event, item, depth);
+      });
+      itemEl.appendChild(childrenContainer);
+      if (Array.isArray(item.children)) {
+        item.children.forEach(child => childrenContainer.appendChild(_createImportManagerItem(child, depth + 1, item)));
+      }
+    }
   } else {
     itemEl.classList.add('bookmark-item');
     const header = document.createElement('div');
@@ -189,11 +248,21 @@ function _createImportManagerItem(item, depth = 0, parentFolder = null) {
     header.appendChild(name);
     itemEl.appendChild(header);
 
+    const bookmarkTags = [...new Set(item.tags || [])];
+    if (bookmarkTags.length && state.settings.showBookmarkTags !== false) {
+      const tagsEl = document.createElement('div');
+      tagsEl.className = 'item-tag-chips';
+      renderTagsInto(tagsEl, bookmarkTags);
+      itemEl.appendChild(tagsEl);
+    }
+
     if (item.url) {
       const url = document.createElement('div');
       url.className = 'import-manager-item-url';
       url.textContent = item.url;
       itemEl.appendChild(url);
+      itemEl.dataset.tooltip = buildTooltip(item);
+      itemEl.dataset.tooltipKind = 'bookmark';
     }
 
     itemEl.addEventListener('click', () => {
@@ -205,8 +274,12 @@ function _createImportManagerItem(item, depth = 0, parentFolder = null) {
     event.preventDefault();
     event.stopPropagation();
     contextTarget = { area: 'import-manager-item', itemId: item.id, item, parentId: parentFolder?.id || null };
+    const activeTabOption = _canSendImportToActiveTab()
+      ? [{ label: 'Send to Active Tab', action: 'sendImportToActiveTab' }]
+      : [];
     if (item.type === 'folder') {
       showContextMenu(event.clientX, event.clientY, [
+        ...activeTabOption,
         { label: 'Send to tab inbox…', action: 'sendImportToInbox' },
         { label: 'Open all', action: 'openAllImports' },
         { label: 'Delete folder', action: 'deleteImportItem' }
@@ -214,22 +287,51 @@ function _createImportManagerItem(item, depth = 0, parentFolder = null) {
     } else {
       showContextMenu(event.clientX, event.clientY, [
         { label: 'Open in new tab', action: 'openNewTab' },
+        ...activeTabOption,
         { label: 'Send to tab inbox…', action: 'sendImportToInbox' },
         { label: 'Delete bookmark', action: 'deleteImportItem' }
       ]);
     }
   });
 
+  itemEl.addEventListener('dragstart', event => {
+    event.stopPropagation();
+    dragPayload = {
+      area: 'import-manager',
+      itemId: item.id,
+      itemType: item.type,
+      sourceColumnId: 'import-manager',
+      sourceParentId: parentFolder ? parentFolder.id : null
+    };
+    event.dataTransfer.setData('text/plain', item.id);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.dropEffect = 'move';
+    applyDragImage(event, itemEl);
+  });
+
+  itemEl.addEventListener('dragend', () => {
+    itemEl.classList.remove('dragging');
+    dragPayload = null;
+    removeDragPlaceholders();
+  });
+
+  itemEl.addEventListener('dragover', event => handleImportManagerItemDragOver(event, item, parentFolder, depth));
+  itemEl.addEventListener('dragleave', event => {
+    if (itemEl.contains(event.relatedTarget)) return;
+    itemEl.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
+    itemEl.removeAttribute('data-drop-position');
+    const childrenContainer = itemEl.querySelector('.folder-children');
+    if (childrenContainer) childrenContainer.classList.remove('drop-target');
+  });
+  itemEl.addEventListener('drop', event => handleImportManagerItemDrop(event, item, parentFolder, depth));
+
   return itemEl;
 }
 
-function _renderImportItems(listEl, items, depth = 0, parentFolder = null) {
+function _renderImportItems(listEl, items, depth = 1, parentFolder = null) {
   for (const item of (items || [])) {
     const itemEl = _createImportManagerItem(item, depth, parentFolder);
     listEl.appendChild(itemEl);
-    if (item.type === 'folder' && !item.collapsed && Array.isArray(item.children) && item.children.length) {
-      _renderImportItems(listEl, item.children, depth + 1, item);
-    }
   }
 }
 
@@ -237,20 +339,14 @@ function renderImportManagerPanel() {
   const listEl = document.getElementById('importManagerList');
   const emptyEl = document.getElementById('importManagerEmpty');
   const statusEl = document.getElementById('importManagerStatus');
-  const bmEl = document.getElementById('importManagerBmCount');
-  const folderEl = document.getElementById('importManagerFolderCount');
   const clearBtn = document.getElementById('importManagerClearBtn');
-  if (!listEl || !emptyEl || !statusEl || !bmEl || !folderEl || !clearBtn) return;
+  if (!listEl || !emptyEl || !statusEl || !clearBtn) return;
 
   listEl.innerHTML = '';
   const items = state.importManager?.items || [];
   _pruneImportManagerSelection();
   const { bookmarks, folders } = getImportManagerCounts();
   updateImportManagerBadge();
-  bmEl.textContent = `${bookmarks}`;
-  folderEl.textContent = `${folders}`;
-  bmEl.classList.toggle('hidden', bookmarks === 0);
-  folderEl.classList.toggle('hidden', folders === 0);
   clearBtn.disabled = items.length === 0;
 
   if (!items.length) {
@@ -277,7 +373,7 @@ function attachInboxListeners() {
   document.getElementById('inboxBtn').addEventListener('click', () => {
     if (inboxPanelOpen) hideInboxPanel(); else showInboxPanel();
   });
-  document.getElementById('inboxPanelClose').addEventListener('click', hideInboxPanel);
+  document.getElementById('inboxPanelDoneBtn').addEventListener('click', hideInboxPanel);
 
   const body = document.getElementById('inboxPanelBody');
   body.addEventListener('dragover', e => {
@@ -310,6 +406,8 @@ function attachInboxListeners() {
 function attachImportManagerListeners() {
   document.getElementById('quickImportManagerBtn')?.addEventListener('click', showImportManagerPanel);
   document.getElementById('importManagerDoneBtn')?.addEventListener('click', hideImportManagerPanel);
+  document.getElementById('importManagerList')?.addEventListener('dragover', handleImportManagerListDragOver);
+  document.getElementById('importManagerList')?.addEventListener('drop', handleImportManagerListDrop);
   document.getElementById('importManagerClearBtn')?.addEventListener('click', () => {
     if (!importManagerHasItems()) return;
     showConfirmDialog('Clear all imported items from Import Manager?', () => {
@@ -358,8 +456,6 @@ function parseBookmarkHtml(htmlText) {
           collapsed: true,
           tags: [],
           sharedTags: [],
-          inheritTags: true,
-          autoRemoveTags: false,
           children: parseDL(subDL)
         });
       }
