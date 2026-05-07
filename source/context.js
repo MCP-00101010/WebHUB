@@ -102,6 +102,84 @@ function _findNavItem(id, items) {
   return null;
 }
 
+function _openBoardMetaEditor(board) {
+  if (!board) return;
+  state.activeBoardId = board.id;
+  state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
+  renderAll();
+  saveState();
+  showBoardMetaModal('edit', board);
+}
+
+function _unlockBoardById(boardId) {
+  const board = state.boards.find(b => b.id === boardId);
+  if (!board) return;
+  board.locked = false;
+  renderAll();
+  saveState();
+}
+
+function _renderContextScope(scope = 'all') {
+  if (scope === 'nav') renderNav();
+  else if (scope === 'essentials') renderEssentials();
+  else if (scope === 'import-manager') renderImportManagerPanel();
+  else renderAll();
+}
+
+function _mutateAndRefresh(mutator, options = {}) {
+  const { undo = true, render = 'all', save = true, updateTrash = false } = options;
+  if (undo) pushUndoSnapshot();
+  const result = mutator ? mutator() : undefined;
+  if (result === false) return false;
+  _renderContextScope(render);
+  if (save) saveState();
+  if (updateTrash) updateTrashBadge();
+  return true;
+}
+
+function _showAddBookmarkModal(context = contextTarget, overrides = {}) {
+  showModal('addBookmark', {
+    title: 'New Bookmark',
+    placeholder1: 'New Bookmark',
+    showUrl: true,
+    placeholder2: 'Bookmark URL',
+    showTags: true,
+    contextTarget: context,
+    inheritedTags: overrides.inheritedTags ?? getContextInheritedTags(context),
+    ...overrides
+  });
+}
+
+function _showEditBookmarkModal(context = contextTarget, overrides = {}) {
+  showModal('editBookmark', {
+    title: 'Edit Bookmark',
+    placeholder1: 'Bookmark title',
+    value1: context?.item?.title || '',
+    showUrl: true,
+    placeholder2: 'Bookmark URL',
+    value2: context?.item?.url || '',
+    showTags: true,
+    value3: (context?.item?.tags || []).join(' '),
+    inheritedTags: overrides.inheritedTags ?? (context?.area === 'set-item' ? [] : getContextInheritedTags(context)),
+    ...overrides
+  });
+}
+
+function _showMoveToBoardModal(context = contextTarget, title = 'Move to Tab Inbox') {
+  const boards = state.boards.filter(b => !b.locked);
+  const selectOptions = _sortedInboxTargetOptions(boards);
+  if (!selectOptions.length) return false;
+  showModal('moveToBoard', {
+    title,
+    showName: false,
+    showBoardTabSelect: true,
+    selectLabel: 'Target board',
+    selectSecondaryLabel: 'Target tab inbox',
+    contextTarget: context
+  });
+  return true;
+}
+
 function handleContextMenuAction(action) {
   if (!contextTarget) return;
 
@@ -182,27 +260,13 @@ function handleContextMenuAction(action) {
     }
     case 'editSpeedDial':
     case 'editBookmark':
-      showModal('editBookmark', {
-        title: 'Edit Bookmark',
-        placeholder1: 'Bookmark title',
-        value1: contextTarget.item.title,
-        showUrl: true,
-        placeholder2: 'Bookmark URL',
-        value2: contextTarget.item.url || '',
-        showTags: true,
-        value3: (contextTarget.item.tags || []).join(' '),
-        inheritedTags: contextTarget.area === 'set-item' ? [] : getContextInheritedTags(contextTarget)
-      });
+      _showEditBookmarkModal(contextTarget);
       break;
     case 'addSetBookmark':
-      showModal('addBookmark', {
-        title: 'Add Bookmark to Set',
-        placeholder1: 'Bookmark title',
-        showUrl: true,
-        placeholder2: 'Bookmark URL',
-        showTags: true,
-        contextTarget: { area: 'set', setId: contextTarget.setId, item: contextTarget.item || findSetById(contextTarget.setId) }
-      });
+      _showAddBookmarkModal(
+        { area: 'set', setId: contextTarget.setId, item: contextTarget.item || findSetById(contextTarget.setId) },
+        { title: 'Add Bookmark to Set', placeholder1: 'Bookmark title' }
+      );
       break;
     case 'deleteItem': {
       const type = contextTarget.item?.type;
@@ -282,17 +346,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'sendImportToInbox': {
-      const boards = state.boards.filter(b => !b.locked);
-      const options = _sortedInboxTargetOptions(boards);
-      if (!options.length) break;
-      showModal('moveToBoard', {
-        title: 'Send to Tab Inbox',
-        showName: false,
-        showSelect: true,
-        selectLabel: 'Target tab inbox',
-        selectOptions: options,
-        contextTarget
-      });
+      _showMoveToBoardModal(contextTarget, 'Send to Tab Inbox');
       break;
     }
     case 'sendImportToActiveTab': {
@@ -330,8 +384,6 @@ function handleContextMenuAction(action) {
       if (contextTarget.item?.type === 'folder') _openImportFolder(contextTarget.item);
       break;
     case 'addBoard':
-      showBoardMetaModal('create');
-      break;
     case 'addCollection':
       showBoardMetaModal('create');
       break;
@@ -339,44 +391,22 @@ function handleContextMenuAction(action) {
       const board = contextTarget.item?.boardId
         ? state.boards.find(b => b.id === contextTarget.item.boardId)
         : (contextTarget.item?.id ? state.boards.find(b => b.id === contextTarget.item.id) : getActiveBoardContainer());
-      if (!board) break;
-      state.activeBoardId = board.id;
-      state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
-      renderAll();
-      saveState();
-      showBoardMetaModal('edit', board);
+      _openBoardMetaEditor(board);
       break;
     }
     case 'editBoardFromTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) {
-        state.activeBoardId = board.id;
-        state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
-        renderBoard();
-        saveState();
-        showBoardMetaModal('edit', board);
-      }
-      break;
-    }
-    case 'unlockBoardFromTab': {
-      const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) { board.locked = false; renderAll(); saveState(); }
+      _openBoardMetaEditor(board);
       break;
     }
     case 'editBoardFromFolderTab': {
       const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) {
-        state.activeBoardId = board.id;
-        state.activeTabId = board.tabs?.[0]?.id || state.activeTabId;
-        renderBoard();
-        saveState();
-        showBoardMetaModal('edit', board);
-      }
+      _openBoardMetaEditor(board);
       break;
     }
+    case 'unlockBoardFromTab':
     case 'unlockBoardFromFolderTab': {
-      const board = state.boards.find(b => b.id === contextTarget.boardId);
-      if (board) { board.locked = false; renderAll(); saveState(); }
+      _unlockBoardById(contextTarget.boardId);
       break;
     }
     case 'removeFromFolder': {
@@ -437,12 +467,7 @@ function handleContextMenuAction(action) {
       showFolderModal('create', contextTarget);
       break;
     case 'addBookmark':
-      showModal('addBookmark', {
-        title: 'New Bookmark', placeholder1: 'New Bookmark',
-        showUrl: true, placeholder2: 'Bookmark URL',
-        showTags: true, contextTarget,
-        inheritedTags: getContextInheritedTags(contextTarget)
-      });
+      _showAddBookmarkModal(contextTarget);
       break;
     case 'addTitle':
       showModal('addTitle', { title: 'New Title', placeholder1: 'New Title', contextTarget });
@@ -474,10 +499,7 @@ function handleContextMenuAction(action) {
       break;
     case 'addBookmarkToFolder': {
       const folderCtx = { ...contextTarget, area: 'board-folder-item' };
-      showModal('addBookmark', {
-        title: 'New Bookmark', placeholder1: 'New Bookmark',
-        showUrl: true, placeholder2: 'Bookmark URL',
-        showTags: true, contextTarget: folderCtx,
+      _showAddBookmarkModal(folderCtx, {
         inheritedTags: getContextInheritedTags({ ...contextTarget, area: 'board-subfolder' })
       });
       break;
@@ -487,20 +509,10 @@ function handleContextMenuAction(action) {
       showFolderModal('create');
       break;
     case 'addEssential':
-      showModal('addBookmark', {
-        title: 'New Bookmark', placeholder1: 'New Bookmark',
-        showUrl: true, placeholder2: 'Bookmark URL', showTags: true,
-        contextTarget, inheritedTags: getContextInheritedTags(contextTarget)
-      });
+      _showAddBookmarkModal(contextTarget);
       break;
     case 'editEssential':
-      showModal('editBookmark', {
-        title: 'Edit Bookmark',
-        placeholder1: 'Bookmark title', value1: contextTarget.item.title,
-        showUrl: true, placeholder2: 'Bookmark URL', value2: contextTarget.item.url || '',
-        showTags: true, value3: (contextTarget.item.tags || []).join(' '),
-        inheritedTags: getContextInheritedTags(contextTarget)
-      });
+      _showEditBookmarkModal(contextTarget, { inheritedTags: getContextInheritedTags(contextTarget) });
       break;
     case 'openAll': {
       const collectUrls = (items) => {
@@ -561,18 +573,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'moveToBoard': {
-      const area = contextTarget.area;
-      const boards = state.boards.filter(b => !b.locked);
-      const selectOptions = _sortedInboxTargetOptions(boards);
-      if (!selectOptions.length) break;
-      showModal('moveToBoard', {
-        title: 'Move to Tab Inbox',
-        showName: false,
-        showSelect: true,
-        selectLabel: 'Target tab inbox',
-        selectOptions,
-        contextTarget
-      });
+      _showMoveToBoardModal(contextTarget);
       break;
     }
     case 'deleteEssential': {
@@ -590,11 +591,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addSpeedDialBookmark':
-      showModal('addBookmark', {
-        title: 'Add Speed Dial Bookmark', placeholder1: 'New Bookmark',
-        showUrl: true, placeholder2: 'Bookmark URL', showTags: true, contextTarget,
-        inheritedTags: getContextInheritedTags(contextTarget)
-      });
+      _showAddBookmarkModal(contextTarget, { title: 'Add Speed Dial Bookmark' });
       break;
     case 'editFolder':
       showFolderModal('edit', contextTarget);
@@ -604,28 +601,22 @@ function handleContextMenuAction(action) {
       break;
     case 'lockItem':
       if (contextTarget.item) {
-        pushUndoSnapshot();
-        contextTarget.item.locked = true;
-        renderAll();
-        saveState();
+        _mutateAndRefresh(() => { contextTarget.item.locked = true; });
       }
       break;
     case 'unlockItem':
       if (contextTarget.item) {
-        pushUndoSnapshot();
-        contextTarget.item.locked = false;
-        renderAll();
-        saveState();
+        _mutateAndRefresh(() => { contextTarget.item.locked = false; });
       }
       break;
     case 'lockBoard': {
       const lb = state.boards.find(b => b.id === contextTarget.item?.boardId);
-      if (lb) { pushUndoSnapshot(); lb.locked = true; renderAll(); saveState(); }
+      if (lb) _mutateAndRefresh(() => { lb.locked = true; });
       break;
     }
     case 'unlockBoard': {
       const ub = state.boards.find(b => b.id === contextTarget.item?.boardId);
-      if (ub) { pushUndoSnapshot(); ub.locked = false; renderAll(); saveState(); }
+      if (ub) _mutateAndRefresh(() => { ub.locked = false; });
       break;
     }
     default:
@@ -907,7 +898,7 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Refresh favicon',  action: 'refreshFavicon' });
     const allBoards = state.boards.filter(b => !b.locked);
     if (allBoards.length) {
-      options.push({ label: 'Move to tab inbox', submenu: _sortedInboxTargetOptions(allBoards).map(o => ({ ...o, action: `moveToBoard:${o.value}` })) });
+      options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     }
     options.push({ label: 'Show in board',   action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });

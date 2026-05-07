@@ -5,6 +5,22 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.57] — 2026-05-07
+
+### Changed
+
+- **Inbox destination picker** — `Move to tab inbox` / `Send to tab inbox` flows now use separate board and tab selectors instead of one long combined destination list.
+- **Sidebar collapse tab surface** — the nav collapse button now sits flush with the sidebar and uses the same opacity treatment as the sidebar surface so it reads as one piece.
+- **Large background import handling** — oversized data-URL background images picked from disk or the native file picker are now downscaled before being stored to reduce memory/state bloat.
+
+### Fixed
+
+- **Local development URLs** — bookmark create/edit validation now accepts localhost, loopback IPv4, and IPv6-style dev URLs instead of rejecting them as invalid.
+- **Tag Manager move-to-group menu** — the move menu no longer shows a dead-end `No other groups` row when there is nothing actionable to move to.
+- **Search result inbox move flow** — bookmark search-result context menus now use the same cleaner move-to-inbox flow as the rest of the app.
+
+---
+
 ## [0.11.56] — 2026-05-02
 
 ### Changed

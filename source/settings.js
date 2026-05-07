@@ -77,14 +77,6 @@ function hideBoardSettingsPanel() {
   saveState();
 }
 
-function _findNavBoardItem(items, boardId) {
-  for (const i of (items || [])) {
-    if (i.boardId === boardId) return i;
-    if (i.children) { const f = _findNavBoardItem(i.children, boardId); if (f) return f; }
-  }
-  return null;
-}
-
 function cancelBoardSettingsPanel() {
   if (boardSettingsCreatingId) {
     const board = getActiveBoardContainer();
@@ -113,6 +105,42 @@ function updateBgDropZonePreview(imageUrl) {
   } else {
     dz.style.backgroundImage = '';
     dz.classList.remove('has-preview');
+  }
+}
+
+const MAX_BACKGROUND_IMAGE_DIMENSION = 2560;
+
+function loadImageFromUrl(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Unable to load image.'));
+    img.src = src;
+  });
+}
+
+async function optimizeBackgroundImageDataUrl(imageUrl) {
+  if (typeof imageUrl !== 'string' || !imageUrl.startsWith('data:image/')) return imageUrl;
+  try {
+    const img = await loadImageFromUrl(imageUrl);
+    const width = img.naturalWidth || img.width || 0;
+    const height = img.naturalHeight || img.height || 0;
+    if (!width || !height) return imageUrl;
+    const scale = Math.min(1, MAX_BACKGROUND_IMAGE_DIMENSION / Math.max(width, height));
+    if (scale >= 1) return imageUrl;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return imageUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const mimeMatch = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);/i);
+    const mimeType = mimeMatch?.[1] || 'image/jpeg';
+    return mimeType === 'image/png'
+      ? canvas.toDataURL(mimeType)
+      : canvas.toDataURL(mimeType, 0.86);
+  } catch {
+    return imageUrl;
   }
 }
 
@@ -175,10 +203,10 @@ function attachBoardSettingsListeners() {
     const file = e.dataTransfer.files[0];
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = ev => {
+    reader.onload = async ev => {
       const tab = getActiveTab();
       if (!tab) return;
-      tab.backgroundImage = ev.target.result;
+      tab.backgroundImage = await optimizeBackgroundImageDataUrl(ev.target.result);
       document.getElementById('bstgBgUrl').value = '';
       updateBgDropZonePreview(tab.backgroundImage);
       applyBg();
@@ -195,7 +223,7 @@ function attachBoardSettingsListeners() {
     if (!result) return;
     const tab = getActiveTab();
     if (!tab) return;
-    tab.backgroundImage = result.dataUrl;
+    tab.backgroundImage = await optimizeBackgroundImageDataUrl(result.dataUrl);
     document.getElementById('bstgBgUrl').value = '';
     updateBgDropZonePreview(tab.backgroundImage);
     applyBg();
@@ -1403,9 +1431,9 @@ function showTagChipContextMenu(x, y, tagId, sourceGroupId) {
     menu.appendChild(btn);
   }
 
-  if (!targets.length) {
+  if (!targets.length && !sourceGroupId) {
     const empty = document.createElement('button');
-    empty.textContent = sourceGroupId ? 'No other groups' : 'No groups yet';
+    empty.textContent = 'No groups yet';
     empty.disabled = true;
     menu.appendChild(empty);
   } else {

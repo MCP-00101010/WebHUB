@@ -547,6 +547,7 @@ async function checkForExternalSharedDiskChanges() {
     if (typeof updateAboutBridgeStatus === 'function') await updateAboutBridgeStatus();
   }
   if (sharedDiskSyncIsBlocked()) return;
+  if (typeof sharedDiskSaveIsPending === 'function' && sharedDiskSaveIsPending()) return;
   const liveVersion = live?.fileInfo?.version || null;
   const baselineVersion = getSharedDiskBaselineVersion();
   if (liveVersion === baselineVersion) return;
@@ -777,9 +778,12 @@ function attachEventListeners() {
     showModal('bulkMoveToBoard', {
       title: isImportSelection ? 'Send Selected to Tab Inbox' : 'Move Selected to Tab Inbox',
       showName: false,
-      showSelect: true,
-      selectLabel: 'Target tab inbox',
-      selectOptions
+      showBoardTabSelect: true,
+      selectLabel: 'Target board',
+      selectSecondaryLabel: 'Target tab inbox',
+      inboxTargetExclusions: isImportSelection
+        ? {}
+        : { excludeBoardId: ab?.id || null, excludeTabId: activeTab?.id || null }
     });
   });
   document.getElementById('bulkDeselectBtn').addEventListener('click', clearSelection);
@@ -835,6 +839,8 @@ function attachEventListeners() {
       cancelBoardSettingsPanel();
     } else if (!document.getElementById('trashPanel').classList.contains('hidden')) {
       hideTrashPanel();
+    } else if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) {
+      hideSetManagerPanel();
     } else if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) {
       hideInboxPanel();
     } else if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) {
@@ -874,8 +880,6 @@ function attachEventListeners() {
       { label: 'Add bookmark', action: 'addSpeedDialBookmark' }
     ]);
   });
-  elements.speedDial.addEventListener('dragover', handleSpeedDialContainerDragOver);
-  elements.speedDial.addEventListener('drop', handleSpeedDialContainerDrop);
   document.getElementById('confirmOkBtn').addEventListener('click', () => {
     const cb = confirmCallback;
     hideConfirmDialog();
@@ -911,8 +915,11 @@ function attachEventListeners() {
 
   document.getElementById('searchModalInput').addEventListener('input', () => {
     const q = elements.searchModalInput.value.trim();
-    if (q || activeTagFilters.size > 0) renderSearchResults();
-    else elements.searchModalResults.innerHTML = '';
+    if (q || activeTagFilters.size > 0) scheduleSearchResultsRender();
+    else {
+      _cancelScheduledSearchRender();
+      elements.searchModalResults.innerHTML = '';
+    }
   });
 
   document.getElementById('searchModal').addEventListener('click', e => {

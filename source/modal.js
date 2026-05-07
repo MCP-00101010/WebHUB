@@ -215,6 +215,8 @@ function attachTagAutocomplete(textInput, hiddenInput) {
 
 // --- Generic modal ---
 
+let modalBoardTabTargets = null;
+
 function showModal(type, options = {}) {
   activeModal = type;
   if (options.contextTarget) contextTarget = options.contextTarget;
@@ -243,18 +245,32 @@ function showModal(type, options = {}) {
     const wrapTabsToggle = document.getElementById('cmWrapTabs');
     if (wrapTabsToggle) wrapTabsToggle.checked = options.wrapTabs === true;
   }
-  elements.modalSelectRow.classList.toggle('hidden', !options.showSelect);
+  const showBoardTabSelect = options.showBoardTabSelect === true;
+  elements.modalSelectRow.classList.toggle('hidden', !(options.showSelect || showBoardTabSelect));
+  elements.modalSelectSecondaryRow.classList.toggle('hidden', !showBoardTabSelect);
   elements.modalInput1.placeholder = options.placeholder1 || 'Enter name';
   elements.modalInput2.placeholder = options.placeholder2 || 'Enter URL';
   const submitBtn = document.getElementById('modalSubmitBtn');
   if (submitBtn) submitBtn.textContent = options.submitLabel || 'Save';
   const selectLabel = document.getElementById('modalSelectLabel');
   if (selectLabel) selectLabel.textContent = options.selectLabel || 'Select';
-  if (options.selectOptions) {
+  const selectSecondaryLabel = document.getElementById('modalSelectSecondaryLabel');
+  if (selectSecondaryLabel) selectSecondaryLabel.textContent = options.selectSecondaryLabel || 'Select';
+  if (showBoardTabSelect) {
+    modalBoardTabTargets = buildModalBoardTabTargets(options.inboxTargetExclusions || {});
+    syncModalBoardTabSelectors(options.selectValue || '', options.selectSecondaryValue || '');
+    elements.modalSelect.onchange = () => syncModalBoardTabSelectors(elements.modalSelect.value);
+  } else if (options.selectOptions) {
+    modalBoardTabTargets = null;
     elements.modalSelect.innerHTML = '';
     options.selectOptions.forEach(({ value, label }) => elements.modalSelect.appendChild(new Option(label, value)));
+    elements.modalSelectSecondary.innerHTML = '';
+    elements.modalSelect.onchange = null;
   } else {
+    modalBoardTabTargets = null;
     elements.modalSelect.value = options.selectValue || '';
+    elements.modalSelectSecondary.value = options.selectSecondaryValue || '';
+    elements.modalSelect.onchange = null;
   }
   document.getElementById('modalDuplicateWarning')?.classList.add('hidden');
   const inherited = options.inheritedTags ?? getContextInheritedTags(options.contextTarget || contextTarget);
@@ -267,7 +283,7 @@ function showModal(type, options = {}) {
   }
   if (showName) elements.modalInput1.focus();
   else if (options.showTags) elements.modalInput3.focus();
-  else if (options.showSelect) elements.modalSelect.focus();
+  else if (showBoardTabSelect || options.showSelect) elements.modalSelect.focus();
 }
 
 function showBoardMetaModal(mode = 'edit', board = null) {
@@ -333,6 +349,55 @@ function parseBoardTabTargetValue(value) {
   return { board, tab };
 }
 
+function buildModalBoardTabTargets(options = {}) {
+  const excludeBoardId = options.excludeBoardId || null;
+  const excludeTabId = options.excludeTabId || null;
+  return [...state.boards]
+    .filter(board => !board.locked)
+    .map(board => ({
+      board,
+      tabs: (board.tabs || []).filter(tab => !(board.id === excludeBoardId && tab.id === excludeTabId))
+    }))
+    .filter(entry => entry.tabs.length)
+    .sort((a, b) => (a.board.title || '').localeCompare(b.board.title || ''));
+}
+
+function syncModalBoardTabSelectors(preferredBoardId = '', preferredTabId = '') {
+  if (!modalBoardTabTargets?.length) {
+    elements.modalSelect.innerHTML = '';
+    elements.modalSelectSecondary.innerHTML = '';
+    return;
+  }
+  elements.modalSelect.innerHTML = '';
+  modalBoardTabTargets.forEach(({ board }) => {
+    elements.modalSelect.appendChild(new Option(board.title || 'Untitled Board', board.id));
+  });
+  const selectedBoardId = modalBoardTabTargets.some(entry => entry.board.id === preferredBoardId)
+    ? preferredBoardId
+    : modalBoardTabTargets[0].board.id;
+  elements.modalSelect.value = selectedBoardId;
+  const selectedEntry = modalBoardTabTargets.find(entry => entry.board.id === selectedBoardId) || modalBoardTabTargets[0];
+  elements.modalSelectSecondary.innerHTML = '';
+  selectedEntry.tabs.forEach(tab => {
+    elements.modalSelectSecondary.appendChild(new Option(tab.title || 'Untitled Tab', tab.id));
+  });
+  const nextTabId = selectedEntry.tabs.some(tab => tab.id === preferredTabId)
+    ? preferredTabId
+    : selectedEntry.tabs[0]?.id || '';
+  elements.modalSelectSecondary.value = nextTabId;
+}
+
+function getModalBoardTabTarget() {
+  if (modalBoardTabTargets?.length) {
+    const selectedEntry = modalBoardTabTargets.find(entry => entry.board.id === elements.modalSelect.value) || null;
+    const tab = selectedEntry
+      ? selectedEntry.tabs.find(entry => entry.id === elements.modalSelectSecondary.value) || null
+      : null;
+    return { board: selectedEntry?.board || null, tab };
+  }
+  return parseBoardTabTargetValue(elements.modalSelect.value);
+}
+
 function shouldKeepModalOverlayVisible() {
   const persistentPanelIds = [
     'settingsPanel',
@@ -348,13 +413,13 @@ function shouldKeepModalOverlayVisible() {
     const el = document.getElementById(id);
     return el && !el.classList.contains('hidden');
   })) return true;
-  if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) return true;
   if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) return true;
   return false;
 }
 
 function hideModal() {
   activeModal = null;
+  modalBoardTabTargets = null;
   document.getElementById('modalCard').classList.add('hidden');
   if (!shouldKeepModalOverlayVisible()) elements.modalOverlay.classList.add('hidden');
   document.getElementById('tagSuggestions')?.classList.add('hidden');
@@ -362,6 +427,256 @@ function hideModal() {
   document.getElementById('modalSharedTagsRow')?.classList.add('hidden');
   document.getElementById('modalSpeedDialSection')?.classList.add('hidden');
   document.getElementById('modalInheritedTagsRow')?.classList.add('hidden');
+  elements.modalSelect.onchange = null;
+}
+
+function _submitBookmarkModal(mode, { value1, value2, tags, ensureUndo }) {
+  const area = contextTarget?.area;
+  const fc = contextTarget?.faviconCache || '';
+
+  if (mode === 'add') {
+    if (area === 'speed-dial' || area === 'speed-dial-item') {
+      if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+      const target = getActiveBoardContainer();
+      if (!target) return 'abort';
+      const slot = Number.isInteger(contextTarget?.slot) ? contextTarget.slot : firstEmptySpeedDialSlot(target);
+      if (slot === -1 || target.speedDial?.[slot]) {
+        alert('That speed dial slot is already occupied.');
+        return 'abort';
+      }
+      ensureUndo();
+      return addSpeedDialBookmark(value1, value2, tags, fc) ? 'continue' : 'abort';
+    }
+    if (area === 'set') {
+      const set = findSetById(contextTarget.setId);
+      if (!set) return 'abort';
+      if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+      if ((set.items || []).some(entry => entry.url === normalizeUrl(value2))) {
+        alert('That URL is already in this set.');
+        return 'abort';
+      }
+      ensureUndo();
+      const result = addBookmarkToSet(set, { title: value1, url: value2, tags, faviconCache: fc });
+      if (!result.ok) {
+        alert(result.reason === 'duplicate' ? 'That URL is already in this set.' : 'Please enter a valid URL.');
+        return 'abort';
+      }
+      return 'continue';
+    }
+    if (area === 'essential') {
+      if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+      if (state.essentials[contextTarget.slot]) { alert('That essentials slot is already occupied.'); return 'abort'; }
+      ensureUndo();
+      if (!setEssential(contextTarget.slot, value1, value2, tags, fc)) return 'abort';
+      hideModal();
+      renderEssentials();
+      saveState();
+      return 'complete';
+    }
+    if (area === 'board-folder-item') {
+      if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+      ensureUndo();
+      contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: fc });
+      contextTarget.item.collapsed = false;
+      return 'continue';
+    }
+    if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+    ensureUndo();
+    return addBookmark(value1, value2, contextTarget?.columnId, tags, fc) ? 'continue' : 'abort';
+  }
+
+  if (area === 'speed-dial-item') {
+    if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+    const board = getActiveBoard();
+    const sdItem = board.speedDial.find(i => i?.id === contextTarget?.itemId);
+    if (!sdItem) return 'abort';
+    ensureUndo();
+    if (normalizeUrl(value2) !== sdItem.url) sdItem.faviconCache = '';
+    sdItem.title = value1;
+    sdItem.url = normalizeUrl(value2);
+    sdItem.tags = tags;
+    return 'continue';
+  }
+  if (area === 'set-item') {
+    if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+    const set = findSetById(contextTarget.setId);
+    const found = findSetItemById(set, contextTarget.itemId);
+    if (!found?.item) return 'abort';
+    const normalized = normalizeUrl(value2);
+    const duplicate = (set.items || []).some(entry => entry.id !== found.item.id && entry.url === normalized);
+    if (duplicate) { alert('That URL is already in this set.'); return 'abort'; }
+    ensureUndo();
+    if (normalized !== found.item.url) found.item.faviconCache = '';
+    found.item.title = value1;
+    found.item.url = normalized;
+    found.item.tags = tags;
+    touchSet(set);
+    return 'continue';
+  }
+  if (area === 'essential') {
+    if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+    ensureUndo();
+    if (!setEssential(contextTarget.slot, value1, value2, tags, '', true)) return 'abort';
+    hideModal();
+    renderEssentials();
+    saveState();
+    return 'complete';
+  }
+  if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
+  const board = getBoardForContext(contextTarget);
+  const found = board ? findBoardItemInColumns(board, contextTarget.itemId) : null;
+  if (!found?.item || found.item.type !== 'bookmark') return 'abort';
+  ensureUndo();
+  return editBookmarkContext(value1, value2, tags, contextTarget) ? 'continue' : 'abort';
+}
+
+function _submitCollectionModal(mode, { value1, tags, sharedTagsFromModal, ensureUndo }) {
+  if (mode === 'edit') {
+    const board = contextTarget?.boardId
+      ? state.boards.find(b => b.id === contextTarget.boardId)
+      : getActiveBoardContainer();
+    if (!board) return 'abort';
+    ensureUndo();
+    if (value1.trim()) {
+      board.title = value1.trim();
+      const navItem = findNavBoardItem(board.id);
+      if (navItem) navItem.title = board.title;
+    }
+    applyModalCollectionSpeedDialSlots();
+    const sdSection = document.getElementById('modalSpeedDialSection');
+    if (sdSection && !sdSection.classList.contains('hidden')) {
+      board.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial').checked;
+      const wrapTabsRow = document.getElementById('modalWrapTabsRow');
+      if (wrapTabsRow && !wrapTabsRow.classList.contains('hidden')) {
+        board.wrapTabBar = document.getElementById('cmWrapTabs').checked;
+      }
+    }
+    board.tags = tags;
+    board.sharedTags = sharedTagsFromModal;
+    return 'continue';
+  }
+
+  const slotsInput = document.getElementById('modalSpeedDialSlots');
+  const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || getDefaultSpeedDialSlotCount()));
+  ensureUndo();
+  const board = createBoard(value1, {
+    showSpeedDial: document.getElementById('cmCollectionShowSpeedDial')?.checked !== false,
+    speedDialSlotCount: requested,
+    wrapTabBar: document.getElementById('cmWrapTabs')?.checked === true,
+    tags,
+    sharedTags: sharedTagsFromModal,
+    createEmpty: true
+  });
+  if (board) createBoardTab(board, 'New Tab');
+  hideModal();
+  renderAll();
+  saveState();
+  if (board) showBoardSettingsPanel(true);
+  return 'complete';
+}
+
+function _submitMoveToBoardModal(ensureUndo) {
+  const { board: targetBoard, tab: targetTab } = getModalBoardTabTarget();
+  if (!targetBoard || !targetTab) return 'abort';
+  const area = contextTarget.area;
+  const targetInbox = getBoardInbox(targetBoard, targetTab);
+  if (!targetInbox) return 'abort';
+
+  if (area === 'import-manager-all') {
+    const items = cloneData(state.importManager?.items || []);
+    if (!items.length) return 'abort';
+    ensureUndo();
+    targetInbox.items.push(...items);
+    clearImportManager();
+    return 'continue';
+  }
+
+  let capturedItem = null;
+  if (area === 'import-manager-item') {
+    ensureUndo();
+    const removed = removeImportManagerItemById(contextTarget.itemId);
+    if (!removed) return 'abort';
+    capturedItem = cloneData(removed);
+    if (!capturedItem.tags) capturedItem.tags = [];
+  } else {
+    if (!contextTarget?.item) return 'abort';
+    ensureUndo();
+    capturedItem = cloneData(contextTarget.item);
+    if (!capturedItem.tags) capturedItem.tags = [];
+    if (area === 'speed-dial-item') {
+      capturedItem.type = 'bookmark';
+      const board = getActiveBoard();
+      removeSpeedDialItemById(board, contextTarget.itemId);
+    } else if (area === 'essential') {
+      capturedItem.type = 'bookmark';
+      removeEssential(contextTarget.slot);
+      trimEssentialsTail();
+    } else {
+      deleteBoardTarget(contextTarget);
+    }
+  }
+
+  targetInbox.items.push(capturedItem);
+  return 'continue';
+}
+
+function _submitBulkAddTagsModal(value3, ensureUndo) {
+  const newTags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
+  if (!newTags.length) {
+    hideModal();
+    return 'complete';
+  }
+  if (selectionContext === 'import-manager') {
+    for (const itemId of selectedItemIds) {
+      const found = findImportManagerItemById(itemId);
+      if (found?.item) {
+        ensureUndo();
+        found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];
+      }
+    }
+    clearSelection();
+    return 'continue';
+  }
+  const board = getActiveBoard();
+  for (const itemId of selectedItemIds) {
+    const found = findBoardItemInColumns(board, itemId);
+    if (found?.item) {
+      ensureUndo();
+      found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];
+    }
+  }
+  clearSelection();
+  return 'continue';
+}
+
+function _submitBulkMoveToBoardModal(ensureUndo) {
+  const { board: targetBoard, tab: targetTab } = getModalBoardTabTarget();
+  if (!targetBoard || !targetTab) return 'abort';
+  const targetInbox = getBoardInbox(targetBoard, targetTab);
+  if (!targetInbox) return 'abort';
+  if (selectionContext === 'import-manager') {
+    const toMove = collectSelectedImportManagerItems(selectedItemIds);
+    toMove.forEach(item => {
+      ensureUndo();
+      const removed = removeImportManagerItemById(item.id);
+      if (removed) targetInbox.items.push(removed);
+    });
+    clearSelection();
+    return 'continue';
+  }
+  const board = getActiveBoard();
+  const toMove = [];
+  for (const itemId of selectedItemIds) {
+    const found = findBoardItemInColumns(board, itemId);
+    if (found?.item) toMove.push(found);
+  }
+  toMove.forEach(({ item, list }) => {
+    ensureUndo();
+    list.splice(list.indexOf(item), 1);
+    targetInbox.items.push(item);
+  });
+  clearSelection();
+  return 'continue';
 }
 
 async function handleModalSubmit(event) {
@@ -376,70 +691,40 @@ async function handleModalSubmit(event) {
   const noNameRequired = ['moveToBoard', 'bulkMoveToBoard', 'bulkAddTags'];
   if (!value1 && !noNameRequired.includes(activeModal)) return;
 
-  pushUndoSnapshot();
+  let undoCaptured = false;
+  const ensureUndo = () => {
+    if (!undoCaptured) {
+      pushUndoSnapshot();
+      undoCaptured = true;
+    }
+  };
   const area = contextTarget?.area;
 
   switch (activeModal) {
-    case 'addBookmark': {
-      const fc = contextTarget?.faviconCache || '';
-      if (area === 'speed-dial' || area === 'speed-dial-item') {
-        if (!addSpeedDialBookmark(value1, value2, tags, fc)) return;
-      } else if (area === 'set') {
-        const set = findSetById(contextTarget.setId);
-        if (!set) return;
-        const result = addBookmarkToSet(set, { title: value1, url: value2, tags, faviconCache: fc });
-        if (!result.ok) {
-          alert(result.reason === 'duplicate' ? 'That URL is already in this set.' : 'Please enter a valid URL.');
-          return;
-        }
-      } else if (area === 'essential') {
-        if (!setEssential(contextTarget.slot, value1, value2, tags, fc)) return;
-        hideModal(); renderEssentials(); saveState(); return;
-      } else if (area === 'board-folder-item') {
-        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
-        contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: fc });
-        contextTarget.item.collapsed = false;
-      } else {
-        if (!addBookmark(value1, value2, contextTarget?.columnId, tags, fc)) return;
-      }
+    case 'addBookmark':
+    case 'editBookmark': {
+      const result = _submitBookmarkModal(activeModal === 'addBookmark' ? 'add' : 'edit', { value1, value2, tags, ensureUndo });
+      if (result === 'abort') return;
+      if (result === 'complete') return;
       break;
     }
-    case 'editBookmark':
-      if (area === 'speed-dial-item') {
-        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
-        const board = getActiveBoard();
-        const sdItem = board.speedDial.find(i => i?.id === contextTarget?.itemId);
-        if (sdItem) { if (normalizeUrl(value2) !== sdItem.url) sdItem.faviconCache = ''; sdItem.title = value1; sdItem.url = normalizeUrl(value2); sdItem.tags = tags; }
-      } else if (area === 'set-item') {
-        if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return; }
-        const set = findSetById(contextTarget.setId);
-        const found = findSetItemById(set, contextTarget.itemId);
-        if (!found?.item) break;
-        const normalized = normalizeUrl(value2);
-        const duplicate = (set.items || []).some(entry => entry.id !== found.item.id && entry.url === normalized);
-        if (duplicate) { alert('That URL is already in this set.'); return; }
-        if (normalized !== found.item.url) found.item.faviconCache = '';
-        found.item.title = value1;
-        found.item.url = normalized;
-        found.item.tags = tags;
-        touchSet(set);
-      } else if (area === 'essential') {
-        if (!setEssential(contextTarget.slot, value1, value2, tags, '', true)) return;
-        hideModal(); renderEssentials(); saveState(); return;
-      } else {
-        if (!editBookmarkContext(value1, value2, tags, contextTarget)) return;
-      }
-      break;
     case 'addFolder': {
       const parent = contextTarget?.item;
       if (area === 'nav-empty') {
+        ensureUndo();
         addNavSection({ type: 'folder', title: value1 });
       } else if (area === 'nav-subfolder') {
-        if (parent) { parent.children = parent.children || []; parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: value1, children: [] }); parent.collapsed = false; }
+        if (parent) {
+          ensureUndo();
+          parent.children = parent.children || [];
+          parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: value1, children: [] });
+          parent.collapsed = false;
+        }
       }
       break;
     }
     case 'addTitle':
+      ensureUndo();
       if (area === 'nav-empty') addNavSection({ type: 'title', title: value1 });
       else addBookmarkItem('title', value1, contextTarget?.columnId);
       break;
@@ -450,134 +735,29 @@ async function handleModalSubmit(event) {
       }
       break;
     case 'renameItem':
+      ensureUndo();
       renameContextItem(value1, contextTarget);
       break;
-    case 'editCollection': {
-      const board = contextTarget?.boardId
-        ? state.boards.find(b => b.id === contextTarget.boardId)
-        : getActiveBoardContainer();
-      if (!board) break;
-      if (value1.trim()) {
-        board.title = value1.trim();
-        const navItem = findNavBoardItem(board.id);
-        if (navItem) navItem.title = board.title;
-      }
-      applyModalCollectionSpeedDialSlots();
-      const sdSection = document.getElementById('modalSpeedDialSection');
-      if (sdSection && !sdSection.classList.contains('hidden')) {
-        board.showSpeedDial = document.getElementById('cmCollectionShowSpeedDial').checked;
-        const wrapTabsRow = document.getElementById('modalWrapTabsRow');
-        if (wrapTabsRow && !wrapTabsRow.classList.contains('hidden')) {
-          board.wrapTabBar = document.getElementById('cmWrapTabs').checked;
-        }
-      }
-      board.tags = tags;
-      board.sharedTags = sharedTagsFromModal;
+    case 'editCollection':
+    case 'addCollection': {
+      const result = _submitCollectionModal(activeModal === 'editCollection' ? 'edit' : 'add', { value1, tags, sharedTagsFromModal, ensureUndo });
+      if (result === 'abort') return;
+      if (result === 'complete') return;
       break;
     }
-    case 'addCollection': {
-      const slotsInput = document.getElementById('modalSpeedDialSlots');
-      const requested = Math.max(1, Math.min(48, parseInt(slotsInput?.value, 10) || getDefaultSpeedDialSlotCount()));
-      const board = createBoard(value1, {
-        showSpeedDial: document.getElementById('cmCollectionShowSpeedDial')?.checked !== false,
-        speedDialSlotCount: requested,
-        wrapTabBar: document.getElementById('cmWrapTabs')?.checked === true,
-        tags,
-        sharedTags: sharedTagsFromModal,
-        createEmpty: true
-      });
-      if (board) createBoardTab(board, 'New Tab');
-      hideModal();
-      renderAll();
-      saveState();
-      if (board) showBoardSettingsPanel(true);
-      return;
-    }
     case 'moveToBoard': {
-      const { board: targetBoard, tab: targetTab } = parseBoardTabTargetValue(elements.modalSelect.value);
-      if (!targetBoard || !targetTab) break;
-      const area = contextTarget.area;
-      const targetInbox = getBoardInbox(targetBoard, targetTab);
-      if (!targetInbox) break;
-      if (area === 'import-manager-all') {
-        const items = cloneData(state.importManager?.items || []);
-        if (!items.length) break;
-        targetInbox.items.push(...items);
-        clearImportManager();
-        if (typeof renderImportManagerPanel === 'function') renderImportManagerPanel();
-        break;
-      }
-      let capturedItem = null;
-      if (area === 'import-manager-item') {
-        const removed = removeImportManagerItemById(contextTarget.itemId);
-        if (!removed) break;
-        capturedItem = cloneData(removed);
-        if (!capturedItem.tags) capturedItem.tags = [];
-        if (typeof renderImportManagerPanel === 'function') renderImportManagerPanel();
-      } else {
-        if (!contextTarget?.item) break;
-        capturedItem = cloneData(contextTarget.item);
-        if (!capturedItem.tags) capturedItem.tags = [];
-        if (area === 'speed-dial-item') {
-          capturedItem.type = 'bookmark';
-          const board = getActiveBoard();
-          removeSpeedDialItemById(board, contextTarget.itemId);
-        } else if (area === 'essential') {
-          capturedItem.type = 'bookmark';
-          removeEssential(contextTarget.slot);
-          trimEssentialsTail();
-        } else {
-          deleteBoardTarget(contextTarget);
-        }
-      }
-      targetInbox.items.push(capturedItem);
+      const result = _submitMoveToBoardModal(ensureUndo);
+      if (result === 'abort') return;
       break;
     }
     case 'bulkAddTags': {
-      const newTags = value3 ? value3.split(/\s+/).filter(Boolean) : [];
-      if (!newTags.length) { hideModal(); return; }
-      if (selectionContext === 'import-manager') {
-        for (const itemId of selectedItemIds) {
-          const found = findImportManagerItemById(itemId);
-          if (found?.item) found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];
-        }
-        clearSelection();
-        break;
-      }
-      const board = getActiveBoard();
-      for (const itemId of selectedItemIds) {
-        const found = findBoardItemInColumns(board, itemId);
-        if (found?.item) found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];
-      }
-      clearSelection();
+      const result = _submitBulkAddTagsModal(value3, ensureUndo);
+      if (result === 'complete' || result === 'abort') return;
       break;
     }
     case 'bulkMoveToBoard': {
-      const { board: targetBoard, tab: targetTab } = parseBoardTabTargetValue(elements.modalSelect.value);
-      if (!targetBoard || !targetTab) break;
-      const targetInbox = getBoardInbox(targetBoard, targetTab);
-      if (!targetInbox) break;
-      if (selectionContext === 'import-manager') {
-        const toMove = collectSelectedImportManagerItems(selectedItemIds);
-        toMove.forEach(item => {
-          const removed = removeImportManagerItemById(item.id);
-          if (removed) targetInbox.items.push(removed);
-        });
-        clearSelection();
-        if (typeof renderImportManagerPanel === 'function') renderImportManagerPanel();
-        break;
-      }
-      const board = getActiveBoard();
-      const toMove = [];
-      for (const itemId of selectedItemIds) {
-        const found = findBoardItemInColumns(board, itemId);
-        if (found?.item) toMove.push(found);
-      }
-      toMove.forEach(({ item, list }) => {
-        list.splice(list.indexOf(item), 1);
-        targetInbox.items.push(item);
-      });
-      clearSelection();
+      const result = _submitBulkMoveToBoardModal(ensureUndo);
+      if (result === 'abort') return;
       break;
     }
     default:
@@ -596,8 +776,10 @@ let folderModalMode = 'create';
 function showFolderModal(mode, ct) {
   folderModalMode = mode;
   if (ct) contextTarget = ct;
-  document.getElementById('modalCard').classList.add('hidden');
+  const modalCard = document.getElementById('modalCard');
   const panel = document.getElementById('folderModal');
+  panel.dataset.restoreModalCard = modalCard.classList.contains('hidden') ? 'false' : 'true';
+  modalCard.classList.add('hidden');
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   const submitBtn = document.getElementById('folderModalSubmitBtn');
@@ -608,7 +790,8 @@ function showFolderModal(mode, ct) {
     if (contextTarget.area === 'nav-item') {
       folderItem = findNavItemPath(contextTarget.itemId)?.item;
     } else {
-      folderItem = findBoardItemInColumns(getActiveBoard(), contextTarget.itemId)?.item;
+      const board = getBoardForContext(contextTarget);
+      folderItem = board ? findBoardItemInColumns(board, contextTarget.itemId)?.item : null;
     }
     if (folderItem) {
       document.getElementById('fmName').value = folderItem.title || '';
@@ -635,9 +818,16 @@ function showFolderModal(mode, ct) {
 }
 
 function hideFolderModal() {
-  document.getElementById('folderModal').classList.add('hidden');
-  document.getElementById('modalCard').classList.remove('hidden');
-  elements.modalOverlay.classList.add('hidden');
+  const panel = document.getElementById('folderModal');
+  const restoreModalCard = panel.dataset.restoreModalCard === 'true';
+  panel.classList.add('hidden');
+  delete panel.dataset.restoreModalCard;
+  if (restoreModalCard) {
+    document.getElementById('modalCard').classList.remove('hidden');
+    elements.modalOverlay.classList.remove('hidden');
+  } else if (!shouldKeepModalOverlayVisible()) {
+    elements.modalOverlay.classList.add('hidden');
+  }
 }
 
 function handleFolderModalSubmit() {
@@ -647,7 +837,7 @@ function handleFolderModalSubmit() {
   const sharedTags = document.getElementById('fmSharedTags').value.trim().split(/\s+/).filter(Boolean);
   pushUndoSnapshot();
   if (folderModalMode === 'edit') {
-    editFolder(contextTarget.itemId, name, tags, sharedTags);
+    editFolder(contextTarget.itemId, name, tags, sharedTags, contextTarget);
   } else {
     const area = contextTarget?.area;
     const parent = contextTarget?.item;

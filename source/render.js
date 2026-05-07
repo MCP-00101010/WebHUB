@@ -20,6 +20,8 @@ const elements = {
   modalInput4: document.getElementById('modalInput4'),
   modalSelectRow: document.getElementById('modalSelectRow'),
   modalSelect: document.getElementById('modalSelect'),
+  modalSelectSecondaryRow: document.getElementById('modalSelectSecondaryRow'),
+  modalSelectSecondary: document.getElementById('modalSelectSecondary'),
   modalCancelBtn: document.getElementById('modalCancelBtn'),
   contextMenu: document.getElementById('contextMenu'),
   quickSearchBtn: document.getElementById('quickSearchBtn'),
@@ -272,9 +274,19 @@ function updateInboxBadge() {
   }
 }
 
-function renderInboxPanel() {
-  const board = getActiveBoard();
-  const activeTab = getActiveTab();
+function renderInboxPanel(options = {}) {
+  if (!options.reuseDerivedCaches) invalidateDerivedCaches();
+  const board = state.activeBoardId
+    ? state.boards.find(entry => entry.id === state.activeBoardId) || null
+    : null;
+  let activeTab = null;
+  if (board) {
+    activeTab = getBoardTab(board, state.activeTabId);
+    if (activeTab) {
+      if (state.activeTabId !== activeTab.id) state.activeTabId = activeTab.id;
+      syncBoardCompatibilityFields(board, activeTab.id);
+    }
+  }
   const inbox = getBoardInbox(board, activeTab);
   const body = document.getElementById('inboxPanelBody');
   if (!body) return;
@@ -296,6 +308,7 @@ function renderInboxPanel() {
 }
 
 function renderAll() {
+  invalidateDerivedCaches();
   syncBoardCompatibilityState();
   if (state.activeBoardId && !state.activeTabId) {
     const activeBoard = state.boards.find(b => b.id === state.activeBoardId);
@@ -306,16 +319,16 @@ function renderAll() {
   document.title = state.hubName || 'Morpheus WebHub';
   renderNav();
   renderEssentials();
-  renderBoard();
+  renderBoard({ reuseDerivedCaches: true });
   updateInboxBadge();
   if (typeof updateImportManagerBadge === 'function') updateImportManagerBadge();
-  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
+  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel({ reuseDerivedCaches: true });
   if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen && typeof renderImportManagerPanel === 'function') {
     renderImportManagerPanel();
   }
   if (!elements.searchModal.classList.contains('hidden')) {
     const q = elements.searchModalInput.value.trim();
-    if (q || activeTagFilters.size > 0) renderSearchResults();
+    if (q || activeTagFilters.size > 0) renderSearchResults({ reuseDerivedCaches: true });
   }
   if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen && typeof renderSetManagerPanel === 'function') {
     renderSetManagerPanel();
@@ -327,6 +340,33 @@ function _showTagPicker(show) {
   pickerEl.classList.toggle('hidden', !show);
   const toggleBtn = document.getElementById('searchTagFilterToggleBtn');
   if (toggleBtn) toggleBtn.classList.toggle('active', show);
+}
+
+let searchRenderTimer = null;
+
+function scheduleSearchResultsRender(options = {}) {
+  const delay = options.delay ?? 120;
+  if (searchRenderTimer) clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(() => {
+    searchRenderTimer = null;
+    renderSearchResults(options);
+  }, delay);
+}
+
+function _cancelScheduledSearchRender() {
+  if (!searchRenderTimer) return;
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = null;
+}
+
+function _activateBoardSelection(boardId, tabId = null) {
+  const board = state.boards.find(entry => entry.id === boardId) || null;
+  if (!board) return false;
+  const nextTabId = tabId || board.tabs?.[0]?.id || null;
+  if (state.activeBoardId === board.id && state.activeTabId === nextTabId) return false;
+  state.activeBoardId = board.id;
+  state.activeTabId = nextTabId;
+  return true;
 }
 
 function openSearchModal(opts = {}) {
@@ -352,6 +392,7 @@ function openSearchModal(opts = {}) {
 }
 
 function closeSearchModal() {
+  _cancelScheduledSearchRender();
   elements.searchModal.classList.add('hidden');
   elements.searchModalInput.value = '';
   activeTagFilters = new Set();
@@ -362,7 +403,9 @@ function closeSearchModal() {
   elements.searchModalResults.innerHTML = '';
 }
 
-function renderSearchResults() {
+function renderSearchResults(options = {}) {
+  _cancelScheduledSearchRender();
+  if (!options.reuseDerivedCaches) invalidateDerivedCaches();
   const q = elements.searchModalInput.value.trim().toLowerCase() || null;
   const hasTagFilters = activeTagFilters.size > 0;
   const pane = elements.searchModalResults;
@@ -379,38 +422,48 @@ function renderSearchResults() {
     return searchFilters.typeBookmark;
   };
 
-  const getSearchableTagNames = (item, board) => {
-    const tagIds = new Set([
+  const searchDataCache = new WeakMap();
+  const getSearchData = (item, board) => {
+    let perBoard = searchDataCache.get(item);
+    if (!perBoard) {
+      perBoard = new Map();
+      searchDataCache.set(item, perBoard);
+    }
+    const boardKey = board?.id || '';
+    if (perBoard.has(boardKey)) return perBoard.get(boardKey);
+    const tagIds = [...new Set([
       ...(item.tags || []),
       ...(item.sharedTags || []),
       ...(board ? computeInheritedTags(item, board) : [])
-    ]);
-    const names = [];
+    ])];
+    const tagNames = [];
     for (const id of tagIds) {
       const tag = resolveTag(id);
-      if (tag?.name) names.push(tag.name.toLowerCase());
+      if (tag?.name) tagNames.push(tag.name.toLowerCase());
     }
-    return names;
+    const data = {
+      titleLower: (item.title || '').toLowerCase(),
+      urlLower: (item.url || '').toLowerCase(),
+      tagIds,
+      tagNames
+    };
+    perBoard.set(boardKey, data);
+    return data;
   };
 
-  const matchesText = (item, board) => {
+  const matchesText = (item, board, data) => {
     if (!typeAllowed(item)) return false;
     if (!q) return true;
-    if (searchFilters.name && (item.title || '').toLowerCase().includes(q)) return true;
-    if (searchFilters.url && item.url && item.url.toLowerCase().includes(q)) return true;
-    if (searchFilters.tags && getSearchableTagNames(item, board).some(name => name.includes(q))) return true;
+    if (searchFilters.name && data.titleLower.includes(q)) return true;
+    if (searchFilters.url && data.urlLower && data.urlLower.includes(q)) return true;
+    if (searchFilters.tags && data.tagNames.some(name => name.includes(q))) return true;
     return false;
   };
 
-  const matchesTagFilter = (item, board) => {
+  const matchesTagFilter = data => {
     if (!hasTagFilters) return true;
-    const allItemTags = [
-      ...(item.tags || []),
-      ...(item.sharedTags || []),
-      ...(board ? computeInheritedTags(item, board) : [])
-    ];
-    if (_tagFilterMode === 'and') return [...activeTagFilters].every(id => allItemTags.includes(id));
-    return [...activeTagFilters].some(id => allItemTags.includes(id));
+    if (_tagFilterMode === 'and') return [...activeTagFilters].every(id => data.tagIds.includes(id));
+    return [...activeTagFilters].some(id => data.tagIds.includes(id));
   };
 
   const allBaseHits = [];
@@ -421,29 +474,39 @@ function renderSearchResults() {
         if (item.children) hits.push(...collectFromList(item.children, board, columnId));
         continue;
       }
-      if (matchesText(item, board)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board });
+      const data = getSearchData(item, board);
+      if (matchesText(item, board, data)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board, searchData: data });
       if (item.children) hits.push(...collectFromList(item.children, board, columnId));
     }
     return hits;
   };
 
   state.essentials.forEach((e, i) => {
-    if (e && matchesText(e, null)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null });
+    if (!e) return;
+    const data = getSearchData(e, null);
+    if (matchesText(e, null, data)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null, searchData: data });
   });
   (state.sets || []).forEach(set => {
-    if (matchesText({ type: 'set', title: set.title }, null)) {
-      allBaseHits.push({ item: { id: set.id, type: 'set', title: set.title, itemCount: (set.items || []).length }, meta: { area: 'set', setId: set.id }, board: null });
+    const item = { id: set.id, type: 'set', title: set.title, itemCount: (set.items || []).length };
+    const data = getSearchData(item, null);
+    if (matchesText(item, null, data)) {
+      allBaseHits.push({ item, meta: { area: 'set', setId: set.id }, board: null, searchData: data });
     }
   });
   for (const board of state.boards) {
-    if (matchesText(board, null)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null });
-    board.speedDial.filter(i => i && matchesText(i, board)).forEach(i => allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board }));
+    const boardData = getSearchData(board, null);
+    if (matchesText(board, null, boardData)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null, searchData: boardData });
+    board.speedDial.forEach(i => {
+      if (!i) return;
+      const data = getSearchData(i, board);
+      if (matchesText(i, board, data)) allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board, searchData: data });
+    });
     for (const tab of getBoardTabs(board)) {
       (tab.columns || []).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
     }
   }
 
-  const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.item, h.board)) : allBaseHits;
+  const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.searchData)) : allBaseHits;
 
   const groupMap = new Map();
   for (const h of finalHits) {
@@ -494,13 +557,8 @@ function renderTagPicker(baseHits) {
 
   // build tag count map from baseHits
   const tagCount = new Map();
-  for (const { item, board } of baseHits) {
-    const allTags = [
-      ...(item.tags || []),
-      ...(item.sharedTags || []),
-      ...(board ? computeInheritedTags(item, board) : [])
-    ];
-    for (const id of allTags) {
+  for (const hit of baseHits) {
+    for (const id of (hit.searchData?.tagIds || [])) {
       tagCount.set(id, (tagCount.get(id) || 0) + 1);
     }
   }
@@ -636,6 +694,7 @@ function createSetSearchResultItem(item, meta = {}) {
   const set = findSetById(meta.setId || item.id);
   const el = document.createElement('div');
   el.className = 'board-column-item bookmark-item set-search-result';
+  el.dataset.setId = meta.setId || item.id;
   el.draggable = false;
   el.style.cursor = 'pointer';
   el.dataset.tooltip = set ? `${set.title}\n${(set.items || []).length} bookmark${(set.items || []).length === 1 ? '' : 's'}` : (item.title || 'Set');
@@ -720,7 +779,10 @@ function createBoardSearchResultItem(item, meta = {}) {
   el.dataset.tooltip = item.title || 'Untitled Board';
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
   el.addEventListener('click', () => {
-    state.activeBoardId = item.id;
+    if (!_activateBoardSelection(item.id)) {
+      closeSearchModal();
+      return;
+    }
     closeSearchModal();
     renderAll();
     saveState();
@@ -1305,6 +1367,7 @@ function renderBoardTabBar(board, activeTab) {
     }
 
     tabEl.addEventListener('click', () => {
+      if (state.activeTabId === tab.id) return;
       state.activeTabId = tab.id;
       renderAll();
       saveState();
@@ -1374,9 +1437,10 @@ function renderBoardTabBar(board, activeTab) {
     event.preventDefault();
     event.stopPropagation();
     if (board.locked || !activeTab) return;
-    state.activeTabId = activeTab.id;
-    renderAll();
-    saveState();
+    if (_activateBoardSelection(board.id, activeTab.id)) {
+      renderAll();
+      saveState();
+    }
     showBoardSettingsPanel();
   });
   tabBar.appendChild(settingsBtn);
@@ -1504,9 +1568,19 @@ function renderTabSetBar(board, activeTab) {
   setBar.ondrop = event => _handleTabSetBarDrop(event, board, activeTab);
 }
 
-function renderBoard() {
-  const board = getActiveBoard();
-  const activeTab = getActiveTab();
+function renderBoard(options = {}) {
+  if (!options.reuseDerivedCaches) invalidateDerivedCaches();
+  const board = state.activeBoardId
+    ? state.boards.find(entry => entry.id === state.activeBoardId) || null
+    : null;
+  let activeTab = null;
+  if (board) {
+    activeTab = getBoardTab(board, state.activeTabId);
+    if (activeTab) {
+      if (state.activeTabId !== activeTab.id) state.activeTabId = activeTab.id;
+      syncBoardCompatibilityFields(board, activeTab.id);
+    }
+  }
 
   renderBoardTabBar(board, activeTab);
   renderTabSetBar(board, activeTab);
@@ -1657,8 +1731,7 @@ function renderFolderTabBar(folder) {
     if (board?.locked) tab.classList.add('tab-locked');
     tab.addEventListener('click', () => {
       if (!navItem.boardId) return;
-      state.activeBoardId = navItem.boardId;
-      state.activeTabId = state.boards.find(b => b.id === navItem.boardId)?.tabs?.[0]?.id || null;
+      if (!_activateBoardSelection(navItem.boardId)) return;
       renderAll();
       saveState();
     });

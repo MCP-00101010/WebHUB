@@ -3,9 +3,44 @@
 ## Load/Save Database
 
 - monitor for any remaining false "shared database changed on disk before this browser finished saving" warnings after the shared-disk save queue changes, especially around rapid board/settings edits
+- had the hub open in two tabs in same browser. seem the get a lot more false "shared database changed on disk" message in the active hub tab even tho the other hub was inactive and I didn't change anything in there.
 
-## Known Bugs/Issues 
-  
+## Known Bugs/Issues
+
+- none currently listed.
+
+## Improvements
+
+- background image performance and memory pass
+  - continue reviewing the wider background image loading/rendering path for databases with many tabs that have backgrounds.
+  - follow up beyond the current import-time downscaling pass if there are still avoidable rerenders, duplicate decoding paths, or retained image data causing pressure.
+
+## Dynamic Sets and Folders
+
+- New feature: Dynamic Sets:
+  - Dynamic Sets are sets that contain bookmarks based on rules:
+    - add bookmarks with <TAGS> to this set
+    - exclude Bookmarks with <TAGS> from this set
+    - these two rules are combined via AND: add bookmark to this set only when it has all wanted tags AND does not have any unwanted tags.
+  - Bookmarks cannot be added/removed manually from dynamic sets like with normal sets.
+  - Dynamic sets are created and managed in the Sets Manager. We need an icon in the action bar next to Add Set Icon. 
+  - when the active set in the sets manager is dynamic, we need an icon in the set pane (maybe next to the sets name) to open the a rule editor modal for this set. 
+  - new modal needed: Rule Editor Modal. Follow Global Utility Modal Layout Ruleset as described in this TODO for layout. currently only needs input fields for included and excluded tags. They should look and work the same as tag input fields in add/create bookmark modal
+  - Dynamic Sets can be linked to a Tabs Set Bar like normal sets.
+  - Dynamic Sets Context Menu in Set Bar: Same as normal sets.
+- New Feature: Dynamic Folder:
+  - similar to Dynamic Sets just for Folders
+  - Dynamic Folders can only appear in Columns and not in the navpane
+  - Dynamic Folders can only contain bookmarks, no titles/dividers/subfolders.
+  - like dynamic sets, bookmarks are dynamically added to the same ruleset we use for dynamic sets.
+  - dynamic folders are parents so they support shared tags.
+  - Dynamic folders are collapsible like normal folders.
+  - we need a new icon set for collapsed / open dynamic folders.
+  - dynamic folders look the same as normal folders in columns.
+  - Use the normal Create/Edit Folder Folder modal to manage Dynamic Folders. For Dynamic Folders it needs a button in the Header (right-aligned, same line as the Folder Name Label  ) to open the Rule Editor Modal (Use the name Modal as for Dynamic Sets so if we add more rule options in the future they apply for both dynamic sets and dynamic folders.)
+  - New Context Menu entry for Columns and Folders inside Columns: Add Dynamic Folder.
+  - Context Menu for Dynamic Folders: Edit Dynamic Folder, Move to tab Inbox, Delete, Lock, Open All
+
 ## Drag and Drop
 
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover`; only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
@@ -13,17 +48,13 @@
 
 ## Firefox Extension / Bridge
 
+- Add "Send To Import Manager" button to extension UI
 - Add a generic secret-storage bridge so API keys are kept out of hub state, exports, and the shared JSON database. Use OS-backed storage where available (Windows Credential Manager, Linux Secret Service/keyring), with a clearly labeled fallback only if no secure store exists.
 - Prefer adding generic extension/native-host capabilities for service integrations up front (for example secret get/set and other reusable bridge actions) so future widgets do not force frequent AMO re-signing for one-off extension changes.
 - Add browser-captured favicon support: when bookmarks come from the current tab or other extension-driven flows, pass Firefox's actual tab favicon URL/data through the bridge and cache it in `faviconCache` instead of relying only on public favicon lookups.
 - native-host favicon fetch/parse fallback for stubborn sites
 - Add background asset management: when a tab background image is picked from disk or URL, copy it into a managed sibling assets folder and store a stable relative path instead of inflating the JSON with data URLs.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.
-
-## Tag Manager
-
-- tag context menu for move to group shows "no other groups" entry. thats not needed.
-
 
 ## Documentation, Localization & Code Health
 

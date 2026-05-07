@@ -89,7 +89,7 @@ input::placeholder {
 .sidebar {
   background: transparent;
   border-right: none;
-  padding: 16px;
+  padding: 16px 0 16px 16px;
   display: flex;
   flex-direction: column;
   transition: width 0.25s ease, transform 0.25s ease;
@@ -135,7 +135,7 @@ input::placeholder {
   transform: translateY(-50%);
   width: 11px;
   height: 44px;
-  background: var(--surface-2);
+  background: rgba(var(--panel-r), var(--panel-g), var(--panel-b), var(--sidebar-container-alpha, var(--container-alpha, 1)));
   border: 1px solid var(--border);
   border-left: none;
   border-radius: 0 6px 6px 0;
@@ -2284,6 +2284,10 @@ input::placeholder {
   background: var(--panel-muted);
   color: var(--text);
   padding: 12px 14px;
+}
+
+#modalSelectSecondaryRow {
+  margin-top: -2px;
 }
 
 .form-actions {

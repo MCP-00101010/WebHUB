@@ -4,6 +4,7 @@ const MAX_FAVICON_CACHE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SPEED_DIAL_SLOT_COUNT = 8;
 const COLLAPSED_SIDEBAR_WIDTH = 10;
 const EXPANDED_SIDEBAR_WIDTH = 320;
+const SHARED_DISK_SAVE_DEBOUNCE_MS = 250;
 
 let isDirty = false;
 
@@ -177,7 +178,15 @@ let sharedDiskHasPendingChanges = false;
 let sharedDiskSaveInFlight = false;
 let sharedDiskQueuedSnapshot = null;
 let sharedDiskQueuedPath = '';
+let sharedDiskFlushTimer = null;
 let localCacheMeta = loadLocalCacheMeta();
+let inheritedTagContextCache = new WeakMap();
+let boardNavInheritedTagsCache = new Map();
+
+function invalidateDerivedCaches() {
+  inheritedTagContextCache = new WeakMap();
+  boardNavInheritedTagsCache = new Map();
+}
 
 function normalizeLocalCacheMeta(meta) {
   return {
@@ -849,12 +858,32 @@ function sharedDiskSyncIsBlocked() {
   return sharedDiskWritesBlocked;
 }
 
+function sharedDiskSaveIsPending() {
+  return sharedDiskSaveInFlight || !!sharedDiskQueuedSnapshot || !!sharedDiskFlushTimer;
+}
+
+function clearSharedDiskFlushTimer() {
+  if (!sharedDiskFlushTimer) return;
+  clearTimeout(sharedDiskFlushTimer);
+  sharedDiskFlushTimer = null;
+}
+
+function scheduleSharedDiskFlush() {
+  if (sharedDiskWritesBlocked || sharedDiskSaveInFlight || !sharedDiskQueuedSnapshot) return;
+  clearSharedDiskFlushTimer();
+  sharedDiskFlushTimer = setTimeout(() => {
+    sharedDiskFlushTimer = null;
+    void flushSharedDiskSaveQueue();
+  }, SHARED_DISK_SAVE_DEBOUNCE_MS);
+}
+
 function blockSharedDiskSync(path = state?.databasePath || sharedDiskBaselinePath || '') {
   sharedDiskWritesBlocked = true;
   sharedDiskHasPendingChanges = true;
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskQueuedSnapshot = null;
   sharedDiskQueuedPath = '';
+  clearSharedDiskFlushTimer();
   persistLocalCacheMeta({
     databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
     sharedBaselinePath: sharedDiskBaselinePath
@@ -883,12 +912,13 @@ function queueSharedDiskSave(snapshot, path = state?.databasePath || sharedDiskB
   sharedDiskQueuedSnapshot = snapshot;
   sharedDiskQueuedPath = (path || '').trim();
   sharedDiskHasPendingChanges = true;
-  if (!sharedDiskSaveInFlight) void flushSharedDiskSaveQueue();
+  scheduleSharedDiskFlush();
 }
 
 async function flushSharedDiskSaveQueue() {
   if (sharedDiskSaveInFlight || sharedDiskWritesBlocked) return;
   if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable()) return;
+  clearSharedDiskFlushTimer();
 
   while (sharedDiskQueuedSnapshot && !sharedDiskWritesBlocked && bridge.isAvailable() && bridge.nativeIsAvailable()) {
     const snapshot = sharedDiskQueuedSnapshot;
@@ -900,7 +930,14 @@ async function flushSharedDiskSaveQueue() {
 
     try {
       const result = await bridge.saveState(snapshot, { expectedVersion });
-      if (!result?.ok) continue;
+      if (!result?.ok) {
+        if (!sharedDiskQueuedSnapshot) {
+          sharedDiskQueuedSnapshot = snapshot;
+          sharedDiskQueuedPath = path;
+        }
+        sharedDiskHasPendingChanges = true;
+        break;
+      }
       if (result.conflict) {
         notifySharedDiskConflict({
           fileInfo: result.fileInfo || null,
@@ -915,15 +952,23 @@ async function flushSharedDiskSaveQueue() {
       }
       if (sharedDiskQueuedSnapshot) sharedDiskHasPendingChanges = true;
     } catch {
+      if (!sharedDiskQueuedSnapshot) {
+        sharedDiskQueuedSnapshot = snapshot;
+        sharedDiskQueuedPath = path;
+      }
+      sharedDiskHasPendingChanges = true;
       break;
     } finally {
       sharedDiskSaveInFlight = false;
     }
   }
+
+  if (sharedDiskQueuedSnapshot && !sharedDiskWritesBlocked && !sharedDiskSaveInFlight) scheduleSharedDiskFlush();
 }
 
 function saveState(options = {}) {
   const { skipDiskSync = false } = options;
+  invalidateDerivedCaches();
   const json = serializeStateSnapshot();
   persistStateToLocalCache(json);
   isDirty = true;
@@ -957,7 +1002,8 @@ function getBoardTab(board, tabId = null) {
 }
 
 function getActiveTab() {
-  const board = getActiveBoardContainer();
+  if (!state.activeBoardId) return null;
+  const board = state.boards.find(b => b.id === state.activeBoardId) || null;
   if (!board) return null;
   const tab = getBoardTab(board, state.activeTabId);
   if (tab) {
@@ -1089,7 +1135,13 @@ function isValidUrl(value) {
   if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
   try {
     const url = new URL(v);
-    return ['http:', 'https:'].includes(url.protocol) && url.hostname.includes('.');
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    const hostname = (url.hostname || '').trim().toLowerCase();
+    if (!hostname) return false;
+    if (hostname === 'localhost') return true;
+    if ((hostname.startsWith('[') && hostname.endsWith(']')) || hostname.includes(':')) return true;
+    const isIpv4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(hostname);
+    return hostname.includes('.') || isIpv4;
   } catch {
     return false;
   }
@@ -1134,21 +1186,26 @@ function findNavBoardItem(boardId, list = state.navItems) {
 }
 
 function getBoardNavInheritedTags(boardId) {
+  if (boardNavInheritedTagsCache.has(boardId)) return boardNavInheritedTagsCache.get(boardId);
   const tags = [];
-  function collect(items, chain) {
+  function collect(items, chain = []) {
     for (const item of (items || [])) {
       if (item.type === 'board' && item.boardId === boardId) {
         for (const f of chain) if (f.sharedTags) tags.push(...f.sharedTags);
         return true;
       }
       if (item.type === 'folder' && item.children) {
-        if (collect(item.children, [...chain, item])) return true;
+        chain.push(item);
+        if (collect(item.children, chain)) return true;
+        chain.pop();
       }
     }
     return false;
   }
-  collect(state.navItems, []);
-  return [...new Set(tags)];
+  collect(state.navItems);
+  const inherited = [...new Set(tags)];
+  boardNavInheritedTagsCache.set(boardId, inherited);
+  return inherited;
 }
 
 function getBoardInheritedTagIds(board) {
@@ -1163,17 +1220,6 @@ function getTabInheritedTagIds(board, tab) {
   const inheritedFromBoard = getBoardInheritedTagIds(board);
   const tabShared = tab.sharedTags || [];
   return [...new Set([...inheritedFromBoard, ...tabShared])];
-}
-
-function findNavParentFolder(boardId, list = state.navItems, parent = null) {
-  for (const item of list) {
-    if (item.type === 'board' && item.boardId === boardId) return parent;
-    if (item.type === 'folder' && Array.isArray(item.children)) {
-      const found = findNavParentFolder(boardId, item.children, item);
-      if (found !== undefined) return found;
-    }
-  }
-  return undefined;
 }
 
 function collectFolderAncestorTags(board, folderId) {
@@ -1406,7 +1452,8 @@ function deleteBoardTarget(contextTarget) {
 function renameContextItem(text, contextTarget) {
   if (!contextTarget) return;
   if (contextTarget.area === 'board-item') {
-    const board = getActiveBoard();
+    const board = getBoardForContext(contextTarget);
+    if (!board) return;
     const found = findBoardItemInColumns(board, contextTarget.itemId);
     if (found?.item) found.item.title = text;
   } else if (contextTarget.area === 'nav-item') {
@@ -1569,34 +1616,51 @@ function filterInheritedTagIdsForItem(item, tagIds = []) {
   return [...new Set((tagIds || []).filter(tagId => !explicitTagIds.has(tagId)))];
 }
 
-function computeInheritedTags(item, board) {
-  if (!board) return [];
-  function findParentChain(targetId, items, chain) {
-    for (const i of (items || [])) {
-      if (i.id === targetId) return chain;
-      if (i.type === 'folder' && i.children) {
-        const found = findParentChain(targetId, i.children, [...chain, i]);
-        if (found) return found;
+function _buildBoardInheritedTagContext(board) {
+  const itemContexts = new Map();
+  const navInherited = getBoardNavInheritedTags(board.id);
+  const boardInherited = [...new Set([...navInherited, ...(board.sharedTags || [])])];
+
+  const walkItems = (items, tab, inheritedTagIds) => {
+    for (const item of (items || [])) {
+      if (!item?.id) continue;
+      itemContexts.set(item.id, { inheritedTagIds });
+      if (item.type === 'folder' && Array.isArray(item.children) && item.children.length) {
+        const childInheritedTagIds = item.sharedTags?.length
+          ? [...new Set([...inheritedTagIds, ...item.sharedTags])]
+          : inheritedTagIds;
+        walkItems(item.children, tab, childInheritedTagIds);
       }
     }
-    return null;
+  };
+
+  for (const tab of getBoardTabs(board)) {
+    const tabInherited = tab?.sharedTags?.length
+      ? [...new Set([...boardInherited, ...tab.sharedTags])]
+      : boardInherited;
+    for (const container of getBoardItemContainers(board, tab)) {
+      walkItems(container.items, tab, tabInherited);
+    }
   }
-  const tab = findBoardTabContainingItem(board, item.id) || getBoardTab(board);
-  if (!tab) return [];
-  const chainBase = [];
-  chainBase.push({ sharedTags: getBoardNavInheritedTags(board.id) });
-  chainBase.push(board, tab);
-  let chain = null;
-  for (const col of getBoardItemContainers(board, tab)) {
-    chain = findParentChain(item.id, col.items, chainBase);
-    if (chain) break;
+
+  return { itemContexts };
+}
+
+function getBoardInheritedTagContext(board) {
+  if (!board) return null;
+  let cached = inheritedTagContextCache.get(board);
+  if (!cached) {
+    cached = _buildBoardInheritedTagContext(board);
+    inheritedTagContextCache.set(board, cached);
   }
-  if (!chain) return [];
-  const tags = [];
-  for (const ancestor of chain) {
-    if (ancestor.sharedTags) tags.push(...ancestor.sharedTags);
-  }
-  return filterInheritedTagIdsForItem(item, tags);
+  return cached;
+}
+
+function computeInheritedTags(item, board) {
+  if (!board) return [];
+  const context = getBoardInheritedTagContext(board);
+  const inheritedTagIds = context?.itemContexts.get(item?.id)?.inheritedTagIds || [];
+  return filterInheritedTagIdsForItem(item, inheritedTagIds);
 }
 
 // --- Bookmark management utilities ---
@@ -1725,8 +1789,9 @@ function clearImportManager() {
   state.importManager.items = [];
 }
 
-function editFolder(itemId, title, tags, sharedTags) {
-  let item = findBoardItemInColumns(getActiveBoard(), itemId)?.item;
+function editFolder(itemId, title, tags, sharedTags, ct = null) {
+  const board = getBoardForContext(ct);
+  let item = board ? findBoardItemInColumns(board, itemId)?.item : null;
   if (!item) item = findNavItemPath(itemId)?.item;
   if (item?.type === 'folder') {
     item.title = title;
@@ -1739,6 +1804,7 @@ function editFolder(itemId, title, tags, sharedTags) {
 
 function restoreStateSnapshot(jsonStr) {
   state = parseStateJson(jsonStr);
+  invalidateDerivedCaches();
 }
 
 // --- Recently deleted (trash) ---
