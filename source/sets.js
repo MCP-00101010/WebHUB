@@ -2,6 +2,7 @@ const SETS_MANAGER_POS_KEY = 'morpheus-sets-manager-pos';
 
 let setsManagerPanelOpen = false;
 let selectedSetId = null;
+let setManagerTitleSaveTimer = null;
 
 function _setPanelCountLabel(count) {
   return `${count} bookmark${count === 1 ? '' : 's'}`;
@@ -49,9 +50,34 @@ function showSetManagerPanel() {
   renderSetManagerPanel();
 }
 
+function _syncSetTitlePresentation(set) {
+  if (!set?.id) return;
+  const title = set.title || 'Untitled Set';
+  document.querySelectorAll(`.sets-manager-row[data-set-id="${CSS.escape(set.id)}"] .sets-manager-row-title`).forEach(el => {
+    el.textContent = title;
+  });
+  document.querySelectorAll(`.set-bar-item[data-set-id="${CSS.escape(set.id)}"] .collection-tab-label`).forEach(el => {
+    el.textContent = title;
+  });
+  document.querySelectorAll(`.set-search-result[data-set-id="${CSS.escape(set.id)}"] .bookmark-label`).forEach(el => {
+    el.textContent = title;
+  });
+}
+
+function _scheduleSetManagerTitleSave() {
+  if (setManagerTitleSaveTimer) clearTimeout(setManagerTitleSaveTimer);
+  setManagerTitleSaveTimer = setTimeout(() => {
+    setManagerTitleSaveTimer = null;
+    saveState();
+  }, 250);
+}
+
 function hideSetManagerPanel() {
   setsManagerPanelOpen = false;
-  document.getElementById('setsManagerPanel')?.classList.add('hidden');
+  const panel = document.getElementById('setsManagerPanel');
+  if (panel?.contains(document.activeElement)) document.activeElement.blur();
+  panel?.classList.add('hidden');
+  if (!shouldKeepModalOverlayVisible()) elements.modalOverlay.classList.add('hidden');
 }
 
 function showSetManagerForSet(setId, options = {}) {
@@ -523,8 +549,8 @@ function attachSetPanelListeners() {
     if (!set) return;
     set.title = event.target.value.trim() || 'Untitled Set';
     touchSet(set);
-    renderSetManagerPanel();
-    saveState();
+    _syncSetTitlePresentation(set);
+    _scheduleSetManagerTitleSave();
   });
 
   const body = document.getElementById('setsManagerPreview');

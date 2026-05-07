@@ -257,6 +257,34 @@ function applyDragImage(event, element) {
   requestAnimationFrame(() => { clone.remove(); element.classList.add('dragging'); });
 }
 
+function _normalizeDraggedBookmark(item) {
+  if (!item) return null;
+  item.type = 'bookmark';
+  if (!item.tags) item.tags = [];
+  return item;
+}
+
+function _takeDraggedBookmarkItem(board) {
+  if (!dragPayload) return null;
+  if (dragPayload.area === 'speed-dial') {
+    return _normalizeDraggedBookmark(removeSpeedDialItemById(board, dragPayload.itemId));
+  }
+  if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
+    return _normalizeDraggedBookmark(removeBoardItemById(dragPayload.itemId));
+  }
+  if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
+    return _normalizeDraggedBookmark(_takeImportManagerDraggedItem());
+  }
+  if (dragPayload.area === 'essential') {
+    const item = state.essentials[dragPayload.slot];
+    if (!item) return null;
+    state.essentials[dragPayload.slot] = null;
+    trimEssentialsTail();
+    return _normalizeDraggedBookmark(item);
+  }
+  return null;
+}
+
 // Shared extraction logic for folder header/container drops.
 // Returns the extracted item or null on failure.
 function _extractDraggedItem(board) {
@@ -269,19 +297,10 @@ function _extractDraggedItem(board) {
     return _takeImportManagerDraggedItem();
   }
   if (dragPayload.area === 'speed-dial') {
-    const dragged = removeSpeedDialItemById(board, dragPayload.itemId);
-    if (!dragged) return null;
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-    return dragged;
+    return _takeDraggedBookmarkItem(board);
   }
   if (dragPayload.area === 'essential') {
-    const dragged = state.essentials[dragPayload.slot];
-    if (!dragged) return null;
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-    return dragged;
+    return _takeDraggedBookmarkItem(board);
   }
   return null;
 }
@@ -348,25 +367,13 @@ function handleEssentialSlotDrop(targetSlot) {
     state.essentials[targetSlot] = srcItem;
     state.essentials[srcSlot] = null;
     trimEssentialsTail();
-  } else if (dragPayload.area === 'speed-dial') {
-    const item = removeSpeedDialItemById(board, dragPayload.itemId);
+  } else if (
+    dragPayload.area === 'speed-dial'
+    || (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')
+    || (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark')
+  ) {
+    const item = _takeDraggedBookmarkItem(board);
     if (!item) { dragPayload = null; return; }
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
-    while (state.essentials.length <= targetSlot) state.essentials.push(null);
-    state.essentials[targetSlot] = item;
-  } else if (dragPayload.area === 'board') {
-    const item = removeBoardItemById(dragPayload.itemId);
-    if (!item) { dragPayload = null; return; }
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
-    while (state.essentials.length <= targetSlot) state.essentials.push(null);
-    state.essentials[targetSlot] = item;
-  } else if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
-    const item = _takeImportManagerDraggedItem();
-    if (!item) { dragPayload = null; return; }
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
     while (state.essentials.length <= targetSlot) state.essentials.push(null);
     state.essentials[targetSlot] = item;
   } else {
@@ -392,21 +399,156 @@ function _moveBoardPreview(parentEl, beforeEl) {
   }
 }
 
-// Shared "drop into folder" activation used by both the header and tag-grid dragover
-// handlers. Keyed on the folder card element so any subelement of the folder top
-// section hits the same guard and does not re-trigger on micro-movements.
-function activateFolderDrop(event, folderCardEl, folderItem, columnId, depth) {
-  if (!_canDropOnBoard()) return;
+function _activateFolderDropTarget(event, folderCardEl, canDrop) {
+  if (!canDrop()) return;
   event.preventDefault();
   event.stopPropagation();
   if (_dropTarget === folderCardEl) return;
   _dropTarget = folderCardEl;
-  _dropPos    = null;
+  _dropPos = null;
   const childrenContainer = folderCardEl.querySelector('.folder-children');
   if (childrenContainer) {
     _moveBoardPreview(childrenContainer, null);
     childrenContainer.classList.add('drop-target');
   }
+}
+
+function _handleVerticalItemDragOver(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = 'move';
+
+  const itemEl = event.currentTarget;
+  const rect = itemEl.getBoundingClientRect();
+  const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+  if (_dropTarget === itemEl && _dropPos === position) return;
+
+  _dropTarget = itemEl;
+  _dropPos = position;
+  _moveBoardPreview(itemEl.parentElement, position === 'before' ? itemEl : itemEl.nextSibling);
+  itemEl.dataset.dropPosition = position;
+  itemEl.classList.toggle('drop-position-before', position === 'before');
+  itemEl.classList.toggle('drop-position-after', position === 'after');
+}
+
+function _handleVerticalContainerDragOver(event, { markDropTarget = false, useNearest = false } = {}) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = 'move';
+
+  const containerEl = event.currentTarget;
+  if (markDropTarget) containerEl.classList.add('drop-target');
+  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
+
+  if (itemEls.length === 0) {
+    if (_dropTarget === containerEl && _dropPos === 'start') return;
+    _dropTarget = containerEl;
+    _dropPos = 'start';
+    _moveBoardPreview(containerEl, containerEl.firstChild);
+    return;
+  }
+
+  let nearestEl = null;
+  let nearestPos = 'after';
+
+  if (useNearest) {
+    let nearestDist = Infinity;
+    for (const el of itemEls) {
+      const rect = el.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      const dist = Math.abs(event.clientY - midY);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestEl = el;
+        nearestPos = event.clientY <= midY ? 'before' : 'after';
+      }
+    }
+  } else {
+    for (const el of itemEls) {
+      const rect = el.getBoundingClientRect();
+      if (event.clientY <= rect.bottom) {
+        nearestEl = el;
+        nearestPos = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        break;
+      }
+    }
+  }
+
+  if (!nearestEl) {
+    if (_dropTarget === containerEl && _dropPos === 'end') return;
+    _dropTarget = containerEl;
+    _dropPos = 'end';
+    _moveBoardPreview(containerEl, null);
+    return;
+  }
+
+  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
+  _dropTarget = nearestEl;
+  _dropPos = nearestPos;
+  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
+  nearestEl.dataset.dropPosition = nearestPos;
+  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
+  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+}
+
+function _insertDraggedRelativeToTarget(list, targetId, draggedId, draggedPath, dragged, position) {
+  const targetIndex = list.findIndex(item => item.id === targetId);
+  if (targetIndex === -1) return false;
+  const draggedIndex = draggedPath && draggedPath.list === list
+    ? draggedPath.list.findIndex(item => item.id === draggedId)
+    : -1;
+  let destinationIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+  if (draggedIndex !== -1 && draggedIndex < targetIndex) destinationIndex -= 1;
+  destinationIndex = Math.max(0, Math.min(destinationIndex, list.length));
+  list.splice(destinationIndex, 0, dragged);
+  return true;
+}
+
+function _resolveDropTargetInsertIndex(list, dropTargetEl, dropPos, draggedIndex = -1) {
+  let insertIndex = list.length;
+  const targetItemId = dropTargetEl?.dataset?.itemId;
+  if (targetItemId && dropPos) {
+    const targetIdx = list.findIndex(item => item.id === targetItemId);
+    if (targetIdx !== -1) insertIndex = dropPos === 'after' ? targetIdx + 1 : targetIdx;
+  }
+  if (draggedIndex !== -1 && draggedIndex < insertIndex) insertIndex -= 1;
+  return Math.max(0, Math.min(insertIndex, list.length));
+}
+
+function _insertDraggedAtDropTarget(list, dragged, dropTargetEl, dropPos, draggedIndex = -1) {
+  list.splice(_resolveDropTargetInsertIndex(list, dropTargetEl, dropPos, draggedIndex), 0, dragged);
+}
+
+function _finalizeFolderDrop(event, folderItem, depth, takeDraggedItem, isOwnDescendant, { useSavedDropPosition = false } = {}) {
+  const dropTargetEl = useSavedDropPosition ? _dropTarget : null;
+  const dropPos = useSavedDropPosition ? _dropPos : null;
+
+  event.preventDefault();
+  event.stopPropagation();
+  removeDragPlaceholders();
+  event.currentTarget.classList.remove('drop-target');
+
+  if (dragPayload.itemType === 'folder' && depth >= 2) {
+    showNotice('Folders can only be nested two levels deep.');
+    dragPayload = null;
+    return;
+  }
+  if (isOwnDescendant(folderItem)) {
+    showNotice('Cannot move a folder into one of its own subfolders.');
+    dragPayload = null;
+    return;
+  }
+
+  pushUndoSnapshot();
+  const dragged = takeDraggedItem();
+  if (!dragged) { dragPayload = null; return; }
+
+  folderItem.children = folderItem.children || [];
+  _insertDraggedAtDropTarget(folderItem.children, dragged, dropTargetEl, dropPos);
+
+  dragPayload = null;
+  renderAll();
+  saveState();
 }
 
 // --- Board item drag & drop ---
@@ -422,25 +564,11 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   // Collapsed folders and locked folders (direct or inherited) fall through to
   // normal before/after reorder.
   if (targetItem.type === 'folder' && !targetItem.collapsed && !targetItem.locked && !event.currentTarget.classList.contains('is-locked')) {
-    activateFolderDrop(event, event.currentTarget, targetItem, columnId, depth);
+    _activateFolderDropTarget(event, event.currentTarget, () => _canDropOnBoard());
     return;
   }
 
-  event.preventDefault();
-  event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
-
-  const itemEl = event.currentTarget;
-  const rect = itemEl.getBoundingClientRect();
-  const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
-  if (_dropTarget === itemEl && _dropPos === position) return;
-
-  _dropTarget = itemEl;
-  _dropPos    = position;
-  _moveBoardPreview(itemEl.parentElement, position === 'before' ? itemEl : itemEl.nextSibling);
-  itemEl.dataset.dropPosition = position;
-  itemEl.classList.toggle('drop-position-before', position === 'before');
-  itemEl.classList.toggle('drop-position-after', position === 'after');
+  _handleVerticalItemDragOver(event);
 }
 
 function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
@@ -475,25 +603,15 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   const targetPath = findBoardItemInColumns(board, targetItem.id);
 
   if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential' || dragPayload.area === 'import-manager') {
-    let extracted;
-    if (dragPayload.area === 'speed-dial') {
-      extracted = removeSpeedDialItemById(board, dragPayload.itemId);
-      if (!extracted) { dragPayload = null; return; }
-    } else if (dragPayload.area === 'import-manager') {
-      extracted = _takeImportManagerDraggedItem();
-      if (!extracted) { dragPayload = null; return; }
-    } else {
-      extracted = state.essentials[dragPayload.slot];
-      if (!extracted) { dragPayload = null; return; }
-      state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    }
-    extracted.type = 'bookmark';
-    if (!extracted.tags) extracted.tags = [];
+    const extracted = dragPayload.area === 'import-manager'
+      ? _takeImportManagerDraggedItem()
+      : _takeDraggedBookmarkItem(board);
+    if (!extracted) { dragPayload = null; return; }
     if (!targetPath) {
       addBoardItemToColumn(columnId, extracted);
-    } else {
-      const targetIndex = targetPath.list.findIndex(i => i.id === targetItem.id);
-      targetPath.list.splice(Math.max(0, position === 'after' ? targetIndex + 1 : targetIndex), 0, extracted);
+    } else if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, null, extracted, position)) {
+      dragPayload = null;
+      return;
     }
     dragPayload = null; renderAll(); saveState(); return;
   }
@@ -510,20 +628,12 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
     dragPayload = null; renderAll(); saveState(); return;
   }
 
-  const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
-  if (targetIndex === -1) { dragPayload = null; return; }
-
-  const draggedIndex = draggedPath && draggedPath.list === targetPath.list
-    ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
-    : -1;
-
   const dragged = removeBoardItemById(dragPayload.itemId);
   if (!dragged) return;
-
-  let destinationIndex = position === 'after' ? targetIndex + 1 : targetIndex;
-  if (draggedIndex !== -1 && draggedIndex < targetIndex) destinationIndex -= 1;
-  destinationIndex = Math.max(0, Math.min(destinationIndex, targetPath.list.length));
-  targetPath.list.splice(destinationIndex, 0, dragged);
+  if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, draggedPath, dragged, position)) {
+    dragPayload = null;
+    return;
+  }
 
   dragPayload = null;
   renderAll();
@@ -535,44 +645,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 function handleBoardColumnDragOver(event) {
   if (getActiveBoard()?.locked) return;
   if (dragPayload && !_canDropOnBoard(true)) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  event.stopPropagation();
-
-  const columnEl = event.currentTarget;
-  const itemEls = Array.from(columnEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
-
-  if (itemEls.length === 0) {
-    if (_dropTarget === columnEl && _dropPos === 'start') return;
-    _dropTarget = columnEl; _dropPos = 'start';
-    _moveBoardPreview(columnEl, columnEl.firstChild);
-    return;
-  }
-
-  let nearestEl = null;
-  let nearestPos = 'after';
-  for (const el of itemEls) {
-    const rect = el.getBoundingClientRect();
-    if (event.clientY <= rect.bottom) {
-      nearestEl = el;
-      nearestPos = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      break;
-    }
-  }
-
-  if (!nearestEl) {
-    if (_dropTarget === columnEl && _dropPos === 'end') return;
-    _dropTarget = columnEl; _dropPos = 'end';
-    _moveBoardPreview(columnEl, null);
-    return;
-  }
-
-  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
-  _dropTarget = nearestEl; _dropPos = nearestPos;
-  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
-  nearestEl.dataset.dropPosition = nearestPos;
-  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
-  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  _handleVerticalContainerDragOver(event);
 }
 
 function handleBoardColumnDrop(event, columnId) {
@@ -601,42 +674,28 @@ function handleBoardColumnDrop(event, columnId) {
   const column = board.columns.find(col => col.id === columnId);
   if (!column) return;
 
-  let stateInsertIndex = column.items.length;
-  if (savedTarget?.dataset.itemId) {
-    const refIdx = column.items.findIndex(i => i.id === savedTarget.dataset.itemId);
-    if (refIdx !== -1) stateInsertIndex = savedPos === 'after' ? refIdx + 1 : refIdx;
-  }
-
   if (isNavColWidget) {
     const widget = removeNavItemById(dragPayload.itemId);
     if (!widget) { dragPayload = null; return; }
-    column.items.splice(Math.max(0, Math.min(stateInsertIndex, column.items.length)), 0, widget);
+    _insertDraggedAtDropTarget(column.items, widget, savedTarget, savedPos);
     dragPayload = null; renderAll(); saveState(); return;
   }
 
   let draggedItem;
+  let draggedIndex = -1;
   if (dragPayload.area === 'board') {
-    const origIdx = column.items.findIndex(i => i.id === dragPayload.itemId);
+    draggedIndex = column.items.findIndex(i => i.id === dragPayload.itemId);
     draggedItem = removeBoardItemById(dragPayload.itemId);
-    if (draggedItem && origIdx !== -1 && origIdx < stateInsertIndex) stateInsertIndex -= 1;
   } else if (dragPayload.area === 'import-manager') {
     draggedItem = _takeImportManagerDraggedItem();
     if (!draggedItem) { dragPayload = null; return; }
-  } else if (dragPayload.area === 'speed-dial') {
-    draggedItem = removeSpeedDialItemById(board, dragPayload.itemId);
-    if (!draggedItem) { dragPayload = null; return; }
-    draggedItem.type = 'bookmark';
-    if (!draggedItem.tags) draggedItem.tags = [];
   } else {
-    draggedItem = state.essentials[dragPayload.slot];
+    draggedItem = _takeDraggedBookmarkItem(board);
     if (!draggedItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    draggedItem.type = 'bookmark';
-    if (!draggedItem.tags) draggedItem.tags = [];
   }
   if (!draggedItem) return;
 
-  column.items.splice(Math.max(0, Math.min(stateInsertIndex, column.items.length)), 0, draggedItem);
+  _insertDraggedAtDropTarget(column.items, draggedItem, savedTarget, savedPos, draggedIndex);
 
   dragPayload = null;
   renderAll();
@@ -647,7 +706,7 @@ function handleBoardColumnDrop(event, columnId) {
 
 function handleBoardFolderHeaderDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
-  activateFolderDrop(event, folderCardEl, folderItem, columnId, depth);
+  _activateFolderDropTarget(event, folderCardEl, () => _canDropOnBoard());
 }
 
 function _isDroppingFolderIntoOwnDescendant(board, targetFolder) {
@@ -661,129 +720,35 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   if (!_canDropOnBoard()) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
-  event.preventDefault();
-  event.stopPropagation();
-  removeDragPlaceholders();
-  event.currentTarget.classList.remove('drop-target');
-
-  if (dragPayload.itemType === 'folder' && depth >= 2) {
-    showNotice('Folders can only be nested two levels deep.');
-    dragPayload = null; return;
-  }
   const board = getActiveBoard();
-  if (_isDroppingFolderIntoOwnDescendant(board, folderItem)) {
-    showNotice('Cannot move a folder into one of its own subfolders.');
-    dragPayload = null; return;
-  }
-
-  pushUndoSnapshot();
-  const dragged = _extractDraggedItem(board);
-  if (!dragged) { dragPayload = null; return; }
-
-  folderItem.children = folderItem.children || [];
-  folderItem.children.push(dragged);
-
-  dragPayload = null;
-  renderAll();
-  saveState();
+  _finalizeFolderDrop(
+    event,
+    folderItem,
+    depth,
+    () => _extractDraggedItem(board),
+    targetFolder => _isDroppingFolderIntoOwnDescendant(board, targetFolder)
+  );
 }
 
 function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
   if (!_canDropOnBoard()) return;
-  event.preventDefault();
-  event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
-
-  const containerEl = event.currentTarget;
-  containerEl.classList.add('drop-target');
-
-  // Position-aware preview within the folder's children — same logic as column dragover.
-  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
-
-  if (itemEls.length === 0) {
-    if (_dropTarget === containerEl && _dropPos === 'start') return;
-    _dropTarget = containerEl; _dropPos = 'start';
-    _moveBoardPreview(containerEl, containerEl.firstChild);
-    return;
-  }
-
-  let nearestEl = null, nearestPos = null, nearestDist = Infinity;
-  for (const el of itemEls) {
-    const rect = el.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    const dist = Math.abs(event.clientY - midY);
-    if (dist < nearestDist) {
-      nearestDist = dist;
-      nearestEl = el;
-      nearestPos = event.clientY <= midY ? 'before' : 'after';
-    }
-  }
-
-  if (!nearestEl) {
-    if (_dropTarget === containerEl && _dropPos === 'end') return;
-    _dropTarget = containerEl; _dropPos = 'end';
-    _moveBoardPreview(containerEl, null);
-    return;
-  }
-
-  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
-  _dropTarget = nearestEl; _dropPos = nearestPos;
-  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
-  nearestEl.dataset.dropPosition = nearestPos;
-  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
-  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  _handleVerticalContainerDragOver(event, { markDropTarget: true, useNearest: true });
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   if (!_canDropOnBoard()) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
-  event.preventDefault();
-  event.stopPropagation();
-
-  // Capture position before removeDragPlaceholders clears them.
-  const dropTargetEl = _dropTarget;
-  const dropPos = _dropPos;
-
-  removeDragPlaceholders();
-  event.currentTarget.classList.remove('drop-target');
-
-  if (dragPayload.itemType === 'folder' && depth >= 2) {
-    showNotice('Folders can only be nested two levels deep.');
-    dragPayload = null; return;
-  }
-
   const board = getActiveBoard();
-  if (_isDroppingFolderIntoOwnDescendant(board, folderItem)) {
-    showNotice('Cannot move a folder into one of its own subfolders.');
-    dragPayload = null; return;
-  }
-
-  pushUndoSnapshot();
-  const dragged = _extractDraggedItem(board);
-  if (!dragged) { dragPayload = null; return; }
-
-  folderItem.children = folderItem.children || [];
-  const targetItemId = dropTargetEl?.dataset?.itemId;
-  if (targetItemId && dropPos) {
-    const targetIdx = folderItem.children.findIndex(c => c.id === targetItemId);
-    if (targetIdx !== -1) {
-      const insertIdx = Math.max(0, Math.min(
-        dropPos === 'after' ? targetIdx + 1 : targetIdx,
-        folderItem.children.length
-      ));
-      folderItem.children.splice(insertIdx, 0, dragged);
-    } else {
-      folderItem.children.push(dragged);
-    }
-  } else {
-    folderItem.children.push(dragged);
-  }
-
-  dragPayload = null;
-  renderAll();
-  saveState();
+  _finalizeFolderDrop(
+    event,
+    folderItem,
+    depth,
+    () => _extractDraggedItem(board),
+    targetFolder => _isDroppingFolderIntoOwnDescendant(board, targetFolder),
+    { useSavedDropPosition: true }
+  );
 }
 
 // --- Import Manager drag & drop ---
@@ -799,43 +764,15 @@ function _isDroppingImportManagerFolderIntoOwnDescendant(targetFolder) {
   return dragged?.type === 'folder' && isDescendant(targetFolder.id, dragged);
 }
 
-function _activateImportManagerFolderDrop(event, folderCardEl) {
-  if (!_canDropOnImportManager()) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (_dropTarget === folderCardEl) return;
-  _dropTarget = folderCardEl;
-  _dropPos = null;
-  const childrenContainer = folderCardEl.querySelector('.folder-children');
-  if (childrenContainer) {
-    _moveBoardPreview(childrenContainer, null);
-    childrenContainer.classList.add('drop-target');
-  }
-}
-
 function handleImportManagerItemDragOver(event, targetItem, parentFolder, depth) {
   if (!_canDropOnImportManager()) return;
 
   if (targetItem.type === 'folder' && !targetItem.collapsed) {
-    _activateImportManagerFolderDrop(event, event.currentTarget);
+    _activateFolderDropTarget(event, event.currentTarget, _canDropOnImportManager);
     return;
   }
 
-  event.preventDefault();
-  event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
-
-  const itemEl = event.currentTarget;
-  const rect = itemEl.getBoundingClientRect();
-  const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
-  if (_dropTarget === itemEl && _dropPos === position) return;
-
-  _dropTarget = itemEl;
-  _dropPos = position;
-  _moveBoardPreview(itemEl.parentElement, position === 'before' ? itemEl : itemEl.nextSibling);
-  itemEl.dataset.dropPosition = position;
-  itemEl.classList.toggle('drop-position-before', position === 'before');
-  itemEl.classList.toggle('drop-position-after', position === 'after');
+  _handleVerticalItemDragOver(event);
 }
 
 function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
@@ -852,20 +789,12 @@ function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
   if (!targetPath) { dragPayload = null; return; }
 
   const draggedPath = findImportManagerItemById(dragPayload.itemId);
-  const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
-  if (targetIndex === -1) { dragPayload = null; return; }
-
-  const draggedIndex = draggedPath && draggedPath.list === targetPath.list
-    ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
-    : -1;
-
   const dragged = _takeImportManagerDraggedItem();
   if (!dragged) { dragPayload = null; return; }
-
-  let destinationIndex = position === 'after' ? targetIndex + 1 : targetIndex;
-  if (draggedIndex !== -1 && draggedIndex < targetIndex) destinationIndex -= 1;
-  destinationIndex = Math.max(0, Math.min(destinationIndex, targetPath.list.length));
-  targetPath.list.splice(destinationIndex, 0, dragged);
+  if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, draggedPath, dragged, position)) {
+    dragPayload = null;
+    return;
+  }
 
   dragPayload = null;
   renderAll();
@@ -874,48 +803,7 @@ function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
 
 function handleImportManagerListDragOver(event) {
   if (!_canDropOnImportManager()) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  event.stopPropagation();
-
-  const listEl = document.getElementById('importManagerList');
-  if (!listEl) return;
-  const itemEls = Array.from(listEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
-
-  if (itemEls.length === 0) {
-    if (_dropTarget === listEl && _dropPos === 'start') return;
-    _dropTarget = listEl;
-    _dropPos = 'start';
-    _moveBoardPreview(listEl, listEl.firstChild);
-    return;
-  }
-
-  let nearestEl = null;
-  let nearestPos = 'after';
-  for (const el of itemEls) {
-    const rect = el.getBoundingClientRect();
-    if (event.clientY <= rect.bottom) {
-      nearestEl = el;
-      nearestPos = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      break;
-    }
-  }
-
-  if (!nearestEl) {
-    if (_dropTarget === listEl && _dropPos === 'end') return;
-    _dropTarget = listEl;
-    _dropPos = 'end';
-    _moveBoardPreview(listEl, null);
-    return;
-  }
-
-  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
-  _dropTarget = nearestEl;
-  _dropPos = nearestPos;
-  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
-  nearestEl.dataset.dropPosition = nearestPos;
-  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
-  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  _handleVerticalContainerDragOver(event);
 }
 
 function handleImportManagerListDrop(event) {
@@ -933,18 +821,10 @@ function handleImportManagerListDrop(event) {
   const dragged = _takeImportManagerDraggedItem();
   if (!dragged) { dragPayload = null; return; }
 
-  let insertIndex = rootItems.length;
-  if (savedTarget?.dataset?.itemId) {
-    const targetIdx = rootItems.findIndex(item => item.id === savedTarget.dataset.itemId);
-    if (targetIdx !== -1) insertIndex = savedPos === 'after' ? targetIdx + 1 : targetIdx;
-  }
-
   const draggedIndex = draggedPath && draggedPath.list === rootItems
     ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
     : -1;
-  if (draggedIndex !== -1 && draggedIndex < insertIndex) insertIndex -= 1;
-
-  rootItems.splice(Math.max(0, Math.min(insertIndex, rootItems.length)), 0, dragged);
+  _insertDraggedAtDropTarget(rootItems, dragged, savedTarget, savedPos, draggedIndex);
 
   dragPayload = null;
   renderAll();
@@ -952,135 +832,37 @@ function handleImportManagerListDrop(event) {
 }
 
 function handleImportManagerFolderHeaderDragOver(event, folderCardEl, folderItem, depth) {
-  _activateImportManagerFolderDrop(event, folderCardEl);
+  _activateFolderDropTarget(event, folderCardEl, _canDropOnImportManager);
 }
 
 function handleImportManagerFolderHeaderDrop(event, folderItem, depth) {
   if (!_canDropOnImportManager()) return;
   if (dragPayload.itemId === folderItem.id) return;
-  event.preventDefault();
-  event.stopPropagation();
-  removeDragPlaceholders();
-  event.currentTarget.classList.remove('drop-target');
-
-  if (dragPayload.itemType === 'folder' && depth >= 2) {
-    showNotice('Folders can only be nested two levels deep.');
-    dragPayload = null;
-    return;
-  }
-  if (_isDroppingImportManagerFolderIntoOwnDescendant(folderItem)) {
-    showNotice('Cannot move a folder into one of its own subfolders.');
-    dragPayload = null;
-    return;
-  }
-
-  pushUndoSnapshot();
-  const dragged = _takeImportManagerDraggedItem();
-  if (!dragged) { dragPayload = null; return; }
-
-  folderItem.children = folderItem.children || [];
-  folderItem.children.push(dragged);
-
-  dragPayload = null;
-  renderAll();
-  saveState();
+  _finalizeFolderDrop(
+    event,
+    folderItem,
+    depth,
+    _takeImportManagerDraggedItem,
+    _isDroppingImportManagerFolderIntoOwnDescendant
+  );
 }
 
 function handleImportManagerFolderContainerDragOver(event, folderCardEl, folderItem, depth) {
   if (!_canDropOnImportManager()) return;
-  event.preventDefault();
-  event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
-
-  const containerEl = event.currentTarget;
-  containerEl.classList.add('drop-target');
-  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
-
-  if (itemEls.length === 0) {
-    if (_dropTarget === containerEl && _dropPos === 'start') return;
-    _dropTarget = containerEl;
-    _dropPos = 'start';
-    _moveBoardPreview(containerEl, containerEl.firstChild);
-    return;
-  }
-
-  let nearestEl = null;
-  let nearestPos = null;
-  let nearestDist = Infinity;
-  for (const el of itemEls) {
-    const rect = el.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    const dist = Math.abs(event.clientY - midY);
-    if (dist < nearestDist) {
-      nearestDist = dist;
-      nearestEl = el;
-      nearestPos = event.clientY <= midY ? 'before' : 'after';
-    }
-  }
-
-  if (!nearestEl) {
-    if (_dropTarget === containerEl && _dropPos === 'end') return;
-    _dropTarget = containerEl;
-    _dropPos = 'end';
-    _moveBoardPreview(containerEl, null);
-    return;
-  }
-
-  if (_dropTarget === nearestEl && _dropPos === nearestPos) return;
-  _dropTarget = nearestEl;
-  _dropPos = nearestPos;
-  _moveBoardPreview(nearestEl.parentElement, nearestPos === 'before' ? nearestEl : nearestEl.nextSibling);
-  nearestEl.dataset.dropPosition = nearestPos;
-  nearestEl.classList.toggle('drop-position-before', nearestPos === 'before');
-  nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
+  _handleVerticalContainerDragOver(event, { markDropTarget: true, useNearest: true });
 }
 
 function handleImportManagerFolderContainerDrop(event, folderItem, depth) {
   if (!_canDropOnImportManager()) return;
   if (dragPayload.itemId === folderItem.id) return;
-  event.preventDefault();
-  event.stopPropagation();
-
-  const dropTargetEl = _dropTarget;
-  const dropPos = _dropPos;
-  removeDragPlaceholders();
-  event.currentTarget.classList.remove('drop-target');
-
-  if (dragPayload.itemType === 'folder' && depth >= 2) {
-    showNotice('Folders can only be nested two levels deep.');
-    dragPayload = null;
-    return;
-  }
-  if (_isDroppingImportManagerFolderIntoOwnDescendant(folderItem)) {
-    showNotice('Cannot move a folder into one of its own subfolders.');
-    dragPayload = null;
-    return;
-  }
-
-  pushUndoSnapshot();
-  const dragged = _takeImportManagerDraggedItem();
-  if (!dragged) { dragPayload = null; return; }
-
-  folderItem.children = folderItem.children || [];
-  const targetItemId = dropTargetEl?.dataset?.itemId;
-  if (targetItemId && dropPos) {
-    const targetIdx = folderItem.children.findIndex(child => child.id === targetItemId);
-    if (targetIdx !== -1) {
-      const insertIdx = Math.max(0, Math.min(
-        dropPos === 'after' ? targetIdx + 1 : targetIdx,
-        folderItem.children.length
-      ));
-      folderItem.children.splice(insertIdx, 0, dragged);
-    } else {
-      folderItem.children.push(dragged);
-    }
-  } else {
-    folderItem.children.push(dragged);
-  }
-
-  dragPayload = null;
-  renderAll();
-  saveState();
+  _finalizeFolderDrop(
+    event,
+    folderItem,
+    depth,
+    _takeImportManagerDraggedItem,
+    _isDroppingImportManagerFolderIntoOwnDescendant,
+    { useSavedDropPosition: true }
+  );
 }
 
 // --- Speed dial drag & drop ---
@@ -1111,29 +893,7 @@ function handleSpeedDialSlotDragOver(event, target, slot) {
 }
 
 function _takeSpeedDialDragItem(target, slot) {
-  if (dragPayload.area === 'essential') {
-    const item = state.essentials[dragPayload.slot];
-    if (!item) return null;
-    state.essentials[dragPayload.slot] = null;
-    trimEssentialsTail();
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
-    return item;
-  }
-  if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
-    const item = removeBoardItemById(dragPayload.itemId);
-    if (!item) return null;
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
-    return item;
-  }
-  if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
-    const item = _takeImportManagerDraggedItem();
-    if (!item) return null;
-    item.type = 'bookmark';
-    if (!item.tags) item.tags = [];
-    return item;
-  }
+  if (dragPayload.area !== 'speed-dial') return _takeDraggedBookmarkItem(getActiveBoard());
   const source = getActiveBoard();
   if (!source) return null;
   if (source === target && dragPayload.slot === slot) return null;
@@ -1164,79 +924,6 @@ function handleSpeedDialSlotDrop(event, target, slot) {
   dragPayload = null;
   renderAll();
   saveState();
-}
-
-function handleSpeedDialItemDragOver(event, item) {
-  return;
-  if (getActiveBoard()?.locked) return;
-  if (!dragPayload) return;
-  if (dragPayload.area !== 'speed-dial' && dragPayload.area !== 'essential' && !(dragPayload.area === 'board' && dragPayload.itemType === 'bookmark')) return;
-  event.preventDefault();
-  event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
-
-  const el = event.currentTarget;
-  const rect = el.getBoundingClientRect();
-  const position = event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-  if (_dropTarget === el && _dropPos === position) return;
-
-  removeDragPlaceholders();
-  _dropTarget = el; _dropPos = position;
-  el.dataset.dropPosition = position;
-  _insertDragPreview(createDragPlaceholder('speed-dial'), el.parentElement, position === 'before' ? el : el.nextSibling);
-}
-
-function handleSpeedDialItemDrop(event, targetItem) {
-  return;
-  if (!dragPayload || getActiveBoard()?.locked) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const position = _dropPos || 'before';
-  removeDragPlaceholders();
-  pushUndoSnapshot();
-
-  const board = getActiveBoard();
-
-  if (dragPayload.area === 'speed-dial') {
-    if (dragPayload.itemId === targetItem.id) { dragPayload = null; return; }
-    const draggedIdx = board.speedDial.findIndex(i => i.id === dragPayload.itemId);
-    const targetIdx  = board.speedDial.findIndex(i => i.id === targetItem.id);
-    if (draggedIdx === -1 || targetIdx === -1) { dragPayload = null; return; }
-    const [dragged] = board.speedDial.splice(draggedIdx, 1);
-    let insertIdx = position === 'after' ? targetIdx + 1 : targetIdx;
-    if (draggedIdx < targetIdx) insertIdx -= 1;
-    board.speedDial.splice(Math.max(0, insertIdx), 0, dragged);
-  } else if (dragPayload.area === 'essential') {
-    const essItem = state.essentials[dragPayload.slot];
-    if (!essItem) { dragPayload = null; return; }
-    state.essentials[dragPayload.slot] = null; trimEssentialsTail();
-    essItem.type = 'bookmark';
-    if (!essItem.tags) essItem.tags = [];
-    const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
-    board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, essItem);
-  } else if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
-    const dragged = removeBoardItemById(dragPayload.itemId);
-    if (!dragged) { dragPayload = null; return; }
-    dragged.type = 'bookmark';
-    if (!dragged.tags) dragged.tags = [];
-    const targetIdx = board.speedDial.findIndex(i => i.id === targetItem.id);
-    board.speedDial.splice(Math.max(0, position === 'after' ? targetIdx + 1 : targetIdx), 0, dragged);
-  } else {
-    dragPayload = null;
-    return;
-  }
-
-  dragPayload = null;
-  renderAll();
-  saveState();
-}
-
-function handleSpeedDialContainerDragOver(event) {
-  return;
-}
-
-function handleSpeedDialContainerDrop(event) {
-  return;
 }
 
 // --- Nav drag & drop ---
@@ -1318,12 +1005,8 @@ function handleNavDrop(event, targetItem, parent) {
       dragged = _takeImportManagerDraggedItem();
     } else if (dragPayload.area === 'nav') {
       dragged = removeNavItemById(dragPayload.itemId);
-    } else if (dragPayload.area === 'speed-dial') {
-      dragged = removeSpeedDialItemById(board, dragPayload.itemId);
-      if (dragged) { dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
-    } else if (dragPayload.area === 'essential') {
-      dragged = state.essentials[dragPayload.slot];
-      if (dragged) { state.essentials[dragPayload.slot] = null; trimEssentialsTail(); dragged.type = 'bookmark'; if (!dragged.tags) dragged.tags = []; }
+    } else if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') {
+      dragged = _takeDraggedBookmarkItem(board);
     }
     if (!dragged) { dragPayload = null; return; }
     inbox.items.push(dragged);
