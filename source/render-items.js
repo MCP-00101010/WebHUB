@@ -55,6 +55,9 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
   if (item.type === 'widget') return createWidgetElement(item, columnId) || document.createElement('div');
 
   const effectiveLocked = inheritedLock || !!item.locked;
+  const board = getActiveBoard();
+  const dynamicFolder = isDynamicFolder(item);
+  const insideDynamicFolderView = isDynamicFolder(parentFolder);
 
   const itemEl = document.createElement('div');
   itemEl.className = 'board-column-item';
@@ -86,7 +89,10 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       collapseBtn.className = 'collapse-btn';
       collapseBtn.title = item.collapsed ? 'Expand' : 'Collapse';
       collapseBtn.setAttribute('aria-label', item.collapsed ? 'Expand folder' : 'Collapse folder');
-      collapseBtn.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
+      const collapseIcon = dynamicFolder
+        ? (item.collapsed ? 'icon-dynamic-folder-closed' : 'icon-dynamic-folder-open')
+        : (item.collapsed ? 'icon-folder-closed' : 'icon-folder-open');
+      collapseBtn.appendChild(icon(collapseIcon));
       collapseBtn.addEventListener('click', event => {
         event.stopPropagation();
         item.collapsed = !item.collapsed;
@@ -113,6 +119,56 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     name.textContent = item.type === 'folder' ? item.title : (item.title || item.url || 'Untitled Bookmark');
     header.appendChild(name);
 
+    if (item.type === 'folder' && dynamicFolder) {
+      const sortBtn = document.createElement('button');
+      sortBtn.type = 'button';
+      sortBtn.className = 'item-sort-btn';
+      sortBtn.title = _dynamicSortButtonTitle(item.sortMode);
+      sortBtn.setAttribute('aria-label', _dynamicSortButtonTitle(item.sortMode));
+      sortBtn.appendChild(icon('icon-sort'));
+      sortBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (getActiveBoard()?.locked || effectiveLocked) return;
+        showDynamicSortMenu(event.currentTarget, {
+          targetType: 'folder',
+          contextTarget: {
+            area: 'board-item',
+            itemId: item.id,
+            columnId,
+            parentId: parentFolder ? parentFolder.id : null,
+            item,
+            depth
+          }
+        });
+      });
+      header.appendChild(sortBtn);
+
+      const rulesBtn = document.createElement('button');
+      rulesBtn.type = 'button';
+      rulesBtn.className = 'item-rule-btn';
+      rulesBtn.title = 'Edit dynamic rules';
+      rulesBtn.setAttribute('aria-label', 'Edit dynamic rules');
+      rulesBtn.appendChild(icon('icon-filter'));
+      rulesBtn.addEventListener('click', event => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (getActiveBoard()?.locked || effectiveLocked) return;
+        showDynamicRuleEditor({
+          targetType: 'folder',
+          contextTarget: {
+            area: 'board-item',
+            itemId: item.id,
+            columnId,
+            parentId: parentFolder ? parentFolder.id : null,
+            item,
+            depth
+          }
+        });
+      });
+      header.appendChild(rulesBtn);
+    }
+
     const lockBtn = document.createElement('button');
     lockBtn.type = 'button';
     lockBtn.className = 'item-lock-btn';
@@ -134,7 +190,6 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     itemEl.appendChild(header);
 
     // --- Tag grid ---
-    const board = getActiveBoard();
     const inherited = computeInheritedTags(item, board);
     const ownTags = item.tags || [];
     const sharedTags = item.type === 'folder' ? (item.sharedTags || []) : [];
@@ -189,22 +244,23 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       if (!item.collapsed) {
         const childrenContainer = document.createElement('div');
         childrenContainer.className = 'folder-children';
-        childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, itemEl, item, columnId, depth));
-        childrenContainer.addEventListener('dragleave', event => {
-          // Only remove drop-target when leaving the whole folder card, not just the children area.
-          // This prevents the highlight from flickering when moving between header and children.
-          if (itemEl.contains(event.relatedTarget)) return;
-          event.currentTarget.classList.remove('drop-target');
-        });
-        childrenContainer.addEventListener('drop', event => {
-          event.preventDefault();
-          event.stopPropagation();
-          handleBoardFolderContainerDrop(event, item, columnId, depth);
-        });
-        itemEl.appendChild(childrenContainer);
-        if (Array.isArray(item.children)) {
-          item.children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item, effectiveLocked)));
+        if (!dynamicFolder) {
+          childrenContainer.addEventListener('dragover', event => handleBoardFolderContainerDragOver(event, itemEl, item, columnId, depth));
+          childrenContainer.addEventListener('dragleave', event => {
+            // Only remove drop-target when leaving the whole folder card, not just the children area.
+            // This prevents the highlight from flickering when moving between header and children.
+            if (itemEl.contains(event.relatedTarget)) return;
+            event.currentTarget.classList.remove('drop-target');
+          });
+          childrenContainer.addEventListener('drop', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleBoardFolderContainerDrop(event, item, columnId, depth);
+          });
         }
+        itemEl.appendChild(childrenContainer);
+        const children = resolveFolderChildren(item, board);
+        children.forEach(child => childrenContainer.appendChild(createBoardItemElement(child, columnId, depth + 1, item, effectiveLocked)));
       }
     }
   } else if (item.type === 'title') {
@@ -227,24 +283,34 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
   itemEl.addEventListener('dragstart', event => {
     if (effectiveLocked) { event.preventDefault(); return; }
     event.stopPropagation();
-    dragPayload = { area: 'board', itemId: item.id, itemType: item.type, sourceColumnId: columnId, sourceParentId: parentFolder ? parentFolder.id : null };
+    const fromDynamicFolderView = item.type === 'bookmark' && isDynamicFolder(parentFolder);
+    dragPayload = {
+      area: 'board',
+      itemId: item.id,
+      itemType: item.type,
+      sourceColumnId: columnId,
+      sourceParentId: parentFolder ? parentFolder.id : null,
+      fromDynamicFolderView
+    };
     event.dataTransfer.setData('text/plain', item.id);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.effectAllowed = fromDynamicFolderView ? 'copy' : 'move';
+    event.dataTransfer.dropEffect = fromDynamicFolderView ? 'copy' : 'move';
     applyDragImage(event, itemEl);
   });
 
   itemEl.addEventListener('dragend', () => { itemEl.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
 
-  itemEl.addEventListener('dragover', event => handleBoardItemDragOver(event, item, columnId, parentFolder, depth));
-  itemEl.addEventListener('dragleave', event => {
-    if (itemEl.contains(event.relatedTarget)) return;
-    itemEl.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
-    itemEl.removeAttribute('data-drop-position');
-    const cc = itemEl.querySelector('.folder-children');
-    if (cc) cc.classList.remove('drop-target');
-  });
-  itemEl.addEventListener('drop', event => handleBoardItemDrop(event, item, columnId, parentFolder, depth));
+  if (!insideDynamicFolderView) {
+    itemEl.addEventListener('dragover', event => handleBoardItemDragOver(event, item, columnId, parentFolder, depth));
+    itemEl.addEventListener('dragleave', event => {
+      if (itemEl.contains(event.relatedTarget)) return;
+      itemEl.classList.remove('drop-target', 'drop-position-before', 'drop-position-after');
+      itemEl.removeAttribute('data-drop-position');
+      const cc = itemEl.querySelector('.folder-children');
+      if (cc) cc.classList.remove('drop-target');
+    });
+    itemEl.addEventListener('drop', event => handleBoardItemDrop(event, item, columnId, parentFolder, depth));
+  }
 
   return itemEl;
 }

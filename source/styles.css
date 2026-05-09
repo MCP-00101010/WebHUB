@@ -585,6 +585,20 @@ input::placeholder {
   padding-bottom: 4px;
 }
 
+#folderModal .folder-modal-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#folderModal .folder-modal-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 #folderModal .settings-section {
   background: transparent;
   border-color: var(--border);
@@ -989,6 +1003,11 @@ input::placeholder {
   flex-shrink: 0;
 }
 
+.sets-manager-row-icon--dynamic {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
 .sets-manager-row-info {
   min-width: 0;
   flex: 1;
@@ -1016,6 +1035,22 @@ input::placeholder {
 .sets-editor-meta {
   color: var(--text-muted);
   font-size: 0.78rem;
+}
+
+.sets-detail-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .sets-manager-detail {
@@ -1051,6 +1086,13 @@ input::placeholder {
 .sets-detail-head > div:first-child {
   min-width: 0;
   flex: 1;
+}
+
+.sets-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .sets-preview-list {
@@ -1165,6 +1207,10 @@ input::placeholder {
   font-weight: var(--bookmark-font-weight);
   font-style: var(--bookmark-font-style);
   text-decoration: var(--bookmark-text-decoration);
+}
+
+.set-manager-item > .item-tag-chips {
+  margin-left: 0;
 }
 
 .set-search-result .sets-preview-strip {
@@ -3190,6 +3236,42 @@ input::placeholder {
   padding: 14px 18px 6px;
 }
 
+.rule-editor-panel {
+  width: min(480px, calc(100vw - 40px));
+  max-height: 78vh;
+  z-index: 355;
+}
+
+.rule-editor-panel > .utility-panel-header {
+  padding: 18px 18px 10px;
+}
+
+.rule-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 18px 18px;
+  min-height: 0;
+}
+
+.rule-editor-target-name {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.rule-editor-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.rule-editor-panel .settings-section {
+  margin: 0;
+}
+
 .trash-panel > .utility-panel-header,
 .tag-manager-panel > .utility-panel-header {
   padding: 18px 18px 12px;
@@ -4069,6 +4151,8 @@ input::placeholder {
 }
 
 /* Lock button — hover-reveal when unlocked, always visible when locked */
+.item-sort-btn,
+.item-rule-btn,
 .item-lock-btn {
   display: flex;
   align-items: center;
@@ -4086,14 +4170,25 @@ input::placeholder {
   flex-shrink: 0;
 }
 
+.item-sort-btn svg,
+.item-rule-btn svg,
 .item-lock-btn svg {
   width: 13px;
   height: 13px;
 }
 
+.board-column-item:hover .item-sort-btn,
+.board-column-item.selected .item-sort-btn,
+.board-column-item:hover .item-rule-btn,
+.board-column-item.selected .item-rule-btn,
 .board-column-item:hover .item-lock-btn,
 .board-column-item.selected .item-lock-btn {
   opacity: 1;
+}
+
+.item-sort-btn,
+.item-rule-btn {
+  color: var(--text-muted);
 }
 
 .item-lock-btn.is-locked {

@@ -17,29 +17,8 @@
 
 ## Dynamic Sets and Folders
 
-- New feature: Dynamic Sets:
-  - Dynamic Sets are sets that contain bookmarks based on rules:
-    - add bookmarks with <TAGS> to this set
-    - exclude Bookmarks with <TAGS> from this set
-    - these two rules are combined via AND: add bookmark to this set only when it has all wanted tags AND does not have any unwanted tags.
-  - Bookmarks cannot be added/removed manually from dynamic sets like with normal sets.
-  - Dynamic sets are created and managed in the Sets Manager. We need an icon in the action bar next to Add Set Icon. 
-  - when the active set in the sets manager is dynamic, we need an icon in the set pane (maybe next to the sets name) to open the a rule editor modal for this set. 
-  - new modal needed: Rule Editor Modal. Follow Global Utility Modal Layout Ruleset as described in this TODO for layout. currently only needs input fields for included and excluded tags. They should look and work the same as tag input fields in add/create bookmark modal
-  - Dynamic Sets can be linked to a Tabs Set Bar like normal sets.
-  - Dynamic Sets Context Menu in Set Bar: Same as normal sets.
-- New Feature: Dynamic Folder:
-  - similar to Dynamic Sets just for Folders
-  - Dynamic Folders can only appear in Columns and not in the navpane
-  - Dynamic Folders can only contain bookmarks, no titles/dividers/subfolders.
-  - like dynamic sets, bookmarks are dynamically added to the same ruleset we use for dynamic sets.
-  - dynamic folders are parents so they support shared tags.
-  - Dynamic folders are collapsible like normal folders.
-  - we need a new icon set for collapsed / open dynamic folders.
-  - dynamic folders look the same as normal folders in columns.
-  - Use the normal Create/Edit Folder Folder modal to manage Dynamic Folders. For Dynamic Folders it needs a button in the Header (right-aligned, same line as the Folder Name Label  ) to open the Rule Editor Modal (Use the name Modal as for Dynamic Sets so if we add more rule options in the future they apply for both dynamic sets and dynamic folders.)
-  - New Context Menu entry for Columns and Folders inside Columns: Add Dynamic Folder.
-  - Context Menu for Dynamic Folders: Edit Dynamic Folder, Move to tab Inbox, Delete, Lock, Open All
+- ✓ *Completed 2026-05-09*
+- See [0.11.58] in CHANGELOG.
 
 ## Drag and Drop
 

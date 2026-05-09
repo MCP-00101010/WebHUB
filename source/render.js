@@ -470,13 +470,16 @@ function renderSearchResults(options = {}) {
   const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
+      const childItems = item.type === 'folder'
+        ? resolveFolderChildren(item, board)
+        : item.children;
       if (item.type === 'title') {
-        if (item.children) hits.push(...collectFromList(item.children, board, columnId));
+        if (childItems) hits.push(...collectFromList(childItems, board, columnId));
         continue;
       }
       const data = getSearchData(item, board);
       if (matchesText(item, board, data)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board, searchData: data });
-      if (item.children) hits.push(...collectFromList(item.children, board, columnId));
+      if (childItems) hits.push(...collectFromList(childItems, board, columnId));
     }
     return hits;
   };
@@ -487,7 +490,7 @@ function renderSearchResults(options = {}) {
     if (matchesText(e, null, data)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null, searchData: data });
   });
   (state.sets || []).forEach(set => {
-    const item = { id: set.id, type: 'set', title: set.title, itemCount: (set.items || []).length };
+    const item = { id: set.id, type: 'set', title: set.title, itemCount: resolveSetItems(set).length };
     const data = getSearchData(item, null);
     if (matchesText(item, null, data)) {
       allBaseHits.push({ item, meta: { area: 'set', setId: set.id }, board: null, searchData: data });
@@ -692,12 +695,13 @@ function createSearchResultItem(item, meta = {}) {
 
 function createSetSearchResultItem(item, meta = {}) {
   const set = findSetById(meta.setId || item.id);
+  const setItems = resolveSetItems(set);
   const el = document.createElement('div');
   el.className = 'board-column-item bookmark-item set-search-result';
   el.dataset.setId = meta.setId || item.id;
   el.draggable = false;
   el.style.cursor = 'pointer';
-  el.dataset.tooltip = set ? `${set.title}\n${(set.items || []).length} bookmark${(set.items || []).length === 1 ? '' : 's'}` : (item.title || 'Set');
+  el.dataset.tooltip = set ? `${set.title}\n${setItems.length} bookmark${setItems.length === 1 ? '' : 's'}` : (item.title || 'Set');
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
   el.addEventListener('click', () => {
     openSetById(meta.setId || item.id);
@@ -718,14 +722,14 @@ function createSetSearchResultItem(item, meta = {}) {
 
   const metaEl = document.createElement('span');
   metaEl.className = 'search-result-url';
-  const count = (set?.items || []).length;
+  const count = setItems.length;
   metaEl.textContent = `${count} bookmark${count === 1 ? '' : 's'}`;
   el.appendChild(metaEl);
 
-  if (set?.items?.length) {
+  if (setItems.length) {
     const preview = document.createElement('div');
     preview.className = 'sets-preview-strip';
-    set.items.slice(0, 4).forEach(setItem => {
+    setItems.slice(0, 4).forEach(setItem => {
       const chip = document.createElement('span');
       chip.className = 'sets-preview-favicon';
       if (setItem.url) {
@@ -746,6 +750,10 @@ function createSetSearchResultItem(item, meta = {}) {
 }
 
 function createFolderSearchResultItem(item, meta = {}) {
+  const board = meta.boardId ? state.boards.find(entry => entry.id === meta.boardId) || null : null;
+  const folderChildren = resolveFolderChildren(item, board);
+  const bookmarkChildren = folderChildren.filter(child => child?.type === 'bookmark');
+  const dynamicFolder = isDynamicFolder(item);
   const el = document.createElement('div');
   el.className = 'board-column-item folder-card';
   el.draggable = false;
@@ -754,19 +762,46 @@ function createFolderSearchResultItem(item, meta = {}) {
 
   const header = document.createElement('div');
   header.className = 'item-header';
-  header.appendChild(icon(item.collapsed ? 'icon-folder-closed' : 'icon-folder-open'));
+  const folderIcon = dynamicFolder
+    ? (item.collapsed ? 'icon-dynamic-folder-closed' : 'icon-dynamic-folder-open')
+    : (item.collapsed ? 'icon-folder-closed' : 'icon-folder-open');
+  header.appendChild(icon(folderIcon));
   const name = document.createElement('span');
   name.className = 'folder-title';
   name.textContent = item.title || 'Untitled Folder';
   header.appendChild(name);
   el.appendChild(header);
 
+  const countEl = document.createElement('span');
+  countEl.className = 'search-result-url';
+  countEl.textContent = `${bookmarkChildren.length} bookmark${bookmarkChildren.length === 1 ? '' : 's'}`;
+  el.appendChild(countEl);
+
   const allTags = [...(item.sharedTags || []), ...(item.tags || [])];
-  if (allTags.length) {
+  if (allTags.length && state.settings.showFolderTags !== false) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, allTags);
     el.appendChild(tagsEl);
+  }
+  if (bookmarkChildren.length) {
+    const preview = document.createElement('div');
+    preview.className = 'sets-preview-strip';
+    bookmarkChildren.slice(0, 4).forEach(bookmark => {
+      const chip = document.createElement('span');
+      chip.className = 'sets-preview-favicon';
+      if (bookmark.url) {
+        const img = document.createElement('img');
+        setFavicon(img, bookmark, 32);
+        img.alt = '';
+        img.draggable = false;
+        chip.appendChild(img);
+      } else {
+        chip.textContent = (bookmark.title || '?').slice(0, 1).toUpperCase();
+      }
+      preview.appendChild(chip);
+    });
+    el.appendChild(preview);
   }
   return el;
 }
@@ -877,7 +912,7 @@ function renderEssentials() {
       if (item) return;
       if (dragPayload?.area === 'nav') return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
+      event.dataTransfer.dropEffect = dragPayload ? _currentDropEffect() : 'copy';
       if (!cell.classList.contains('drop-target')) {
         removeDragPlaceholders();
         cell.classList.add('drop-target');
@@ -1277,6 +1312,7 @@ function _handleTabSetBarDragOver(event, board, activeTab) {
     ? _createBoardShellPreview(`#tabSetBar .set-bar-item[data-set-id="${CSS.escape(dragPayload.setId)}"]`)
     : _createBoardShellPreview(`.sets-manager-row[data-set-id="${CSS.escape(dragPayload.setId)}"]`, () => {
         const set = findSetById(dragPayload.setId);
+        const setItems = resolveSetItems(set);
         const el = document.createElement('div');
         el.className = 'collection-tab set-bar-item';
         const iconEl = document.createElement('span');
@@ -1289,7 +1325,7 @@ function _handleTabSetBarDragOver(event, board, activeTab) {
         el.appendChild(label);
         const count = document.createElement('span');
         count.className = 'set-bar-item-count';
-        count.textContent = `${(set?.items || []).length}`;
+        count.textContent = `${setItems.length}`;
         el.appendChild(count);
         return el;
       });
@@ -1484,6 +1520,7 @@ function renderTabSetBar(board, activeTab) {
   }
 
   linkedSets.forEach(set => {
+    const setItems = resolveSetItems(set);
     const setEl = document.createElement('div');
     setEl.className = 'collection-tab set-bar-item';
     setEl.dataset.setId = set.id;
@@ -1501,7 +1538,7 @@ function renderTabSetBar(board, activeTab) {
 
     const count = document.createElement('span');
     count.className = 'set-bar-item-count';
-    count.textContent = `${(set.items || []).length}`;
+    count.textContent = `${setItems.length}`;
     setEl.appendChild(count);
 
     setEl.addEventListener('click', () => openSetById(set.id));
@@ -1511,7 +1548,7 @@ function renderTabSetBar(board, activeTab) {
       contextTarget = { area: 'tab-set-link', boardId: board.id, tabId: activeTab.id, setId: set.id, item: set };
       const actions = [
         { label: 'Open set', action: 'openSet' },
-        { label: 'Edit set', action: 'editSet' }
+        { label: 'Manage set', action: 'editSet' }
       ];
       if (!board.locked) actions.push({ label: 'Remove from bar', action: 'removeSetFromTabBar' });
       showContextMenu(event.clientX, event.clientY, actions);

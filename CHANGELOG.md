@@ -5,6 +5,26 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.58] — 2026-05-09
+
+### Added
+
+- **Dynamic sets** — added live tag-rule-based sets with shared include/exclude rule editing, tab set bar support, resolved counts/previews, and dedicated Set Manager controls for creating, editing, sorting, and inspecting dynamic results.
+- **Dynamic folders** — added live tag-rule-based folders for board columns with dedicated open/closed icons, shared rule editing, per-folder sort modes, and in-column quick actions for editing rules and sort order.
+
+### Changed
+
+- **Dynamic collection UX** — dynamic sets and folders now behave as read-only live views, including live rule-preview updates in the Set Manager, shared sort modes (`source`, title, and URL ordering), and streamlined header controls across the Set Manager, folder modal, and board column UI.
+- **Project tracking** — the Dynamic Sets and Folders implementation checklist is now complete and rolled into this release.
+
+### Fixed
+
+- **Dynamic collection interactions** — blocked invalid manual edits against dynamic sets/folders across context menus, drag/drop, modal flows, and Add-to-Set paths while keeping normal manual sets and folders unchanged.
+- **Dynamic folder copy/move semantics** — dragging or sending bookmarks from inside a dynamic folder now creates safe copies where appropriate instead of mutating the underlying source bookmark or causing items to disappear from other folders.
+- **Dynamic persistence and recovery** — dynamic set/folder fields now survive normalization, export/import, trash restore, and shared-database save/load consistently, including restoring board items back into their original parent folders when possible.
+
+---
+
 ## [0.11.57] — 2026-05-07
 
 ### Changed

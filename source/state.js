@@ -182,10 +182,12 @@ let sharedDiskFlushTimer = null;
 let localCacheMeta = loadLocalCacheMeta();
 let inheritedTagContextCache = new WeakMap();
 let boardNavInheritedTagsCache = new Map();
+let liveBookmarkSourceCache = null;
 
 function invalidateDerivedCaches() {
   inheritedTagContextCache = new WeakMap();
   boardNavInheritedTagsCache = new Map();
+  liveBookmarkSourceCache = null;
 }
 
 function normalizeLocalCacheMeta(meta) {
@@ -257,6 +259,68 @@ function migrateServiceApiKeys(settings) {
   });
 }
 
+function normalizeDynamicRuleTagIds(tagIds) {
+  if (!Array.isArray(tagIds)) return [];
+  return [...new Set(tagIds
+    .map(tagId => typeof tagId === 'string' ? tagId.trim() : '')
+    .filter(Boolean))];
+}
+
+function normalizeDynamicRules(rules) {
+  return {
+    includeTags: normalizeDynamicRuleTagIds(rules?.includeTags),
+    excludeTags: normalizeDynamicRuleTagIds(rules?.excludeTags)
+  };
+}
+
+const DYNAMIC_SORT_LABELS = Object.freeze({
+  source: 'Source order',
+  'title-asc': 'Title A → Z',
+  'title-desc': 'Title Z → A',
+  'url-asc': 'URL A → Z',
+  'url-desc': 'URL Z → A'
+});
+
+function normalizeDynamicSortMode(mode) {
+  return Object.prototype.hasOwnProperty.call(DYNAMIC_SORT_LABELS, mode) ? mode : 'source';
+}
+
+function normalizeSetMode(mode) {
+  return mode === 'dynamic' ? 'dynamic' : 'manual';
+}
+
+function normalizeFolderMode(mode) {
+  return mode === 'dynamic' ? 'dynamic' : 'static';
+}
+
+function coerceNavFolderModes(items) {
+  for (const item of (items || [])) {
+    if (!item || item.type !== 'folder') continue;
+    item.folderMode = 'static';
+    item.rules = normalizeDynamicRules(null);
+    item.sortMode = normalizeDynamicSortMode(item.sortMode);
+    if (Array.isArray(item.children)) coerceNavFolderModes(item.children);
+  }
+}
+
+function createFolderRecord(title, options = {}) {
+  const folder = {
+    id: options.id || `id-${Date.now()}`,
+    type: 'folder',
+    title: (title || '').trim() || 'New Folder',
+    collapsed: options.collapsed === true,
+    tags: Array.isArray(options.tags) ? [...options.tags] : [],
+    sharedTags: Array.isArray(options.sharedTags) ? [...options.sharedTags] : [],
+    children: cloneData(Array.isArray(options.children) ? options.children : []),
+    folderMode: normalizeFolderMode(options.folderMode ?? options.mode),
+    rules: normalizeDynamicRules(options.rules),
+    sortMode: normalizeDynamicSortMode(options.sortMode)
+  };
+  if (options.locked === true) folder.locked = true;
+  migrateItems(folder.children);
+  return folder;
+}
+
 function migrateItems(items) {
   for (const item of (items || [])) {
     if (item.type === 'divider') { item.type = 'title'; item.title = ''; }
@@ -269,6 +333,11 @@ function migrateItems(items) {
       if (item.labels && !item.tags) item.tags = item.labels;
       delete item.labels;
       if (!item.tags) item.tags = [];
+      if (!Array.isArray(item.children)) item.children = [];
+      item.folderMode = normalizeFolderMode(item.folderMode ?? item.mode);
+      item.rules = normalizeDynamicRules(item.rules);
+      item.sortMode = normalizeDynamicSortMode(item.sortMode);
+      delete item.mode;
       delete item.inheritTags;
       delete item.autoRemoveTags;
     }
@@ -336,6 +405,9 @@ function normalizeSetRecord(set, index = 0) {
   return {
     id: set?.id || generateSetId(),
     title: (set?.title || '').trim() || 'Untitled Set',
+    mode: normalizeSetMode(set?.mode),
+    rules: normalizeDynamicRules(set?.rules),
+    sortMode: normalizeDynamicSortMode(set?.sortMode),
     items: normalizeSetItems(set?.items),
     createdAt,
     updatedAt
@@ -360,6 +432,9 @@ function createSetRecord(title, options = {}) {
   return normalizeSetRecord({
     id: options.id || generateSetId(),
     title: (title || '').trim() || 'New Set',
+    mode: options.mode,
+    rules: options.rules,
+    sortMode: options.sortMode,
     items: options.items || [],
     createdAt,
     updatedAt: options.updatedAt || createdAt
@@ -397,6 +472,7 @@ function createSetBookmarkRecord(title, url, tags = [], faviconCache = '') {
 
 function addBookmarkToSet(set, bookmark, options = {}) {
   if (!set || !bookmark?.url || !isValidUrl(bookmark.url)) return { ok: false, reason: 'invalid' };
+  if (isDynamicSet(set)) return { ok: false, reason: 'dynamic' };
   const normalizedUrl = normalizeUrl(bookmark.url);
   if ((set.items || []).some(item => item.url === normalizedUrl)) return { ok: false, reason: 'duplicate' };
   const record = createSetBookmarkRecord(bookmark.title || normalizedUrl, normalizedUrl, bookmark.tags || [], bookmark.faviconCache || '');
@@ -408,6 +484,7 @@ function addBookmarkToSet(set, bookmark, options = {}) {
 }
 
 function removeSetItemById(set, itemId) {
+  if (isDynamicSet(set)) return null;
   if (!set?.items) return null;
   const index = set.items.findIndex(item => item.id === itemId);
   if (index === -1) return null;
@@ -417,6 +494,7 @@ function removeSetItemById(set, itemId) {
 }
 
 function moveSetItem(set, itemId, targetIndex) {
+  if (isDynamicSet(set)) return false;
   if (!set?.items) return false;
   const currentIndex = set.items.findIndex(item => item.id === itemId);
   if (currentIndex === -1) return false;
@@ -447,8 +525,15 @@ function restoreSetFromTrashItem(item) {
   return true;
 }
 
+function normalizeRestoredBoardItem(item) {
+  if (!item) return null;
+  const restored = cloneData(item);
+  migrateItems([restored]);
+  return restored;
+}
+
 function collectSetUrls(set) {
-  return (set?.items || []).filter(item => item?.url).map(item => item.url);
+  return resolveSetItems(set).filter(item => item?.url).map(item => item.url);
 }
 
 function migrateWidgetServiceSettings(parsed) {
@@ -737,6 +822,7 @@ function parseStateJson(saved) {
       }
     }
     migrateItems(parsed.navItems);
+    coerceNavFolderModes(parsed.navItems);
     if (!parsed.hubName) parsed.hubName = 'Morpheus WebHub';
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
@@ -1390,9 +1476,14 @@ function createBoard(title, options = {}) {
 }
 
 function addNavSection(item) {
-  item.id = `id-${Date.now()}`;
-  if (item.type === 'folder') item.children = [];
-  state.navItems.push(item);
+  const nextId = item.id || `id-${Date.now()}`;
+  if (item.type === 'folder') {
+    const folder = createFolderRecord(item.title, { ...item, id: nextId, folderMode: 'static', rules: null });
+    coerceNavFolderModes([folder]);
+    state.navItems.push(folder);
+    return;
+  }
+  state.navItems.push({ ...item, id: nextId });
 }
 
 function addBookmark(title, url, columnId, tags = [], faviconCache = '') {
@@ -1418,12 +1509,9 @@ function addSpeedDialBookmark(title, url, tags = [], faviconCache = '') {
 function addBookmarkItem(type, title, columnId, options = {}) {
   const board = getActiveBoard();
   const column = board.columns.find(col => col.id === columnId) || board.columns[0];
-  const item = { id: `id-${Date.now()}`, type, title };
-  if (type === 'folder') {
-    item.children = [];
-    item.tags = options.tags || [];
-    item.sharedTags = options.sharedTags || [];
-  }
+  const item = type === 'folder'
+    ? createFolderRecord(title, { ...options, id: `id-${Date.now()}` })
+    : { id: `id-${Date.now()}`, type, title };
   column.items.push(item);
 }
 
@@ -1663,6 +1751,132 @@ function computeInheritedTags(item, board) {
   return filterInheritedTagIdsForItem(item, inheritedTagIds);
 }
 
+function isDynamicSet(set) {
+  return normalizeSetMode(set?.mode) === 'dynamic';
+}
+
+function isDynamicFolder(folder) {
+  return folder?.type === 'folder' && normalizeFolderMode(folder?.folderMode ?? folder?.mode) === 'dynamic';
+}
+
+function canInsertIntoFolder(folder, itemOrType) {
+  if (folder?.type !== 'folder') return false;
+  if (isDynamicFolder(folder)) return false;
+  return true;
+}
+
+function getEffectiveTagIdsForBookmark(item, board = null) {
+  return [...new Set([
+    ...(item?.tags || []),
+    ...(item?.sharedTags || []),
+    ...(board ? computeInheritedTags(item, board) : [])
+  ])];
+}
+
+function createBookmarkSource(item, options = {}) {
+  if (!item || item.type !== 'bookmark' || !item.url) return null;
+  return {
+    key: options.key ? `${options.key}:${item.id || item.url}` : (item.id || item.url),
+    item,
+    board: options.board || null,
+    tab: options.tab || null,
+    containerId: options.containerId || null,
+    location: options.location || 'unknown',
+    slot: Number.isInteger(options.slot) ? options.slot : null,
+    effectiveTagIds: getEffectiveTagIdsForBookmark(item, options.board || null)
+  };
+}
+
+function _collectBookmarkSourcesFromItems(items, sources, options = {}) {
+  for (const item of (items || [])) {
+    if (!item) continue;
+    if (item.type === 'bookmark' && item.url) {
+      const source = createBookmarkSource(item, options);
+      if (source) sources.push(source);
+      continue;
+    }
+    if (item.type === 'folder' && Array.isArray(item.children) && !isDynamicFolder(item)) {
+      _collectBookmarkSourcesFromItems(item.children, sources, options);
+    }
+  }
+}
+
+function collectRealBookmarkSources() {
+  if (liveBookmarkSourceCache) return liveBookmarkSourceCache;
+
+  const sources = [];
+
+  for (const board of (state.boards || [])) {
+    for (const tab of getBoardTabs(board)) {
+      for (const container of getBoardItemContainers(board, tab)) {
+        _collectBookmarkSourcesFromItems(container.items, sources, {
+          key: `board:${board.id}:${tab.id}:${container.id}`,
+          board,
+          tab,
+          containerId: container.id,
+          location: container.isInbox ? 'board-inbox' : 'board-column'
+        });
+      }
+    }
+  }
+
+  liveBookmarkSourceCache = sources;
+  return sources;
+}
+
+function matchesDynamicRules(tagIds = [], rules = null) {
+  const normalizedRules = normalizeDynamicRules(rules);
+  const tagSet = new Set(tagIds || []);
+  return normalizedRules.includeTags.every(tagId => tagSet.has(tagId))
+    && normalizedRules.excludeTags.every(tagId => !tagSet.has(tagId));
+}
+
+function resolveDynamicBookmarkSources(rules, options = {}) {
+  const sources = Array.isArray(options.sources) ? options.sources : collectRealBookmarkSources();
+  return sources.filter(source => matchesDynamicRules(source.effectiveTagIds, rules));
+}
+
+function sortDynamicBookmarkSources(sources = [], sortMode = 'source') {
+  const normalizedMode = normalizeDynamicSortMode(sortMode);
+  if (normalizedMode === 'source') return sources;
+  const sorted = [...sources];
+  const compareText = (left, right) => left.localeCompare(right, undefined, { sensitivity: 'base', numeric: true });
+  const valueFor = (source, field) => {
+    const item = source?.item || {};
+    if (field === 'url') return (item.url || '').trim();
+    return (item.title || item.url || '').trim();
+  };
+  sorted.sort((a, b) => {
+    if (normalizedMode === 'title-asc' || normalizedMode === 'title-desc') {
+      const direction = normalizedMode === 'title-asc' ? 1 : -1;
+      const primary = compareText(valueFor(a, 'title'), valueFor(b, 'title'));
+      if (primary) return primary * direction;
+      const secondary = compareText(valueFor(a, 'url'), valueFor(b, 'url'));
+      if (secondary) return secondary * direction;
+      return compareText(a?.key || '', b?.key || '') * direction;
+    }
+    const direction = normalizedMode === 'url-asc' ? 1 : -1;
+    const primary = compareText(valueFor(a, 'url'), valueFor(b, 'url'));
+    if (primary) return primary * direction;
+    const secondary = compareText(valueFor(a, 'title'), valueFor(b, 'title'));
+    if (secondary) return secondary * direction;
+    return compareText(a?.key || '', b?.key || '') * direction;
+  });
+  return sorted;
+}
+
+function resolveSetItems(set, options = {}) {
+  if (!set) return [];
+  if (!isDynamicSet(set)) return Array.isArray(set.items) ? set.items : [];
+  return sortDynamicBookmarkSources(resolveDynamicBookmarkSources(set.rules, options), set.sortMode).map(source => source.item);
+}
+
+function resolveFolderChildren(folder, board = null, options = {}) {
+  if (folder?.type !== 'folder') return [];
+  if (!isDynamicFolder(folder)) return Array.isArray(folder.children) ? folder.children : [];
+  return sortDynamicBookmarkSources(resolveDynamicBookmarkSources(folder.rules, { ...options, board }), folder.sortMode).map(source => source.item);
+}
+
 // --- Bookmark management utilities ---
 
 function findDuplicateUrl(url) {
@@ -1797,6 +2011,9 @@ function editFolder(itemId, title, tags, sharedTags, ct = null) {
     item.title = title;
     item.tags = tags;
     item.sharedTags = sharedTags;
+    item.folderMode = normalizeFolderMode(item.folderMode);
+    item.rules = normalizeDynamicRules(item.rules);
+    item.sortMode = normalizeDynamicSortMode(item.sortMode);
   }
 }
 
@@ -1851,7 +2068,7 @@ function restoreFromTrash(trashId) {
   recentlyDeleted.splice(idx, 1);
   saveTrash();
   if (source.area === 'essential') {
-    const restored = cloneData(item);
+    const restored = normalizeRestoredBoardItem(item);
     while (state.essentials.length <= source.slot) state.essentials.push(null);
     if (!state.essentials[source.slot]) {
       state.essentials[source.slot] = restored;
@@ -1865,14 +2082,16 @@ function restoreFromTrash(trashId) {
     const board = state.boards.find(b => b.id === source.boardId) || state.boards.find(b => b.id === state.activeBoardId);
     if (board) {
       const slot = source.slot ?? firstEmptySpeedDialSlot(board);
-      if (!setSpeedDialSlot(board, slot, cloneData(item))) {
+      const restored = normalizeRestoredBoardItem(item);
+      if (!setSpeedDialSlot(board, slot, restored)) {
         const fallback = firstEmptySpeedDialSlot(board);
-        if (fallback !== -1) setSpeedDialSlot(board, fallback, cloneData(item));
+        if (fallback !== -1) setSpeedDialSlot(board, fallback, normalizeRestoredBoardItem(item));
       }
     }
   } else if (source.area === 'nav-board') {
     if (item.board) state.boards.push(cloneData(item.board));
     const navItem = cloneData(item.navItem);
+    coerceNavFolderModes([navItem]);
     if (source.parentId) {
       const pp = findNavItemPath(source.parentId);
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(navItem); return true; }
@@ -1886,6 +2105,7 @@ function restoreFromTrash(trashId) {
         ? { id: `nav-${item.board.id}`, type: 'board', title: item.board.title, boardId: item.board.id }
         : null;
     if (navItem) {
+      coerceNavFolderModes([navItem]);
       const pp = findNavItemPath(source.folderId);
       if (pp?.item?.type === 'folder') {
         pp.item.children = pp.item.children || [];
@@ -1896,6 +2116,7 @@ function restoreFromTrash(trashId) {
     }
   } else if (source.area === 'nav-item') {
     const restored = cloneData(item);
+    coerceNavFolderModes([restored]);
     if (source.parentId) {
       const pp = findNavItemPath(source.parentId);
       if (pp?.item?.type === 'folder') { pp.item.children = pp.item.children || []; pp.item.children.push(restored); return true; }
@@ -1908,7 +2129,16 @@ function restoreFromTrash(trashId) {
       const col = inboxTab
         ? getBoardInbox(board, inboxTab)
         : (board.columns.find(c => c.id === source.columnId) || board.columns[0] || getBoardInbox(board));
-      if (col) col.items.push(cloneData(item));
+      const restored = normalizeRestoredBoardItem(item);
+      if (source.parentId) {
+        const parent = findBoardItemInColumns(board, source.parentId)?.item;
+        if (parent?.type === 'folder' && canInsertIntoFolder(parent, restored?.type)) {
+          parent.children = parent.children || [];
+          parent.children.push(restored);
+          return true;
+        }
+      }
+      if (col) col.items.push(restored);
     }
   } else if (source.area === 'set') {
     return restoreSetFromTrashItem(item);

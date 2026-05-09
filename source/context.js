@@ -88,6 +88,7 @@ function _sortedInboxTargetOptions(boards, options = {}) {
 
 function _buildAddToSetSubmenu() {
   const sets = [...(state.sets || [])]
+    .filter(set => !isDynamicSet(set))
     .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
     .map(set => ({ label: set.title || 'Untitled Set', action: `addBookmarkToSet:${set.id}` }));
   sets.push({ label: 'New set from this bookmark', action: 'createSetFromBookmark' });
@@ -263,6 +264,10 @@ function handleContextMenuAction(action) {
       _showEditBookmarkModal(contextTarget);
       break;
     case 'addSetBookmark':
+      if (isDynamicSet(findSetById(contextTarget.setId))) {
+        showNotice('Dynamic sets update from rules and cannot be edited manually.');
+        break;
+      }
       _showAddBookmarkModal(
         { area: 'set', setId: contextTarget.setId, item: contextTarget.item || findSetById(contextTarget.setId) },
         { title: 'Add Bookmark to Set', placeholder1: 'Bookmark title' }
@@ -335,6 +340,10 @@ function handleContextMenuAction(action) {
     }
     case 'deleteSetItem': {
       const set = findSetById(contextTarget.setId);
+      if (isDynamicSet(set)) {
+        showNotice('Dynamic sets update from rules and cannot be edited manually.');
+        break;
+      }
       const setItem = set?.items?.find(item => item.id === contextTarget.itemId);
       if (!set || !setItem) break;
       showConfirmDialog(`Remove "${setItem.title}" from this set?`, () => {
@@ -466,6 +475,21 @@ function handleContextMenuAction(action) {
     case 'addFolder':
       showFolderModal('create', contextTarget);
       break;
+    case 'addDynamicFolder':
+      if (contextTarget?.area === 'nav-empty' || contextTarget?.area === 'nav-item' || contextTarget?.area === 'nav-subfolder') {
+        showNotice('Dynamic folders are only available in board columns.');
+        break;
+      }
+      if (contextTarget?.area === 'board-item') {
+        if (!canInsertIntoFolder(contextTarget.item, 'folder')) {
+          showNotice('Dynamic folders cannot contain subfolders.');
+          break;
+        }
+        showFolderModal('create', { ...contextTarget, area: 'board-subfolder' }, { folderMode: 'dynamic' });
+      } else {
+        showFolderModal('create', contextTarget, { folderMode: 'dynamic' });
+      }
+      break;
     case 'addBookmark':
       _showAddBookmarkModal(contextTarget);
       break;
@@ -495,9 +519,17 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'addBoardSubfolder':
+      if (!canInsertIntoFolder(contextTarget.item, 'folder')) {
+        showNotice('Dynamic folders cannot contain subfolders.');
+        break;
+      }
       showFolderModal('create', { ...contextTarget, area: 'board-subfolder' });
       break;
     case 'addBookmarkToFolder': {
+      if (isDynamicFolder(contextTarget.item)) {
+        showNotice('Dynamic folders update from rules and cannot be edited manually.');
+        break;
+      }
       const folderCtx = { ...contextTarget, area: 'board-folder-item' };
       _showAddBookmarkModal(folderCtx, {
         inheritedTags: getContextInheritedTags({ ...contextTarget, area: 'board-subfolder' })
@@ -519,11 +551,13 @@ function handleContextMenuAction(action) {
         const urls = [];
         for (const item of (items || [])) {
           if (item.type === 'bookmark' && item.url) urls.push(item.url);
-          if (item.children) urls.push(...collectUrls(item.children));
+          if (item.type === 'folder') {
+            urls.push(...collectUrls(resolveFolderChildren(item, getBoardForContext(contextTarget))));
+          }
         }
         return urls;
       };
-      collectUrls(contextTarget.item?.children).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
+      collectUrls(resolveFolderChildren(contextTarget.item, getBoardForContext(contextTarget))).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
       break;
     }
     case 'refreshFavicon': {
@@ -542,6 +576,10 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'duplicateBookmark': {
+      if (contextTarget?.inDynamicFolder) {
+        showNotice('Duplicate bookmarks from their source location, not from a dynamic folder view.');
+        break;
+      }
       const area = contextTarget.area;
       if (area === 'speed-dial-item') {
         const board = getActiveBoard();
@@ -676,7 +714,11 @@ function handleContextMenuAction(action) {
           pushUndoSnapshot();
           const capturedItem = cloneData(contextTarget.item);
           if (!capturedItem.tags) capturedItem.tags = [];
-          deleteBoardTarget(contextTarget);
+          if (contextTarget?.inDynamicFolder && capturedItem.type === 'bookmark') {
+            capturedItem.id = `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          } else {
+            deleteBoardTarget(contextTarget);
+          }
           targetInbox.items.push(capturedItem);
           renderAll();
           saveState();
@@ -690,7 +732,9 @@ function handleContextMenuAction(action) {
         if (!result.ok) {
           showNotice(result.reason === 'duplicate'
             ? `That URL is already in the set "${set.title}".`
-            : 'Unable to add this bookmark to the selected set.');
+            : result.reason === 'dynamic'
+              ? 'Dynamic sets update from rules and cannot be edited manually.'
+              : 'Unable to add this bookmark to the selected set.');
           return;
         }
         renderAll();
@@ -724,7 +768,8 @@ function handleContextMenuAction(action) {
 
 function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effectiveLocked = false, inheritedLock = false) {
   if (getActiveBoard()?.locked) return;
-  contextTarget = { area: 'board-item', itemId: item.id, columnId, parentId: parentFolder ? parentFolder.id : null, item, depth };
+  const inDynamicFolder = item.type === 'bookmark' && isDynamicFolder(parentFolder);
+  contextTarget = { area: 'board-item', itemId: item.id, columnId, parentId: parentFolder ? parentFolder.id : null, item, depth, inDynamicFolder };
 
   const options = [];
 
@@ -741,16 +786,24 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
   const canMoveToBoard = regularBoards.some(board => (board.tabs || []).length > 0);
 
   if (item.type === 'folder') {
-    options.push({ label: 'Edit folder', action: 'editFolder' });
-    options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
-    options.push({ label: 'Open all', action: 'openAll' });
-    if (depth < 2) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
-    if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
-    options.push({ label: 'Delete folder', action: 'deleteItem' });
+    if (isDynamicFolder(item)) {
+      options.push({ label: 'Edit Dynamic Folder', action: 'editFolder' });
+      options.push({ label: 'Open All', action: 'openAll' });
+      if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
+      options.push({ label: 'Delete', action: 'deleteItem' });
+    } else {
+      options.push({ label: 'Edit folder', action: 'editFolder' });
+      options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
+      if (canInsertIntoFolder(item, 'folder')) options.push({ label: 'Add dynamic folder', action: 'addDynamicFolder' });
+      options.push({ label: 'Open all', action: 'openAll' });
+      if (depth < 2 && canInsertIntoFolder(item, 'folder')) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
+      if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
+      options.push({ label: 'Delete folder', action: 'deleteItem' });
+    }
   } else if (item.type === 'bookmark') {
     options.push({ label: 'Edit bookmark', action: 'editBookmark' });
     options.push({ label: 'Add to Set...', action: '', submenu: _buildAddToSetSubmenu() });
-    options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
+    if (!inDynamicFolder) options.push({ label: 'Duplicate', action: 'duplicateBookmark' });
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
     if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
@@ -849,6 +902,7 @@ function handleBoardColumnContextMenu(event, columnId) {
     .map(([type, def]) => ({ label: def.name, action: `addWidget:${type}` }));
   const items = [
     { label: 'Add folder', action: 'addFolder' },
+    { label: 'Add dynamic folder', action: 'addDynamicFolder' },
     { label: 'Add bookmark', action: 'addBookmark' },
     { label: 'Add title', action: 'addTitle' },
     { label: 'Add divider', action: 'addDivider' }

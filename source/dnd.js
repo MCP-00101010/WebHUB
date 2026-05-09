@@ -23,6 +23,10 @@ function _canDropAsColumnWidget() {
   return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
 }
 
+function _currentDropEffect() {
+  return dragPayload?.fromDynamicFolderView ? 'copy' : 'move';
+}
+
 // Returns true when the active drag payload contains a bookmark or folder
 // that can be sent to another board's inbox.
 function _canSendToInbox() {
@@ -254,7 +258,10 @@ function applyDragImage(event, element) {
   });
   document.body.appendChild(clone);
   event.dataTransfer.setDragImage(clone, event.clientX - rect.left, event.clientY - rect.top);
-  requestAnimationFrame(() => { clone.remove(); element.classList.add('dragging'); });
+  requestAnimationFrame(() => {
+    clone.remove();
+    if (!dragPayload?.fromDynamicFolderView) element.classList.add('dragging');
+  });
 }
 
 function _normalizeDraggedBookmark(item) {
@@ -264,13 +271,34 @@ function _normalizeDraggedBookmark(item) {
   return item;
 }
 
+function _cloneBookmarkForDragCopy(item) {
+  if (!item?.url) return null;
+  return _normalizeDraggedBookmark({
+    id: `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type: 'bookmark',
+    title: item.title || item.url || 'Untitled Bookmark',
+    url: item.url,
+    tags: Array.isArray(item.tags) ? [...item.tags] : [],
+    faviconCache: typeof item.faviconCache === 'string' ? item.faviconCache : ''
+  });
+}
+
+function _takeDraggedBoardItem(board) {
+  if (dragPayload?.area !== 'board') return null;
+  if (dragPayload.fromDynamicFolderView && dragPayload.itemType === 'bookmark') {
+    const item = findBoardItemInColumns(board, dragPayload.itemId)?.item || null;
+    return _cloneBookmarkForDragCopy(item);
+  }
+  return removeBoardItemById(dragPayload.itemId);
+}
+
 function _takeDraggedBookmarkItem(board) {
   if (!dragPayload) return null;
   if (dragPayload.area === 'speed-dial') {
     return _normalizeDraggedBookmark(removeSpeedDialItemById(board, dragPayload.itemId));
   }
   if (dragPayload.area === 'board' && dragPayload.itemType === 'bookmark') {
-    return _normalizeDraggedBookmark(removeBoardItemById(dragPayload.itemId));
+    return _normalizeDraggedBookmark(_takeDraggedBoardItem(board));
   }
   if (dragPayload.area === 'import-manager' && dragPayload.itemType === 'bookmark') {
     return _normalizeDraggedBookmark(_takeImportManagerDraggedItem());
@@ -291,7 +319,7 @@ function _extractDraggedItem(board) {
   if (dragPayload.area === 'board') {
     // Inherited/shared tags are computed dynamically, so moving an item out of a
     // parent must not mutate the item's explicit tags.
-    return removeBoardItemById(dragPayload.itemId);
+    return _takeDraggedBoardItem(board);
   }
   if (dragPayload.area === 'import-manager') {
     return _takeImportManagerDraggedItem();
@@ -303,6 +331,20 @@ function _extractDraggedItem(board) {
     return _takeDraggedBookmarkItem(board);
   }
   return null;
+}
+
+function _draggedFolderChildType() {
+  if (!dragPayload) return null;
+  if (dragPayload.area === 'board' || dragPayload.area === 'import-manager') return dragPayload.itemType || null;
+  if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') return 'bookmark';
+  return null;
+}
+
+function _canDropIntoFolder(folderItem) {
+  if (!_canDropOnBoard()) return false;
+  const itemType = _draggedFolderChildType();
+  if (!itemType) return false;
+  return canInsertIntoFolder(folderItem, itemType);
 }
 
 function createEssentialSlotPreview() {
@@ -416,7 +458,7 @@ function _activateFolderDropTarget(event, folderCardEl, canDrop) {
 function _handleVerticalItemDragOver(event) {
   event.preventDefault();
   event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = _currentDropEffect();
 
   const itemEl = event.currentTarget;
   const rect = itemEl.getBoundingClientRect();
@@ -434,7 +476,7 @@ function _handleVerticalItemDragOver(event) {
 function _handleVerticalContainerDragOver(event, { markDropTarget = false, useNearest = false } = {}) {
   event.preventDefault();
   event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = _currentDropEffect();
 
   const containerEl = event.currentTarget;
   if (markDropTarget) containerEl.classList.add('drop-target');
@@ -538,6 +580,11 @@ function _finalizeFolderDrop(event, folderItem, depth, takeDraggedItem, isOwnDes
     dragPayload = null;
     return;
   }
+  if (!canInsertIntoFolder(folderItem, _draggedFolderChildType())) {
+    showNotice('Dynamic folders only accept bookmarks.');
+    dragPayload = null;
+    return;
+  }
 
   pushUndoSnapshot();
   const dragged = takeDraggedItem();
@@ -564,7 +611,7 @@ function handleBoardItemDragOver(event, targetItem, columnId, parentFolder, dept
   // Collapsed folders and locked folders (direct or inherited) fall through to
   // normal before/after reorder.
   if (targetItem.type === 'folder' && !targetItem.collapsed && !targetItem.locked && !event.currentTarget.classList.contains('is-locked')) {
-    _activateFolderDropTarget(event, event.currentTarget, () => _canDropOnBoard());
+    _activateFolderDropTarget(event, event.currentTarget, () => _canDropIntoFolder(targetItem));
     return;
   }
 
@@ -622,13 +669,13 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
 
   if (!targetPath) {
     const dragged = dragPayload.area === 'board'
-      ? removeBoardItemById(dragPayload.itemId)
+      ? _takeDraggedBoardItem(board)
       : null;
     if (dragged) addBoardItemToColumn(columnId, dragged);
     dragPayload = null; renderAll(); saveState(); return;
   }
 
-  const dragged = removeBoardItemById(dragPayload.itemId);
+  const dragged = _takeDraggedBoardItem(board);
   if (!dragged) return;
   if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, draggedPath, dragged, position)) {
     dragPayload = null;
@@ -684,8 +731,8 @@ function handleBoardColumnDrop(event, columnId) {
   let draggedItem;
   let draggedIndex = -1;
   if (dragPayload.area === 'board') {
-    draggedIndex = column.items.findIndex(i => i.id === dragPayload.itemId);
-    draggedItem = removeBoardItemById(dragPayload.itemId);
+    if (!dragPayload.fromDynamicFolderView) draggedIndex = column.items.findIndex(i => i.id === dragPayload.itemId);
+    draggedItem = _takeDraggedBoardItem(board);
   } else if (dragPayload.area === 'import-manager') {
     draggedItem = _takeImportManagerDraggedItem();
     if (!draggedItem) { dragPayload = null; return; }
@@ -706,7 +753,7 @@ function handleBoardColumnDrop(event, columnId) {
 
 function handleBoardFolderHeaderDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
-  _activateFolderDropTarget(event, folderCardEl, () => _canDropOnBoard());
+  _activateFolderDropTarget(event, folderCardEl, () => _canDropIntoFolder(folderItem));
 }
 
 function _isDroppingFolderIntoOwnDescendant(board, targetFolder) {
@@ -717,7 +764,7 @@ function _isDroppingFolderIntoOwnDescendant(board, targetFolder) {
 }
 
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
-  if (!_canDropOnBoard()) return;
+  if (!_canDropIntoFolder(folderItem)) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   const board = getActiveBoard();
@@ -732,12 +779,12 @@ function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
 
 function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, columnId, depth) {
   if (folderItem.locked || folderCardEl.classList.contains('is-locked')) return;
-  if (!_canDropOnBoard()) return;
+  if (!_canDropIntoFolder(folderItem)) return;
   _handleVerticalContainerDragOver(event, { markDropTarget: true, useNearest: true });
 }
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
-  if (!_canDropOnBoard()) return;
+  if (!_canDropIntoFolder(folderItem)) return;
   if (dragPayload.itemId === folderItem.id) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   const board = getActiveBoard();
@@ -882,7 +929,7 @@ function handleSpeedDialSlotDragOver(event, target, slot) {
   if (dragPayload?.area === 'speed-dial' && dragPayload.slot === slot) return;
   event.preventDefault();
   event.stopPropagation();
-  event.dataTransfer.dropEffect = dragPayload ? 'move' : 'copy';
+  event.dataTransfer.dropEffect = dragPayload ? _currentDropEffect() : 'copy';
   const cell = event.currentTarget;
   if (!cell.classList.contains('drop-target')) {
     removeDragPlaceholders();
@@ -937,7 +984,7 @@ function handleNavItemDragOver(event, item, parent) {
       if (!targetBoard?.locked) {
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = 'move';
+        event.dataTransfer.dropEffect = _currentDropEffect();
         event.currentTarget.classList.add('drop-target');
       }
     }
@@ -947,7 +994,7 @@ function handleNavItemDragOver(event, item, parent) {
   if (dragPayload?.area === 'folder-tab') {
     event.preventDefault();
     event.stopPropagation();
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.dropEffect = _currentDropEffect();
     const element = event.currentTarget;
     const rect = element.getBoundingClientRect();
     const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
@@ -961,7 +1008,7 @@ function handleNavItemDragOver(event, item, parent) {
   if (!dragPayload || (dragPayload.area !== 'nav' && !isBoardWidget)) return;
   event.preventDefault();
   event.stopPropagation();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = _currentDropEffect();
 
   const element = event.currentTarget;
   const rect = element.getBoundingClientRect();
@@ -1000,7 +1047,7 @@ function handleNavDrop(event, targetItem, parent) {
     let dragged = null;
     const board = getActiveBoard();
     if (dragPayload.area === 'board') {
-      dragged = removeBoardItemById(dragPayload.itemId);
+      dragged = _takeDraggedBoardItem(board);
     } else if (dragPayload.area === 'import-manager') {
       dragged = _takeImportManagerDraggedItem();
     } else if (dragPayload.area === 'nav') {
@@ -1082,7 +1129,7 @@ function handleNavListDragOver(event) {
   // Always accept the drop so the browser fires the drop event even when the
   // cursor is over the preview clone's transparent space.
   event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
+  event.dataTransfer.dropEffect = _currentDropEffect();
   event.stopPropagation();
   // If an item-level preview is already positioned, cursor is over the clone's
   // transparent space — don't override preview position unless the cursor has

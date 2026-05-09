@@ -2425,7 +2425,8 @@ function attachSettingsListeners() {
     state.lastExported = new Date().toISOString();
     saveState();
     isDirty = false;
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const snapshot = serializeStateSnapshot();
+    const blob = new Blob([JSON.stringify(JSON.parse(snapshot), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

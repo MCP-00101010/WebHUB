@@ -449,15 +449,11 @@ function parseBookmarkHtml(htmlText) {
           while (j < children.length && children[j].tagName !== 'DT' && children[j].tagName !== 'DL') j++;
           if (j < children.length && children[j].tagName === 'DL') { subDL = children[j]; i = j; }
         }
-        items.push({
+        items.push(createFolderRecord(h3.textContent.trim(), {
           id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          type: 'folder',
-          title: h3.textContent.trim(),
           collapsed: true,
-          tags: [],
-          sharedTags: [],
           children: parseDL(subDL)
-        });
+        }));
       }
     }
     return items;

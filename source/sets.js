@@ -126,12 +126,13 @@ function _createSetPreviewFavicon(item) {
 }
 
 function createSetManagerItem(set, item) {
+  const dynamicSet = isDynamicSet(set);
   const el = document.createElement('div');
   el.className = 'board-column-item bookmark-item set-manager-item';
   el.dataset.itemId = item.id;
   el.dataset.setId = set.id;
   el.dataset.tooltip = buildTooltip(item);
-  el.draggable = true;
+  el.draggable = !dynamicSet;
 
   const header = document.createElement('div');
   header.className = 'item-header';
@@ -158,7 +159,7 @@ function createSetManagerItem(set, item) {
     url.textContent = item.url;
     el.appendChild(url);
   }
-  if (item.tags?.length) {
+  if (item.tags?.length && state.settings.showBookmarkTags !== false) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, item.tags);
@@ -172,14 +173,18 @@ function createSetManagerItem(set, item) {
     event.preventDefault();
     event.stopPropagation();
     contextTarget = { area: 'set-item', setId: set.id, itemId: item.id, item };
-    showContextMenu(event.clientX, event.clientY, [
+    const actions = [
       { label: 'Open in new tab', action: 'openNewTab' },
-      { label: 'Open in new window', action: 'openNewWindow' },
-      { label: 'Edit bookmark', action: 'editBookmark' },
-      { label: 'Remove from set', action: 'deleteSetItem' }
-    ]);
+      { label: 'Open in new window', action: 'openNewWindow' }
+    ];
+    if (!dynamicSet) {
+      actions.push({ label: 'Edit bookmark', action: 'editBookmark' });
+      actions.push({ label: 'Remove from set', action: 'deleteSetItem' });
+    }
+    showContextMenu(event.clientX, event.clientY, actions);
   });
   el.addEventListener('dragstart', event => {
+    if (dynamicSet) { event.preventDefault(); return; }
     dragPayload = { area: 'set-manager', setId: set.id, itemId: item.id, itemType: 'bookmark' };
     event.dataTransfer.setData('text/plain', item.id);
     event.dataTransfer.effectAllowed = 'move';
@@ -204,16 +209,22 @@ function renderSetManagerPanel() {
   const openBtn = document.getElementById('setsManagerOpenBtn');
   const addBtn = document.getElementById('setsManagerAddBtn');
   const deleteBtn = document.getElementById('setsManagerDeleteBtn');
+  const rulesBtn = document.getElementById('setsManagerRulesBtn');
+  const sortBtn = document.getElementById('setsManagerSortBtn');
   if (!listEl || !emptyEl || !detailCard || !previewEl || !titleInput) return;
 
   const selected = _ensureSelectedSet();
+  const selectedItems = resolveSetItems(selected);
   const hasSelectedSet = !!selected;
+  const dynamicSelected = isDynamicSet(selected);
   if (openBtn) openBtn.disabled = !hasSelectedSet;
-  if (addBtn) addBtn.disabled = !hasSelectedSet;
+  if (addBtn) addBtn.disabled = !hasSelectedSet || dynamicSelected;
   if (deleteBtn) deleteBtn.disabled = !hasSelectedSet;
   listEl.innerHTML = '';
 
   for (const set of (state.sets || [])) {
+    const setItems = resolveSetItems(set);
+    const dynamicSet = isDynamicSet(set);
     const row = document.createElement('button');
     row.type = 'button';
     row.className = `sets-manager-row${set.id === selectedSetId ? ' active' : ''}`;
@@ -221,8 +232,8 @@ function renderSetManagerPanel() {
     row.draggable = true;
 
     const iconWrap = document.createElement('span');
-    iconWrap.className = 'sets-manager-row-icon';
-    iconWrap.appendChild(icon('icon-set'));
+    iconWrap.className = `sets-manager-row-icon${dynamicSet ? ' sets-manager-row-icon--dynamic' : ''}`;
+    iconWrap.appendChild(icon(dynamicSet ? 'icon-filter' : 'icon-set'));
     row.appendChild(iconWrap);
 
     const info = document.createElement('span');
@@ -232,14 +243,14 @@ function renderSetManagerPanel() {
     title.textContent = set.title || 'Untitled Set';
     const meta = document.createElement('span');
     meta.className = 'sets-manager-row-meta';
-    meta.textContent = _setPanelCountLabel((set.items || []).length);
+    meta.textContent = _setPanelCountLabel(setItems.length);
     info.appendChild(title);
     info.appendChild(meta);
     row.appendChild(info);
 
     const chips = document.createElement('span');
     chips.className = 'sets-preview-strip';
-    (set.items || []).slice(0, 3).forEach(item => chips.appendChild(_createSetPreviewFavicon(item)));
+    setItems.slice(0, 3).forEach(item => chips.appendChild(_createSetPreviewFavicon(item)));
     row.appendChild(chips);
 
     row.addEventListener('click', () => {
@@ -277,24 +288,35 @@ function renderSetManagerPanel() {
     detailCard.classList.add('hidden');
     previewEl.innerHTML = '';
     titleInput.value = '';
+    rulesBtn?.classList.add('hidden');
+    sortBtn?.classList.add('hidden');
     return;
   }
 
   emptyEl.classList.add('hidden');
   detailCard.classList.remove('hidden');
+  rulesBtn?.classList.toggle('hidden', !dynamicSelected);
+  sortBtn?.classList.toggle('hidden', !dynamicSelected);
+  if (sortBtn) {
+    const sortTitle = _dynamicSortButtonTitle(selected.sortMode);
+    sortBtn.title = sortTitle;
+    sortBtn.setAttribute('aria-label', sortTitle);
+  }
   if (document.activeElement !== titleInput) titleInput.value = selected.title || '';
   previewEl.innerHTML = '';
   previewEl.classList.remove('drag-over');
 
-  if (!(selected.items || []).length) {
+  if (!selectedItems.length) {
     const empty = document.createElement('div');
     empty.className = 'sets-empty sets-empty--compact';
-    empty.textContent = 'Drag bookmarks here to copy them into this set, or use Add Bookmark.';
+    empty.textContent = dynamicSelected
+      ? 'This dynamic set has no matching bookmarks yet.'
+      : 'Drag bookmarks here to copy them into this set, or use Add Bookmark.';
     previewEl.appendChild(empty);
     return;
   }
 
-  selected.items.forEach(item => previewEl.appendChild(createSetManagerItem(selected, item)));
+  selectedItems.forEach(item => previewEl.appendChild(createSetManagerItem(selected, item)));
 }
 
 function _clearSetDropDecorations() {
@@ -307,6 +329,8 @@ function _clearSetDropDecorations() {
 }
 
 function _canCopyBookmarkIntoSet() {
+  const selectedSet = _ensureSelectedSet();
+  if (!selectedSet || isDynamicSet(selectedSet)) return false;
   if (!dragPayload) return false;
   if (dragPayload.area === 'board') return dragPayload.itemType === 'bookmark';
   if (dragPayload.area === 'speed-dial') return true;
@@ -409,6 +433,7 @@ function _moveSetPreview(parentEl, beforeEl, event) {
 function handleSetManagerBodyDragOver(event) {
   const set = _ensureSelectedSet();
   if (!set) return;
+  if (isDynamicSet(set)) return;
   const isInternalReorder = dragPayload?.area === 'set-manager' && dragPayload?.setId === set.id;
   const isCopyDrag = _canCopyBookmarkIntoSet();
   if (!isInternalReorder && !isCopyDrag && !isExternalDrag(event)) return;
@@ -458,6 +483,13 @@ function handleSetManagerBodyDrop(event) {
   const set = _ensureSelectedSet();
   const body = document.getElementById('setsManagerPreview');
   if (!set) return;
+  if (isDynamicSet(set)) {
+    event.preventDefault();
+    event.stopPropagation();
+    _clearSetDropDecorations();
+    showNotice('Dynamic sets update from rules and cannot be edited manually.');
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
   const savedTarget = _dropTarget;
@@ -523,11 +555,35 @@ function attachSetPanelListeners() {
     showSetManagerPanel();
     requestAnimationFrame(() => document.getElementById('setsManagerTitleInput')?.focus());
   });
+  document.getElementById('setsManagerDynamicBtn')?.addEventListener('click', () => {
+    pushUndoSnapshot();
+    const set = createSet('New Dynamic Set', { mode: 'dynamic' });
+    selectedSetId = set.id;
+    renderAll();
+    saveState();
+    showSetManagerPanel();
+    requestAnimationFrame(() => document.getElementById('setsManagerTitleInput')?.focus());
+  });
   document.getElementById('setsManagerOpenBtn')?.addEventListener('click', () => {
     if (selectedSetId) openSetById(selectedSetId);
   });
+  document.getElementById('setsManagerRulesBtn')?.addEventListener('click', () => {
+    const set = findSetById(selectedSetId);
+    if (!isDynamicSet(set)) return;
+    showDynamicRuleEditor({ targetType: 'set', setId: set.id });
+  });
+  document.getElementById('setsManagerSortBtn')?.addEventListener('click', event => {
+    const set = findSetById(selectedSetId);
+    if (!isDynamicSet(set)) return;
+    showDynamicSortMenu(event.currentTarget, { targetType: 'set', setId: set.id });
+  });
   document.getElementById('setsManagerAddBtn')?.addEventListener('click', () => {
     if (!selectedSetId) return;
+    const set = findSetById(selectedSetId);
+    if (isDynamicSet(set)) {
+      showNotice('Dynamic sets update from rules and cannot be edited manually.');
+      return;
+    }
     contextTarget = { area: 'set', setId: selectedSetId };
     showModal('addBookmark', {
       title: 'Add Bookmark to Set',
@@ -560,10 +616,9 @@ function attachSetPanelListeners() {
     const set = _ensureSelectedSet();
     if (!set) return;
     contextTarget = { area: 'set', setId: set.id, item: set };
-    showContextMenu(event.clientX, event.clientY, [
-      { label: 'Add bookmark', action: 'addSetBookmark' },
-      { label: 'Open set', action: 'openSet' }
-    ]);
+    const actions = [{ label: 'Open set', action: 'openSet' }];
+    if (!isDynamicSet(set)) actions.unshift({ label: 'Add bookmark', action: 'addSetBookmark' });
+    showContextMenu(event.clientX, event.clientY, actions);
   });
   body?.addEventListener('dragover', handleSetManagerBodyDragOver);
   body?.addEventListener('dragleave', event => {

@@ -450,6 +450,7 @@ function _submitBookmarkModal(mode, { value1, value2, tags, ensureUndo }) {
     if (area === 'set') {
       const set = findSetById(contextTarget.setId);
       if (!set) return 'abort';
+      if (isDynamicSet(set)) { alert('Dynamic sets update from rules and cannot be edited manually.'); return 'abort'; }
       if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
       if ((set.items || []).some(entry => entry.url === normalizeUrl(value2))) {
         alert('That URL is already in this set.');
@@ -458,7 +459,11 @@ function _submitBookmarkModal(mode, { value1, value2, tags, ensureUndo }) {
       ensureUndo();
       const result = addBookmarkToSet(set, { title: value1, url: value2, tags, faviconCache: fc });
       if (!result.ok) {
-        alert(result.reason === 'duplicate' ? 'That URL is already in this set.' : 'Please enter a valid URL.');
+        alert(result.reason === 'duplicate'
+          ? 'That URL is already in this set.'
+          : result.reason === 'dynamic'
+            ? 'Dynamic sets update from rules and cannot be edited manually.'
+            : 'Please enter a valid URL.');
         return 'abort';
       }
       return 'continue';
@@ -474,6 +479,10 @@ function _submitBookmarkModal(mode, { value1, value2, tags, ensureUndo }) {
       return 'complete';
     }
     if (area === 'board-folder-item') {
+      if (isDynamicFolder(contextTarget.item)) {
+        alert('Dynamic folders update from rules and cannot be edited manually.');
+        return 'abort';
+      }
       if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
       ensureUndo();
       contextTarget.item.children.push({ id: `bm-${Date.now()}`, type: 'bookmark', title: value1, url: normalizeUrl(value2), tags, faviconCache: fc });
@@ -500,6 +509,7 @@ function _submitBookmarkModal(mode, { value1, value2, tags, ensureUndo }) {
   if (area === 'set-item') {
     if (!isValidUrl(value2)) { alert('Please enter a valid URL.'); return 'abort'; }
     const set = findSetById(contextTarget.setId);
+    if (isDynamicSet(set)) { alert('Dynamic sets update from rules and cannot be edited manually.'); return 'abort'; }
     const found = findSetItemById(set, contextTarget.itemId);
     if (!found?.item) return 'abort';
     const normalized = normalizeUrl(value2);
@@ -612,7 +622,11 @@ function _submitMoveToBoardModal(ensureUndo) {
       removeEssential(contextTarget.slot);
       trimEssentialsTail();
     } else {
-      deleteBoardTarget(contextTarget);
+      if (contextTarget?.inDynamicFolder && capturedItem.type === 'bookmark') {
+        capturedItem.id = `bm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      } else {
+        deleteBoardTarget(contextTarget);
+      }
     }
   }
 
@@ -717,7 +731,7 @@ async function handleModalSubmit(event) {
         if (parent) {
           ensureUndo();
           parent.children = parent.children || [];
-          parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: value1, children: [] });
+          parent.children.push(createFolderRecord(value1));
           parent.collapsed = false;
         }
       }
@@ -769,30 +783,258 @@ async function handleModalSubmit(event) {
   saveState();
 }
 
+// --- Dynamic rule editor ---
+
+let dynamicRuleEditorTarget = null;
+let dynamicRuleEditorOriginalRules = null;
+let dynamicSortMenu = null;
+
+function _focusChipTextInput(inputId) {
+  const hiddenInput = document.getElementById(inputId);
+  hiddenInput?.nextElementSibling?.focus();
+}
+
+function _resolveDynamicRuleEditorTarget(target = dynamicRuleEditorTarget) {
+  if (!target?.targetType) return null;
+  if (target.targetType === 'set') return findSetById(target.setId);
+  if (target.targetType !== 'folder') return null;
+
+  const ct = target.contextTarget || target;
+  if (ct?.area === 'nav-item' || ct?.area === 'nav-subfolder') {
+    return ct?.itemId ? findNavItemPath(ct.itemId)?.item || null : ct?.item || null;
+  }
+  const board = ct?.boardId
+    ? state.boards.find(entry => entry.id === ct.boardId) || null
+    : getBoardForContext(ct);
+  if (!board) return null;
+  if (ct?.itemId) return findBoardItemInColumns(board, ct.itemId)?.item || null;
+  return ct?.item || null;
+}
+
+function _isDynamicRuleEditorTargetValid(target, item) {
+  if (!target || !item) return false;
+  if (target.targetType === 'set') return isDynamicSet(item);
+  if (target.targetType === 'folder') return isDynamicFolder(item);
+  return false;
+}
+
+function _dynamicRuleEditorTargetBadge(target) {
+  return target?.targetType === 'folder' ? 'Dynamic Folder' : 'Dynamic Set';
+}
+
+function _dynamicSortButtonTitle(sortMode) {
+  const label = DYNAMIC_SORT_LABELS[normalizeDynamicSortMode(sortMode)] || DYNAMIC_SORT_LABELS.source;
+  return `Sort dynamic results: ${label}`;
+}
+
+function _dynamicSortButtonLabel(sortMode) {
+  return DYNAMIC_SORT_LABELS[normalizeDynamicSortMode(sortMode)] || DYNAMIC_SORT_LABELS.source;
+}
+
+function hideDynamicSortMenu() {
+  if (dynamicSortMenu) {
+    dynamicSortMenu.remove();
+    dynamicSortMenu = null;
+  }
+  document.removeEventListener('mousedown', _dynamicSortMenuOutside, true);
+}
+
+function _dynamicSortMenuOutside(event) {
+  if (dynamicSortMenu && !dynamicSortMenu.contains(event.target)) hideDynamicSortMenu();
+}
+
+function showDynamicSortMenu(anchorEl, target) {
+  const resolvedTarget = _resolveDynamicRuleEditorTarget(target);
+  if (!_isDynamicRuleEditorTargetValid(target, resolvedTarget)) {
+    showNotice('This sort menu is only available for dynamic sets and folders.');
+    return;
+  }
+
+  hideDynamicSortMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.cssText = 'position:fixed;z-index:9999;';
+
+  ['source', 'title-asc', 'title-desc', 'url-asc', 'url-desc'].forEach(mode => {
+    const btn = document.createElement('button');
+    const isActive = normalizeDynamicSortMode(resolvedTarget.sortMode) === mode;
+    btn.style.display = 'flex';
+    btn.style.alignItems = 'center';
+    btn.style.gap = '8px';
+    if (isActive) btn.style.color = 'var(--accent)';
+    const check = document.createElement('span');
+    check.textContent = '✓';
+    check.style.cssText = `visibility:${isActive ? 'visible' : 'hidden'};font-size:0.85rem;flex-shrink:0;`;
+    btn.appendChild(check);
+    btn.appendChild(document.createTextNode(_dynamicSortButtonLabel(mode)));
+    btn.addEventListener('click', () => {
+      hideDynamicSortMenu();
+      if (normalizeDynamicSortMode(resolvedTarget.sortMode) === mode) return;
+      pushUndoSnapshot();
+      resolvedTarget.sortMode = mode;
+      if (target.targetType === 'set') touchSet(resolvedTarget);
+      const activeFolderSortBtn = document.getElementById('fmSortBtn');
+      if (target.targetType === 'folder' && activeFolderSortBtn) {
+        activeFolderSortBtn.title = _dynamicSortButtonTitle(mode);
+        activeFolderSortBtn.setAttribute('aria-label', _dynamicSortButtonTitle(mode));
+      }
+      renderAll();
+      saveState();
+    });
+    menu.appendChild(btn);
+  });
+
+  document.body.appendChild(menu);
+  dynamicSortMenu = menu;
+  const rect = anchorEl.getBoundingClientRect();
+  let left = rect.left;
+  let top = rect.bottom + 2;
+  menu.style.left = '0';
+  menu.style.top = '0';
+  const menuWidth = menu.offsetWidth;
+  const menuHeight = menu.offsetHeight;
+  left = Math.min(left, window.innerWidth - menuWidth - 4);
+  top = Math.min(top, window.innerHeight - menuHeight - 4);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  document.addEventListener('mousedown', _dynamicSortMenuOutside, true);
+}
+
+function _readDynamicRuleEditorRules() {
+  return normalizeDynamicRules({
+    includeTags: document.getElementById('dynamicRuleIncludeTags').value.trim().split(/\s+/).filter(Boolean),
+    excludeTags: document.getElementById('dynamicRuleExcludeTags').value.trim().split(/\s+/).filter(Boolean)
+  });
+}
+
+function _refreshDynamicRuleEditorPreview(target = dynamicRuleEditorTarget) {
+  if (!target) return;
+  if (target.targetType === 'set') {
+    renderSetManagerPanel();
+    return;
+  }
+  renderAll();
+}
+
+function _applyDynamicRuleEditorPreview() {
+  const target = dynamicRuleEditorTarget;
+  const resolvedTarget = _resolveDynamicRuleEditorTarget(target);
+  if (!_isDynamicRuleEditorTargetValid(target, resolvedTarget)) return;
+  resolvedTarget.rules = _readDynamicRuleEditorRules();
+  _refreshDynamicRuleEditorPreview(target);
+}
+
+function showDynamicRuleEditor(target) {
+  const panel = document.getElementById('dynamicRuleEditorPanel');
+  if (!panel) return;
+  const resolvedTarget = _resolveDynamicRuleEditorTarget(target);
+  if (!_isDynamicRuleEditorTargetValid(target, resolvedTarget)) {
+    showNotice('This rule editor is only available for dynamic sets and folders.');
+    return;
+  }
+
+  dynamicRuleEditorTarget = target;
+  dynamicRuleEditorOriginalRules = normalizeDynamicRules(resolvedTarget.rules);
+  document.getElementById('dynamicRuleEditorTargetBadge').textContent = _dynamicRuleEditorTargetBadge(target);
+  document.getElementById('dynamicRuleEditorTargetName').textContent = resolvedTarget.title || 'Untitled Collection';
+  document.getElementById('dynamicRuleIncludeTags').value = dynamicRuleEditorOriginalRules.includeTags.join(' ');
+  document.getElementById('dynamicRuleExcludeTags').value = dynamicRuleEditorOriginalRules.excludeTags.join(' ');
+
+  panel.classList.remove('hidden');
+  panel.classList.add('draggable');
+  centerPanel(panel);
+  makeDraggable(panel, document.getElementById('dynamicRuleEditorHeader'));
+  requestAnimationFrame(() => _focusChipTextInput('dynamicRuleIncludeTags'));
+}
+
+function hideDynamicRuleEditor(options = {}) {
+  hideDynamicSortMenu();
+  const shouldRestore = options.restore !== false;
+  if (shouldRestore) {
+    const target = dynamicRuleEditorTarget;
+    const resolvedTarget = _resolveDynamicRuleEditorTarget(target);
+    if (_isDynamicRuleEditorTargetValid(target, resolvedTarget) && dynamicRuleEditorOriginalRules) {
+      resolvedTarget.rules = normalizeDynamicRules(dynamicRuleEditorOriginalRules);
+      _refreshDynamicRuleEditorPreview(target);
+    }
+  }
+  document.getElementById('dynamicRuleEditorPanel')?.classList.add('hidden');
+  dynamicRuleEditorTarget = null;
+  dynamicRuleEditorOriginalRules = null;
+}
+
+function handleDynamicRuleEditorSave() {
+  const target = dynamicRuleEditorTarget;
+  const resolvedTarget = _resolveDynamicRuleEditorTarget(target);
+  if (!_isDynamicRuleEditorTargetValid(target, resolvedTarget)) {
+    hideDynamicRuleEditor();
+    showNotice('That dynamic collection is no longer available.');
+    return;
+  }
+
+  const nextRules = _readDynamicRuleEditorRules();
+  const originalRules = normalizeDynamicRules(dynamicRuleEditorOriginalRules);
+
+  resolvedTarget.rules = originalRules;
+  pushUndoSnapshot();
+  resolvedTarget.rules = nextRules;
+  if (target.targetType === 'set') touchSet(resolvedTarget);
+  hideDynamicRuleEditor({ restore: false });
+  renderAll();
+  saveState();
+}
+
+function attachDynamicRuleEditorListeners() {
+  document.getElementById('dynamicRuleEditorCancelBtn')?.addEventListener('click', hideDynamicRuleEditor);
+  document.getElementById('dynamicRuleEditorSaveBtn')?.addEventListener('click', handleDynamicRuleEditorSave);
+  initChipInput(document.getElementById('dynamicRuleIncludeTags'), tagChipOpts());
+  initChipInput(document.getElementById('dynamicRuleExcludeTags'), tagChipOpts());
+  document.getElementById('dynamicRuleIncludeTags')?.addEventListener('input', _applyDynamicRuleEditorPreview);
+  document.getElementById('dynamicRuleExcludeTags')?.addEventListener('input', _applyDynamicRuleEditorPreview);
+}
+
 // --- Folder modal ---
 
 let folderModalMode = 'create';
+let folderModalTargetMode = 'static';
 
-function showFolderModal(mode, ct) {
+function _findFolderItemForContext(ct = contextTarget) {
+  if (!ct) return null;
+  if (ct.area === 'nav-item') return findNavItemPath(ct.itemId)?.item || null;
+  const board = getBoardForContext(ct);
+  return board ? findBoardItemInColumns(board, ct.itemId)?.item || null : null;
+}
+
+function showFolderModal(mode, ct, options = {}) {
   folderModalMode = mode;
   if (ct) contextTarget = ct;
   const modalCard = document.getElementById('modalCard');
   const panel = document.getElementById('folderModal');
+  const folderItem = mode === 'edit' ? _findFolderItemForContext(contextTarget) : null;
+  folderModalTargetMode = mode === 'edit'
+    ? normalizeFolderMode(folderItem?.folderMode ?? folderItem?.mode)
+    : normalizeFolderMode(options.folderMode);
   panel.dataset.restoreModalCard = modalCard.classList.contains('hidden') ? 'false' : 'true';
   modalCard.classList.add('hidden');
   panel.classList.remove('hidden');
   elements.modalOverlay.classList.remove('hidden');
   const submitBtn = document.getElementById('folderModalSubmitBtn');
-  document.getElementById('fmSubtitle').textContent = mode === 'edit' ? 'Edit Folder' : 'New Folder';
+  const dynamicMode = folderModalTargetMode === 'dynamic';
+  const sortBtn = document.getElementById('fmSortBtn');
+  document.getElementById('fmSubtitle').textContent = mode === 'edit'
+    ? (dynamicMode ? 'Edit Dynamic Folder' : 'Edit Folder')
+    : (dynamicMode ? 'New Dynamic Folder' : 'New Folder');
+  document.getElementById('fmName').placeholder = dynamicMode ? 'New Dynamic Folder' : 'New Folder';
+  document.getElementById('fmModeBadge')?.classList.toggle('hidden', !dynamicMode);
+  sortBtn?.classList.toggle('hidden', !(mode === 'edit' && dynamicMode));
+  if (sortBtn) {
+    const sortTitle = _dynamicSortButtonTitle(folderItem?.sortMode);
+    sortBtn.title = sortTitle;
+    sortBtn.setAttribute('aria-label', sortTitle);
+  }
+  document.getElementById('fmRulesBtn')?.classList.toggle('hidden', !(mode === 'edit' && dynamicMode));
   if (mode === 'edit') {
     submitBtn.textContent = 'Save';
-    let folderItem = null;
-    if (contextTarget.area === 'nav-item') {
-      folderItem = findNavItemPath(contextTarget.itemId)?.item;
-    } else {
-      const board = getBoardForContext(contextTarget);
-      folderItem = board ? findBoardItemInColumns(board, contextTarget.itemId)?.item : null;
-    }
     if (folderItem) {
       document.getElementById('fmName').value = folderItem.title || '';
       document.getElementById('fmTags').value = (folderItem.tags || []).join(' ');
@@ -818,6 +1060,7 @@ function showFolderModal(mode, ct) {
 }
 
 function hideFolderModal() {
+  hideDynamicSortMenu();
   const panel = document.getElementById('folderModal');
   const restoreModalCard = panel.dataset.restoreModalCard === 'true';
   panel.classList.add('hidden');
@@ -846,17 +1089,21 @@ function handleFolderModalSubmit() {
     } else if (area === 'nav-subfolder') {
       if (parent) {
         parent.children = parent.children || [];
-        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags });
+        parent.children.push(createFolderRecord(name, { tags, sharedTags }));
         parent.collapsed = false;
       }
     } else if (area === 'board-subfolder') {
       if (parent) {
+        if (!canInsertIntoFolder(parent, 'folder')) {
+          showNotice('Dynamic folders cannot contain subfolders.');
+          return;
+        }
         parent.children = parent.children || [];
-        parent.children.push({ id: `id-${Date.now()}`, type: 'folder', title: name, children: [], tags, sharedTags });
+        parent.children.push(createFolderRecord(name, { tags, sharedTags, folderMode: folderModalTargetMode }));
         parent.collapsed = false;
       }
     } else {
-      addBookmarkItem('folder', name, contextTarget?.columnId, { tags, sharedTags });
+      addBookmarkItem('folder', name, contextTarget?.columnId, { tags, sharedTags, folderMode: folderModalTargetMode });
     }
   }
   hideFolderModal();
@@ -867,6 +1114,16 @@ function handleFolderModalSubmit() {
 function attachFolderModalListeners() {
   document.getElementById('folderModalCancelBtn').addEventListener('click', hideFolderModal);
   document.getElementById('folderModalSubmitBtn').addEventListener('click', handleFolderModalSubmit);
+  document.getElementById('fmRulesBtn').addEventListener('click', () => {
+    const folderItem = _findFolderItemForContext(contextTarget);
+    if (!isDynamicFolder(folderItem)) return;
+    showDynamicRuleEditor({ targetType: 'folder', contextTarget: { ...contextTarget } });
+  });
+  document.getElementById('fmSortBtn').addEventListener('click', event => {
+    const folderItem = _findFolderItemForContext(contextTarget);
+    if (!isDynamicFolder(folderItem)) return;
+    showDynamicSortMenu(event.currentTarget, { targetType: 'folder', contextTarget: { ...contextTarget } });
+  });
   document.getElementById('fmName').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); handleFolderModalSubmit(); }
   });

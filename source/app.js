@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.56';
+const APP_VERSION = '0.11.58';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -214,6 +214,7 @@ function resetTransientUiForDataReload() {
   if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
   if (!document.getElementById('trashPanel').classList.contains('hidden')) hideTrashPanel();
   if (!document.getElementById('tagManagerPanel').classList.contains('hidden')) hideTagManagerPanel();
+  if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) hideDynamicRuleEditor();
   if (!document.getElementById('settingsPanel').classList.contains('hidden')) hideSettingsPanel();
   if (!document.getElementById('folderModal').classList.contains('hidden')) hideFolderModal();
   if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) {
@@ -833,7 +834,9 @@ function attachEventListeners() {
   elements.modalCancelBtn.addEventListener('click', hideModal);
   elements.modalOverlay.addEventListener('click', event => {
     if (event.target !== elements.modalOverlay) return;
-    if (!document.getElementById('settingsPanel').classList.contains('hidden')) {
+    if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) {
+      hideDynamicRuleEditor();
+    } else if (!document.getElementById('settingsPanel').classList.contains('hidden')) {
       hideSettingsPanel();
     } else if (!document.getElementById('boardSettingsPanel').classList.contains('hidden')) {
       cancelBoardSettingsPanel();
@@ -1020,6 +1023,7 @@ function attachEventListeners() {
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) { hideInboxPanel(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }
+    if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) { hideDynamicRuleEditor(); return; }
     if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) { hideSetManagerPanel(); return; }
     if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) { hideImportManagerPanel(); return; }
     if (!document.getElementById('trashPanel').classList.contains('hidden')) { hideTrashPanel(); return; }
@@ -1068,6 +1072,7 @@ attachEventListeners();
 attachSettingsListeners();
 attachBoardSettingsListeners();
 attachFolderModalListeners();
+attachDynamicRuleEditorListeners();
 attachInboxListeners();
 attachImportManagerListeners();
 attachSetPanelListeners();
