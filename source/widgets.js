@@ -61,29 +61,20 @@ function createWidgetElement(widget, columnId) {
   el.dataset.itemType = 'widget';
   el.draggable = true;
 
-  const header = document.createElement('div');
-  header.className = 'widget-header';
-
-  const titleSpan = document.createElement('span');
-  titleSpan.className = 'widget-title';
-  titleSpan.textContent = widget.title || def.name;
-  header.appendChild(titleSpan);
-
   const settingsBtn = document.createElement('button');
   settingsBtn.type = 'button';
   settingsBtn.className = 'widget-action-btn';
   settingsBtn.title = 'Widget settings';
+  settingsBtn.setAttribute('aria-label', `Edit ${widget.title || def.name} widget`);
   settingsBtn.appendChild(icon('icon-settings'));
   settingsBtn.addEventListener('click', e => {
     e.stopPropagation();
     openWidgetSettings(widget, () => {
-      titleSpan.textContent = widget.title || def.name;
       body.innerHTML = '';
       def.render(widget, body, 'column');
     });
   });
-  header.appendChild(settingsBtn);
-  el.appendChild(header);
+  el.appendChild(settingsBtn);
 
   const body = document.createElement('div');
   body.className = 'widget-body';
@@ -264,10 +255,8 @@ function _todayIsoKey() {
 }
 
 function _getServiceApiKey(serviceName) {
-  const keys = state?.settings?.serviceApiKeys;
-  if (!keys || typeof keys !== 'object') return '';
-  const value = keys[serviceName];
-  return typeof value === 'string' ? value.trim() : '';
+  if (typeof getServiceSecret === 'function') return getServiceSecret(serviceName);
+  return '';
 }
 
 function _setWidgetStatusText(el, text, cls = '') {

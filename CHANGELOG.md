@@ -5,6 +5,34 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.66] — 2026-05-29
+
+### Added
+
+- **Extension Import Manager delivery** — added a popup action and bridge flow that sends the current browser tab directly into the hub Import Manager, including Firefox-provided favicon data when available.
+- **Managed background assets** — tab background images picked from disk or loaded from web URLs are now copied into managed `assets/backgrounds/...` files and stored by path instead of embedding large data URLs in the shared JSON database.
+- **Native favicon fallback** — the native host can now fetch page HTML, parse declared favicon/touch-icon links, download the best candidate, and return a cached data URL for stubborn sites.
+- **Generic secret bridge** — added reusable extension/native secret get/set/delete/list actions with Windows Credential Manager support for the NASA APOD API key.
+- **Native database backups** — the native host now creates rotating `before-write` JSON backups before replacing the shared database file.
+
+### Changed
+
+- **Disk-backed persistence** — large hubs now treat the extension/native shared database as the primary persistence path and avoid mirroring the full database into extension storage when disk storage is available.
+- **Shared database reads** — extension/native shared-database loading now uses chunked file reads so large JSON files are not limited by native messaging response size.
+- **Secret persistence** — the NASA APOD widget now reads its API key from the secret cache/Credential Manager path instead of relying on the shared JSON database.
+- **Settings organization** — moved visual toggles into a dedicated UI settings tab and clarified shared data file, desktop sync, and API key status wording.
+- **Temporary extension setup** — native-host installers now accept explicit extension IDs so temporary/debug extension IDs can be allowed during development.
+
+### Fixed
+
+- **Browser quota failures** — saving no longer fails just because browser storage or extension storage is full when the shared disk database is available.
+- **Shared database recovery safety** — pending disk saves keep an emergency browser snapshot, startup detects when local cache looks newer than the shared database, and sync pauses/prompts instead of silently accepting an older disk snapshot.
+- **External-change reload loop** — accepting a freshly loaded shared snapshot now clears stale queued writes and updates the shared-disk baseline so the hub does not repeatedly reload the same file change.
+- **Secret migration safety** — JSON API keys are scrubbed only after secure storage is verified and migration/write succeeds, preventing keys from disappearing when the native bridge is temporarily unavailable.
+- **Favicon refresh behavior** — `Refresh favicon` now forces the native favicon lookup once before public favicon services can return a generic successful icon.
+
+---
+
 ## [0.11.58] — 2026-05-09
 
 ### Added

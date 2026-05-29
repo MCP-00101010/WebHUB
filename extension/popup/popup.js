@@ -4,10 +4,12 @@ async function main() {
   const elMorpheus = document.getElementById('statusMorpheus');
   const elNative   = document.getElementById('statusNative');
   const elPath     = document.getElementById('statusPath');
+  const elDetail   = document.getElementById('statusDetail');
   const tabInfo    = document.getElementById('tabInfo');
   const tabTitle   = document.getElementById('tabTitle');
   const tabUrl     = document.getElementById('tabUrl');
   const sendBtn    = document.getElementById('sendBtn');
+  const importBtn  = document.getElementById('importBtn');
   const feedback   = document.getElementById('feedback');
 
   function setRow(el, text, cls) {
@@ -36,11 +38,15 @@ async function main() {
   let morpheusOpen = false;
   let nativeAvailable = false;
   let databasePath = null;
+  let nativeError = '';
+  let extensionId = '';
   try {
     const res = await browser.runtime.sendMessage({ type: 'MW_GET_STATUS' });
     morpheusOpen    = res.morpheusOpen;
     nativeAvailable = res.nativeAvailable;
     databasePath    = res.databasePath || null;
+    nativeError     = res.nativeError || '';
+    extensionId     = res.extensionId || browser.runtime.id || '';
   } catch {
     setRow(elMorpheus, '⚠ Extension error', 'err');
     return;
@@ -52,8 +58,8 @@ async function main() {
   );
 
   setRow(elNative,
-    nativeAvailable ? '● File save: enabled' : '○ File save: extension storage only',
-    nativeAvailable ? 'ok' : 'muted'
+    nativeAvailable ? '● Disk database: enabled' : '○ Disk database: unavailable',
+    nativeAvailable ? 'ok' : 'warn'
   );
 
   if (nativeAvailable) {
@@ -61,8 +67,14 @@ async function main() {
     elPath.classList.remove('hidden');
     elPath.classList.toggle('warn', !databasePath);
     elPath.classList.toggle('muted', !databasePath);
+    elDetail.classList.add('hidden');
   } else {
-    elPath.classList.add('hidden');
+    elPath.textContent = extensionId ? `Extension ID: ${extensionId}` : 'Extension ID unavailable';
+    elPath.classList.remove('hidden');
+    elPath.classList.add('muted');
+    elDetail.textContent = nativeError ? `Native error: ${nativeError}` : 'Native host did not connect';
+    elDetail.classList.remove('hidden');
+    elDetail.classList.add('warn');
   }
 
   if (!morpheusOpen || !isReal) {
@@ -71,27 +83,35 @@ async function main() {
   }
 
   sendBtn.disabled = false;
+  importBtn.disabled = false;
 
-  sendBtn.addEventListener('click', async () => {
+  async function sendCurrentTab(type, okMessage) {
     sendBtn.disabled = true;
+    importBtn.disabled = true;
     try {
       const res = await browser.runtime.sendMessage({
-        type:  'MW_SEND_TAB',
+        type,
         url:   currentTab.url,
-        title: currentTab.title || currentTab.url
+        title: currentTab.title || currentTab.url,
+        faviconCache: currentTab.favIconUrl || ''
       });
       if (res.ok) {
-        showFeedback('Sent to inbox!', 'ok');
+        showFeedback(okMessage, 'ok');
         setTimeout(() => window.close(), 1200);
       } else {
         sendBtn.disabled = false;
+        importBtn.disabled = false;
         showFeedback('Error: ' + (res.error || 'unknown'), 'err');
       }
     } catch (err) {
       sendBtn.disabled = false;
+      importBtn.disabled = false;
       showFeedback('Error: ' + err.message, 'err');
     }
-  });
+  }
+
+  sendBtn.addEventListener('click', () => sendCurrentTab('MW_SEND_TAB', 'Sent to inbox!'));
+  importBtn.addEventListener('click', () => sendCurrentTab('MW_SEND_TAB_TO_IMPORT_MANAGER', 'Sent to Import Manager!'));
 }
 
 main();

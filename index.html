@@ -232,7 +232,7 @@
 
           <div class="sidebar-meta-row">
             <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.58</button>
+            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.66</button>
           </div>
         </section>
 
@@ -477,6 +477,7 @@
         <div class="settings-tabs">
           <button type="button" class="settings-tab" data-tab="about">About</button>
           <button type="button" class="settings-tab active" data-tab="general">General</button>
+          <button type="button" class="settings-tab" data-tab="ui">UI</button>
           <button type="button" class="settings-tab" data-tab="api-keys">API Keys</button>
           <button type="button" class="settings-tab" data-tab="theme">Theme</button>
           <button type="button" class="settings-tab" data-tab="style">Style</button>
@@ -498,9 +499,10 @@
         </div>
 
         <div class="settings-section span-full style-global-section" data-tab="style">
-          <div class="settings-section-label">Global Style</div>
+          <div class="settings-section-label">Theme Defaults</div>
+          <div class="settings-help">These text settings belong to the active theme. Switch themes to edit a different style profile.</div>
           <div class="settings-row">
-            <span>Font size</span>
+            <span>Base text size</span>
             <div class="icon-size-radios">
               <label class="icon-size-label" title="Small"><input type="radio" name="stgGlobalFontScale" value="small" /><span>S</span></label>
               <label class="icon-size-label" title="Medium"><input type="radio" name="stgGlobalFontScale" value="medium" /><span>M</span></label>
@@ -508,104 +510,55 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Font color</span>
+            <span>Base text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgGlobalFontColor" class="color-input" />
             </div>
           </div>
           <div class="settings-row">
-            <span>Use theme color</span>
+            <span>Use theme accent color</span>
             <label class="settings-toggle">
               <input id="stgGlobalThemeColor" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
           <div class="settings-row">
-            <span>Speed Dial icons</span>
-            <div class="icon-size-radios">
-              <label class="icon-size-label" title="Small"><input type="radio" name="stgSpeedDialSize" value="small" /><span>S</span></label>
-              <label class="icon-size-label" title="Medium"><input type="radio" name="stgSpeedDialSize" value="medium" /><span>M</span></label>
-              <label class="icon-size-label" title="Large"><input type="radio" name="stgSpeedDialSize" value="large" /><span>L</span></label>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Essentials icons</span>
-            <div class="icon-size-radios">
-              <label class="icon-size-label" title="Small"><input type="radio" name="stgEssentialsSize" value="small" /><span>S</span></label>
-              <label class="icon-size-label" title="Medium"><input type="radio" name="stgEssentialsSize" value="medium" /><span>M</span></label>
-              <label class="icon-size-label" title="Large"><input type="radio" name="stgEssentialsSize" value="large" /><span>L</span></label>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Show Essentials</span>
-            <label class="settings-toggle">
-              <input id="stgShowEssentials" type="checkbox" />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <span>Essentials count</span>
-            <div class="settings-stepper">
-              <button type="button" id="stgEssCountMinus" class="stepper-btn">-</button>
-              <span id="stgEssCountVal">10</span>
-              <button type="button" id="stgEssCountPlus" class="stepper-btn">+</button>
-            </div>
-          </div>
-          <div id="stgEssHiddenWarning" class="settings-warning hidden">Some stored essentials are hidden; their slot index exceeds the current display count.</div>
-          <div class="settings-row">
-            <span>Bookmark tag chips</span>
-            <label class="settings-toggle">
-              <input id="stgShowBookmarkTags" type="checkbox" />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <span>Folder tag chips</span>
-            <label class="settings-toggle">
-              <input id="stgShowFolderTags" type="checkbox" />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <span>Use active tab opacity</span>
-            <label class="settings-toggle">
-              <input id="stgSidebarUseActiveOpacity" type="checkbox" />
-              <span class="toggle-track"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <span>Sidebar opacity</span>
-            <div id="stgSidebarOpacityGroup" class="settings-slider-group">
-              <input id="stgSidebarOpacity" type="range" min="10" max="100" step="1" />
-              <span id="stgSidebarOpacityVal">100</span><span class="stepper-unit">%</span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Advanced settings</span>
+            <span>Show section overrides</span>
             <label class="settings-toggle">
               <input id="stgShowAdvancedStyle" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
+          <div class="settings-help">Turn this on to customize specific interface areas without changing the theme defaults above.</div>
+        </div>
+
+        <div class="settings-section span-full style-advanced-intro" data-tab="style">
+          <div class="settings-section-label">Section Overrides</div>
+          <div class="settings-help">These cards let you fine-tune individual parts of the interface for the current theme.</div>
         </div>
 
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="hubName">
-          <div class="settings-section-label settings-section-label--row">Hub
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="hubName" /> Override</label>
+          <div class="settings-section-label settings-section-label--row">Hub Title
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="hubName" /> Use custom</label>
           </div>
+          <div class="settings-help">Controls the main WebHub title shown at the top of the sidebar.</div>
           <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgHubNameFont" type="number" min="10" max="48" />
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgHubNameFont" class="settings-number-input settings-number-input--stepper" type="number" min="10" max="48" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgHubNameFont" data-step-direction="up" aria-label="Increase hub title text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgHubNameFont" data-step-direction="down" aria-label="Decrease hub title text size">-</button>
+              </div>
               <span>px</span>
             </div>
           </div>
           <div class="settings-row">
-            <span>Font</span>
+            <span>Font family</span>
             <select id="stgHubNameFamily"></select>
           </div>
           <div class="settings-row">
-            <span>Style</span>
+            <span>Text style</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn fmt-bold" data-fmt="hubNameBold" title="Bold">B</button>
               <button type="button" class="fmt-btn fmt-italic" data-fmt="hubNameItalic" title="Italic">I</button>
@@ -613,7 +566,7 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Align</span>
+            <span>Text alignment</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn align-btn" data-align-key="hubNameTextAlign" data-align-val="left" title="Left">L</button>
               <button type="button" class="fmt-btn align-btn" data-align-key="hubNameTextAlign" data-align-val="center" title="Center">C</button>
@@ -621,71 +574,37 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Color</span>
+            <span>Text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgHubNameColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="hubNameColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="hubNameColor" title="Reset to default">×</button>
             </div>
           </div>
         </div>
 
-        <div class="settings-section style-advanced-section" data-tab="style" data-style-section="boardTitle">
-          <div class="settings-section-label settings-section-label--row">Board Title
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="boardTitle" /> Override</label>
-          </div>
-          <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgBoardTitleFont" type="number" min="14" max="48" />
-              <span>px</span>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Font</span>
-            <select id="stgBoardTitleFamily"></select>
-          </div>
-          <div class="settings-row">
-            <span>Style</span>
-            <div class="fmt-btns">
-              <button type="button" class="fmt-btn fmt-bold" data-fmt="boardTitleBold" title="Bold">B</button>
-              <button type="button" class="fmt-btn fmt-italic" data-fmt="boardTitleItalic" title="Italic">I</button>
-              <button type="button" class="fmt-btn fmt-underline" data-fmt="boardTitleUnderline" title="Underline">U</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Align</span>
-            <div class="fmt-btns">
-              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="left" title="Left">L</button>
-              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="center" title="Center">C</button>
-              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="right" title="Right">R</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <span>Color</span>
-            <div class="color-picker-group">
-              <input type="color" id="stgBoardTitleColor" class="color-input" />
-              <button type="button" class="color-reset-btn" data-color-key="boardTitleColor" title="Reset to default">×</button>
-            </div>
-          </div>
-        </div>
-
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="board">
-          <div class="settings-section-label settings-section-label--row">Boards
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="board" /> Override</label>
+          <div class="settings-section-label settings-section-label--row">Board Links
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="board" /> Use custom</label>
           </div>
+          <div class="settings-help">Applies to board items in the sidebar navigation.</div>
           <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgBoardFont" type="number" min="10" max="24" />
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgBoardFont" class="settings-number-input settings-number-input--stepper" type="number" min="10" max="24" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBoardFont" data-step-direction="up" aria-label="Increase board link text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBoardFont" data-step-direction="down" aria-label="Decrease board link text size">-</button>
+              </div>
               <span>px</span>
             </div>
           </div>
           <div class="settings-row">
-            <span>Font</span>
+            <span>Font family</span>
             <select id="stgBoardFamily"></select>
           </div>
           <div class="settings-row">
-            <span>Style</span>
+            <span>Text style</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn fmt-bold" data-fmt="boardBold" title="Bold">B</button>
               <button type="button" class="fmt-btn fmt-italic" data-fmt="boardItalic" title="Italic">I</button>
@@ -693,7 +612,7 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Align</span>
+            <span>Text alignment</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn align-btn" data-align-key="boardTextAlign" data-align-val="left" title="Left">L</button>
               <button type="button" class="fmt-btn align-btn" data-align-key="boardTextAlign" data-align-val="center" title="Center">C</button>
@@ -701,31 +620,83 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Color</span>
+            <span>Text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgBoardColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="boardColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="boardColor" title="Reset to default">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section style-advanced-section" data-tab="style" data-style-section="boardTitle">
+          <div class="settings-section-label settings-section-label--row">Board Headers
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="boardTitle" /> Use custom</label>
+          </div>
+          <div class="settings-help">Applies to the main board heading text inside the content area.</div>
+          <div class="settings-row">
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgBoardTitleFont" class="settings-number-input settings-number-input--stepper" type="number" min="14" max="48" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBoardTitleFont" data-step-direction="up" aria-label="Increase board header text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBoardTitleFont" data-step-direction="down" aria-label="Decrease board header text size">-</button>
+              </div>
+              <span>px</span>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Font family</span>
+            <select id="stgBoardTitleFamily"></select>
+          </div>
+          <div class="settings-row">
+            <span>Text style</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn fmt-bold" data-fmt="boardTitleBold" title="Bold">B</button>
+              <button type="button" class="fmt-btn fmt-italic" data-fmt="boardTitleItalic" title="Italic">I</button>
+              <button type="button" class="fmt-btn fmt-underline" data-fmt="boardTitleUnderline" title="Underline">U</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Text alignment</span>
+            <div class="fmt-btns">
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="left" title="Left">L</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="center" title="Center">C</button>
+              <button type="button" class="fmt-btn align-btn" data-align-key="boardTitleTextAlign" data-align-val="right" title="Right">R</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Text color</span>
+            <div class="color-picker-group">
+              <input type="color" id="stgBoardTitleColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="boardTitleColorFromTheme" /><span>Use theme accent color</span></label>
+              <button type="button" class="color-reset-btn" data-color-key="boardTitleColor" title="Reset to default">×</button>
             </div>
           </div>
         </div>
 
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="bookmark">
           <div class="settings-section-label settings-section-label--row">Bookmarks
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="bookmark" /> Override</label>
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="bookmark" /> Use custom</label>
           </div>
+          <div class="settings-help">Applies to bookmark labels wherever bookmarks are shown.</div>
           <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgBookmarkFont" type="number" min="10" max="24" />
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgBookmarkFont" class="settings-number-input settings-number-input--stepper" type="number" min="10" max="24" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBookmarkFont" data-step-direction="up" aria-label="Increase bookmark text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgBookmarkFont" data-step-direction="down" aria-label="Decrease bookmark text size">-</button>
+              </div>
               <span>px</span>
             </div>
           </div>
           <div class="settings-row">
-            <span>Font</span>
+            <span>Font family</span>
             <select id="stgBookmarkFamily"></select>
           </div>
           <div class="settings-row">
-            <span>Style</span>
+            <span>Text style</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn fmt-bold" data-fmt="bookmarkBold" title="Bold">B</button>
               <button type="button" class="fmt-btn fmt-italic" data-fmt="bookmarkItalic" title="Italic">I</button>
@@ -733,7 +704,7 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Align</span>
+            <span>Text alignment</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn align-btn" data-align-key="bookmarkTextAlign" data-align-val="left" title="Left">L</button>
               <button type="button" class="fmt-btn align-btn" data-align-key="bookmarkTextAlign" data-align-val="center" title="Center">C</button>
@@ -741,9 +712,10 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Color</span>
+            <span>Text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgBookmarkColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="bookmarkColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="bookmarkColor" title="Reset to default">×</button>
             </div>
           </div>
@@ -751,21 +723,26 @@
 
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="folder">
           <div class="settings-section-label settings-section-label--row">Folders
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="folder" /> Override</label>
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="folder" /> Use custom</label>
           </div>
+          <div class="settings-help">Applies to folder names in both the sidebar and board content.</div>
           <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgFolderFont" type="number" min="10" max="24" />
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgFolderFont" class="settings-number-input settings-number-input--stepper" type="number" min="10" max="24" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgFolderFont" data-step-direction="up" aria-label="Increase folder text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgFolderFont" data-step-direction="down" aria-label="Decrease folder text size">-</button>
+              </div>
               <span>px</span>
             </div>
           </div>
           <div class="settings-row">
-            <span>Font</span>
+            <span>Font family</span>
             <select id="stgFolderFamily"></select>
           </div>
           <div class="settings-row">
-            <span>Style</span>
+            <span>Text style</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn fmt-bold" data-fmt="folderBold" title="Bold">B</button>
               <button type="button" class="fmt-btn fmt-italic" data-fmt="folderItalic" title="Italic">I</button>
@@ -773,7 +750,7 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Align</span>
+            <span>Text alignment</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn align-btn" data-align-key="folderTextAlign" data-align-val="left" title="Left">L</button>
               <button type="button" class="fmt-btn align-btn" data-align-key="folderTextAlign" data-align-val="center" title="Center">C</button>
@@ -781,9 +758,10 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Color</span>
+            <span>Text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgFolderColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="folderColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="folderColor" title="Reset to default">×</button>
             </div>
           </div>
@@ -791,21 +769,26 @@
 
         <div class="settings-section style-advanced-section" data-tab="style" data-style-section="title">
           <div class="settings-section-label settings-section-label--row">Titles &amp; Dividers
-            <label class="settings-override-toggle"><input type="checkbox" data-style-override="title" /> Override</label>
+            <label class="settings-override-toggle"><input type="checkbox" data-style-override="title" /> Use custom</label>
           </div>
+          <div class="settings-help">Applies to title rows and the divider line that can appear with them.</div>
           <div class="settings-row">
-            <span>Font size</span>
-            <div class="settings-number-group">
-              <input id="stgTitleFont" type="number" min="8" max="24" />
+            <span>Text size</span>
+            <div class="settings-number-group settings-number-group--stepper">
+              <input id="stgTitleFont" class="settings-number-input settings-number-input--stepper" type="number" min="8" max="24" />
+              <div class="settings-number-spinner">
+                <button type="button" class="settings-number-step-btn" data-number-target="stgTitleFont" data-step-direction="up" aria-label="Increase title text size">+</button>
+                <button type="button" class="settings-number-step-btn" data-number-target="stgTitleFont" data-step-direction="down" aria-label="Decrease title text size">-</button>
+              </div>
               <span>px</span>
             </div>
           </div>
           <div class="settings-row">
-            <span>Font</span>
+            <span>Font family</span>
             <select id="stgTitleFamily"></select>
           </div>
           <div class="settings-row">
-            <span>Style</span>
+            <span>Text style</span>
             <div class="fmt-btns">
               <button type="button" class="fmt-btn fmt-bold" data-fmt="titleBold" title="Bold">B</button>
               <button type="button" class="fmt-btn fmt-italic" data-fmt="titleItalic" title="Italic">I</button>
@@ -813,21 +796,23 @@
             </div>
           </div>
           <div class="settings-row">
-            <span>Color</span>
+            <span>Text color</span>
             <div class="color-picker-group">
               <input type="color" id="stgTitleColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="titleColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="titleColor" title="Reset to default">×</button>
             </div>
           </div>
           <div class="settings-row">
-            <span>Line color</span>
+            <span>Divider color</span>
             <div class="color-picker-group">
               <input type="color" id="stgTitleLineColor" class="color-input" />
+              <label class="theme-color-inline-toggle"><input type="checkbox" data-theme-color-toggle="titleLineColorFromTheme" /><span>Use theme accent color</span></label>
               <button type="button" class="color-reset-btn" data-color-key="titleLineColor" title="Reset to default">×</button>
             </div>
           </div>
           <div class="settings-row">
-            <span>Line style</span>
+            <span>Divider style</span>
             <select id="stgTitleLineStyle">
               <option value="solid">Solid</option>
               <option value="dashed">Dashed</option>
@@ -836,7 +821,7 @@
             </select>
           </div>
           <div class="settings-row">
-            <span>Line thickness</span>
+            <span>Divider thickness</span>
             <div class="settings-stepper">
               <button type="button" id="stgLineThicknessMinus" class="stepper-btn">-</button>
               <span id="stgLineThicknessVal">1</span><span class="stepper-unit">px</span>
@@ -848,14 +833,14 @@
         <div class="settings-section span-full" data-tab="general">
           <div class="settings-section-label">General</div>
           <div class="settings-row">
-            <span>Warn on close if unsaved</span>
+            <span>Warn before closing with unsaved changes</span>
             <label class="settings-toggle">
               <input id="stgWarnOnClose" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
           <div class="settings-row">
-            <span>Delete confirmation</span>
+            <span>Confirm before deleting</span>
             <div class="confirm-delete-toggles">
               <div class="confirm-delete-item">
                 <span>Boards</span>
@@ -878,7 +863,7 @@
                 <label class="settings-toggle"><input id="stgConfirmDeleteFolder" type="checkbox" /><span class="toggle-track"></span></label>
               </div>
               <div class="confirm-delete-item">
-                <span>Titles/Dividers</span>
+                <span>Titles &amp; dividers</span>
                 <label class="settings-toggle"><input id="stgConfirmDeleteTitleDivider" type="checkbox" /><span class="toggle-track"></span></label>
               </div>
               <div class="confirm-delete-item">
@@ -896,7 +881,7 @@
             <div class="tz-picker-group">
               <input id="stgApiKeyNasa" type="password" class="settings-text-input" placeholder="Paste your NASA API key" autocomplete="off" />
               <div class="tz-hint-row">
-                <span class="tz-hint">Used by the NASA APOD widget. Stored locally in your hub data.</span>
+                <span id="stgApiKeyNasaStatus" class="tz-hint">Used by the NASA APOD widget. Stored in Windows Credential Manager when desktop sync is available.</span>
                 <a href="https://api.nasa.gov/" target="_blank" rel="noreferrer noopener" class="widget-apod-settings-link">Get key</a>
               </div>
             </div>
@@ -905,65 +890,146 @@
 
         <div class="settings-section span-full" data-tab="general">
           <div class="settings-section-label">Data</div>
+          <div class="settings-help">Use a shared data file when desktop sync is available. Otherwise the hub stays local to this browser.</div>
           <div class="settings-row">
-            <span>Shared database</span>
+            <span>Shared data file path</span>
             <input id="stgDatabasePath" type="text" class="settings-text-input" placeholder="C:\Path\morpheus-webhub.json" />
           </div>
           <div class="settings-row">
-            <span id="stgDatabasePathStatus" class="settings-muted">Extension storage only.</span>
+            <span id="stgDatabasePathStatus" class="settings-muted">Browser-only storage.</span>
             <div class="fmt-btns">
               <button type="button" id="stgDatabasePathBrowse" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Browse…</button>
-              <button type="button" id="stgDatabasePathApply" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Apply Path</button>
+              <button type="button" id="stgDatabasePathApply" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Apply path</button>
             </div>
           </div>
           <div class="settings-row">
-            <span>Export data</span>
+            <span>Export hub data</span>
             <button type="button" id="stgExportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Download JSON</button>
           </div>
           <div class="settings-row">
             <span id="stgLastExported" class="settings-muted">Never exported</span>
           </div>
           <div class="settings-row">
-            <span>Import data</span>
+            <span>Import hub data</span>
             <button type="button" id="stgImportBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Load JSON</button>
             <input type="file" id="stgImportFile" accept=".json" style="display:none" />
           </div>
           <div class="settings-row">
-            <span>Reload hub data</span>
+            <span>Reload saved data</span>
             <button type="button" id="stgReloadHubBtn" class="secondary-btn" style="font-size:0.8rem;padding:4px 10px;">Reload Now</button>
           </div>
           <div class="settings-row">
-            <span id="stgReloadHint" class="settings-muted">Reloads from the shared database when available, otherwise from browser cache.</span>
+            <span id="stgReloadHint" class="settings-muted">Reloads from the shared file when available, otherwise from browser storage.</span>
           </div>
           <div class="settings-row">
-            <span>Show auto-refresh notice</span>
+            <span>Show shared-file sync note</span>
             <label class="settings-toggle">
               <input id="stgSharedAutoRefreshNotice" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
+        </div>
+
+        <div class="settings-section" data-tab="ui">
+          <div class="settings-section-label">Bookmarks</div>
+          <div class="settings-help">Controls bookmark hover details and the tag chips shown on bookmarks and folders.</div>
           <div class="settings-row">
-            <span>Bookmark tooltips</span>
+            <span>Show bookmark tooltips</span>
             <label class="settings-toggle">
               <input id="stgShowBookmarkTooltips" type="checkbox" />
               <span class="toggle-track"></span>
             </label>
           </div>
+          <div class="settings-row">
+            <span>Show bookmark tag chips</span>
+            <label class="settings-toggle">
+              <input id="stgShowBookmarkTags" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Show folder tag chips</span>
+            <label class="settings-toggle">
+              <input id="stgShowFolderTags" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section" data-tab="ui">
+          <div class="settings-section-label">Essentials</div>
+          <div class="settings-help">Changing visible slots only affects how many essentials are shown, not what is saved.</div>
+          <div class="settings-row">
+            <span>Show essentials</span>
+            <label class="settings-toggle">
+              <input id="stgShowEssentials" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Visible slots</span>
+            <div class="settings-stepper">
+              <button type="button" id="stgEssCountMinus" class="stepper-btn">-</button>
+              <span id="stgEssCountVal">10</span>
+              <button type="button" id="stgEssCountPlus" class="stepper-btn">+</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span>Icon size</span>
+            <div class="icon-size-radios">
+              <label class="icon-size-label" title="Small"><input type="radio" name="stgEssentialsSize" value="small" /><span>S</span></label>
+              <label class="icon-size-label" title="Medium"><input type="radio" name="stgEssentialsSize" value="medium" /><span>M</span></label>
+              <label class="icon-size-label" title="Large"><input type="radio" name="stgEssentialsSize" value="large" /><span>L</span></label>
+            </div>
+          </div>
+          <div id="stgEssHiddenWarning" class="settings-warning hidden">Some stored essentials are hidden; their slot index exceeds the current display count.</div>
+        </div>
+
+        <div class="settings-section" data-tab="ui">
+          <div class="settings-section-label">UI Opacity</div>
+          <div class="settings-help">Manual opacity only applies when matching the active tab is turned off.</div>
+          <div class="settings-row">
+            <span>Match active tab opacity</span>
+            <label class="settings-toggle">
+              <input id="stgSidebarUseActiveOpacity" type="checkbox" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <span>Manual sidebar opacity</span>
+            <div id="stgSidebarOpacityGroup" class="settings-slider-group">
+              <input id="stgSidebarOpacity" type="range" min="10" max="100" step="1" />
+              <span id="stgSidebarOpacityVal">100</span><span class="stepper-unit">%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-tab="ui">
+          <div class="settings-section-label">Speed Dial</div>
+          <div class="settings-help">Controls the icon scale used by quick-launch tiles.</div>
+          <div class="settings-row">
+            <span>Icon size</span>
+            <div class="icon-size-radios">
+              <label class="icon-size-label" title="Small"><input type="radio" name="stgSpeedDialSize" value="small" /><span>S</span></label>
+              <label class="icon-size-label" title="Medium"><input type="radio" name="stgSpeedDialSize" value="medium" /><span>M</span></label>
+              <label class="icon-size-label" title="Large"><input type="radio" name="stgSpeedDialSize" value="large" /><span>L</span></label>
+            </div>
+          </div>
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.58</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.66</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
-            <span>Extension</span>
+            <span>Browser extension</span>
             <span id="aboutExtensionStatus" class="settings-muted">Checking...</span>
           </div>
           <div class="settings-row">
-            <span>Native host</span>
+            <span>Desktop sync</span>
             <span id="aboutNativeStatus" class="settings-muted">Checking...</span>
           </div>
           <div class="settings-row">
-            <span>Database path</span>
+            <span>Shared file path</span>
             <span id="aboutDatabasePath" class="settings-muted">Checking...</span>
           </div>
           <p id="aboutExtensionFeatures" class="about-note">Extension features: checking...</p>

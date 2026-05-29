@@ -1,6 +1,12 @@
 # Morpheus WebHub — native messaging host installer (Windows)
 # Run from the extension/native/ directory:
 #   powershell -ExecutionPolicy Bypass -File install.ps1
+# Optional for temporary/debug add-ons:
+#   powershell -ExecutionPolicy Bypass -File install.ps1 -ExtensionIds "morpheus-webhub@local","<temporary-id>"
+
+param(
+    [string[]]$ExtensionIds = @("morpheus-webhub@local")
+)
 
 $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -35,6 +41,16 @@ if (-not $python) {
 }
 Write-Host "Python : $python"
 
+$allowedExtensionIds = @(
+    $ExtensionIds |
+        Where-Object { $_ -and $_.Trim() } |
+        ForEach-Object { $_.Trim() }
+) | Select-Object -Unique
+if (-not $allowedExtensionIds -or $allowedExtensionIds.Count -eq 0) {
+    $allowedExtensionIds = @("morpheus-webhub@local")
+}
+Write-Host "Allowed : $($allowedExtensionIds -join ', ')"
+
 # --- Write launcher .bat with resolved Python path ---
 $batPath  = Join-Path $scriptDir "morpheus_host.bat"
 $hostPath = Join-Path $scriptDir "morpheus_host.py"
@@ -64,7 +80,7 @@ $manifest = [ordered]@{
     description         = "Morpheus WebHub native messaging host"
     path                = $batPath
     type                = "stdio"
-    allowed_extensions  = @("morpheus-webhub@local")
+    allowed_extensions  = @($allowedExtensionIds)
 }
 $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding UTF8
 Write-Host "Manifest: $manifestPath"

@@ -3,6 +3,7 @@
 let boardSettingsCreatingId = null;
 let _boardSettingsCancelSnapshot = null;
 let _pendingDatabasePath = '';
+let _serviceSecretSaveTimer = null;
 
 function updateSidebarOpacitySettingsUi() {
   const useActive = document.getElementById('stgSidebarUseActiveOpacity')?.checked !== false;
@@ -109,6 +110,9 @@ function updateBgDropZonePreview(imageUrl) {
 }
 
 const MAX_BACKGROUND_IMAGE_DIMENSION = 2560;
+const BACKGROUND_ASSET_MIME = 'image/webp';
+const BACKGROUND_ASSET_EXTENSION = 'webp';
+const BACKGROUND_ASSET_REMOTE_MAX_BYTES = 25 * 1024 * 1024;
 
 function loadImageFromUrl(src) {
   return new Promise((resolve, reject) => {
@@ -134,14 +138,153 @@ async function optimizeBackgroundImageDataUrl(imageUrl) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return imageUrl;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const mimeMatch = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);/i);
-    const mimeType = mimeMatch?.[1] || 'image/jpeg';
-    return mimeType === 'image/png'
-      ? canvas.toDataURL(mimeType)
-      : canvas.toDataURL(mimeType, 0.86);
+    return canvas.toDataURL(BACKGROUND_ASSET_MIME, 0.86);
   } catch {
     return imageUrl;
   }
+}
+
+async function storeBackgroundImageDataUrl(rawDataUrl, { fileName = '' } = {}) {
+  const board = getActiveBoard();
+  const tab = getActiveTab();
+  if (!board || !tab) return null;
+  const optimizedDataUrl = await optimizeBackgroundImageDataUrl(rawDataUrl);
+  if (
+    typeof bridge !== 'undefined' &&
+    bridge.isAvailable() &&
+    bridge.nativeIsAvailable() &&
+    typeof bridge.saveAssetDataUrl === 'function' &&
+    optimizedDataUrl.startsWith('data:image/')
+  ) {
+    const saved = await bridge.saveAssetDataUrl({
+      kind: 'background',
+      collectionName: board.title || 'Board',
+      itemName: tab.title || fileName || 'Tab',
+      extension: BACKGROUND_ASSET_EXTENSION,
+      mimeType: BACKGROUND_ASSET_MIME,
+      dataUrl: optimizedDataUrl
+    });
+    if (saved?.publicPath) return saved.publicPath;
+    showNotice('Could not save the background image as an asset; keeping it embedded for now.');
+  }
+  return optimizedDataUrl;
+}
+
+async function applyBackgroundImageDataUrl(rawDataUrl, options = {}) {
+  const board = getActiveBoard();
+  const tab = getActiveTab();
+  if (!board || !tab) return;
+  tab.backgroundImage = await storeBackgroundImageDataUrl(rawDataUrl, options);
+  document.getElementById('bstgBgUrl').value = '';
+  updateBgDropZonePreview(tab.backgroundImage);
+  syncBoardCompatibilityFields(board, tab.id);
+  applyBoardBackground(board);
+}
+
+function isRemoteBackgroundUrl(value) {
+  return /^https?:\/\//i.test((value || '').trim());
+}
+
+async function cacheBackgroundImageUrl(url, { board = getActiveBoard(), tab = getActiveTab(), notifyFailure = true } = {}) {
+  const trimmedUrl = (url || '').trim();
+  if (!board || !tab || !isRemoteBackgroundUrl(trimmedUrl)) return null;
+  if (
+    typeof bridge === 'undefined' ||
+    !bridge.isAvailable() ||
+    !bridge.nativeIsAvailable() ||
+    typeof bridge.cacheAssetUrl !== 'function'
+  ) return null;
+  const saved = await bridge.cacheAssetUrl({
+    url: trimmedUrl,
+    kind: 'background',
+    collectionName: board.title || 'Board',
+    itemName: tab.title || 'Tab',
+    maxBytes: BACKGROUND_ASSET_REMOTE_MAX_BYTES
+  });
+  if (saved?.publicPath) return saved.publicPath;
+  if (notifyFailure) showNotice('Could not cache that web background locally; keeping the web URL for now.');
+  return null;
+}
+
+async function promoteActiveBackgroundUrlToAsset() {
+  const board = getActiveBoard();
+  const tab = getActiveTab();
+  if (!board || !tab || !isRemoteBackgroundUrl(tab.backgroundImage)) return false;
+  const localPath = await cacheBackgroundImageUrl(tab.backgroundImage, { board, tab });
+  if (!localPath) return false;
+  tab.backgroundImage = localPath;
+  document.getElementById('bstgBgUrl').value = localPath;
+  updateBgDropZonePreview(localPath);
+  syncBoardCompatibilityFields(board, tab.id);
+  applyBoardBackground(board);
+  return true;
+}
+
+async function migrateEmbeddedBackgroundAssets() {
+  if (
+    typeof bridge === 'undefined' ||
+    !bridge.isAvailable() ||
+    !bridge.nativeIsAvailable() ||
+    typeof bridge.saveAssetDataUrl !== 'function'
+  ) return 0;
+
+  let migrated = 0;
+  for (const board of (state.boards || [])) {
+    for (const tab of getBoardTabs(board)) {
+      if (typeof tab?.backgroundImage !== 'string' || !tab.backgroundImage.startsWith('data:image/')) continue;
+      const saved = await bridge.saveAssetDataUrl({
+        kind: 'background',
+        collectionName: board.title || 'Board',
+        itemName: tab.title || 'Tab',
+        extension: BACKGROUND_ASSET_EXTENSION,
+        mimeType: BACKGROUND_ASSET_MIME,
+        dataUrl: await optimizeBackgroundImageDataUrl(tab.backgroundImage)
+      });
+      if (!saved?.publicPath) continue;
+      tab.backgroundImage = saved.publicPath;
+      migrated += 1;
+      syncBoardCompatibilityFields(board, tab.id);
+    }
+  }
+  if (migrated > 0) {
+    renderAll();
+    saveState();
+    showNotice(`Moved ${migrated} embedded background image${migrated === 1 ? '' : 's'} into the assets folder.`);
+  }
+  return migrated;
+}
+
+async function migrateRemoteBackgroundAssets() {
+  if (
+    typeof bridge === 'undefined' ||
+    !bridge.isAvailable() ||
+    !bridge.nativeIsAvailable() ||
+    typeof bridge.cacheAssetUrl !== 'function'
+  ) return 0;
+
+  let migrated = 0;
+  for (const board of (state.boards || [])) {
+    for (const tab of getBoardTabs(board)) {
+      if (!isRemoteBackgroundUrl(tab?.backgroundImage)) continue;
+      const localPath = await cacheBackgroundImageUrl(tab.backgroundImage, { board, tab, notifyFailure: false });
+      if (!localPath) continue;
+      tab.backgroundImage = localPath;
+      migrated += 1;
+      syncBoardCompatibilityFields(board, tab.id);
+    }
+  }
+  if (migrated > 0) {
+    renderAll();
+    saveState();
+    showNotice(`Cached ${migrated} web background image${migrated === 1 ? '' : 's'} in the assets folder.`);
+  }
+  return migrated;
+}
+
+async function migrateBackgroundAssets() {
+  const embedded = await migrateEmbeddedBackgroundAssets();
+  const remote = await migrateRemoteBackgroundAssets();
+  return embedded + remote;
 }
 
 function attachBoardSettingsListeners() {
@@ -193,6 +336,9 @@ function attachBoardSettingsListeners() {
     updateBgDropZonePreview(tab.backgroundImage);
     applyBg();
   });
+  document.getElementById('bstgBgUrl').addEventListener('change', async () => {
+    await promoteActiveBackgroundUrlToAsset();
+  });
 
   const dropZone = document.getElementById('bstgDropZone');
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -204,12 +350,7 @@ function attachBoardSettingsListeners() {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = async ev => {
-      const tab = getActiveTab();
-      if (!tab) return;
-      tab.backgroundImage = await optimizeBackgroundImageDataUrl(ev.target.result);
-      document.getElementById('bstgBgUrl').value = '';
-      updateBgDropZonePreview(tab.backgroundImage);
-      applyBg();
+      await applyBackgroundImageDataUrl(ev.target.result, { fileName: file.name || '' });
     };
     reader.readAsDataURL(file);
   });
@@ -221,12 +362,7 @@ function attachBoardSettingsListeners() {
     }
     const result = await bridge.openFilePicker('image', 'Select background image');
     if (!result) return;
-    const tab = getActiveTab();
-    if (!tab) return;
-    tab.backgroundImage = await optimizeBackgroundImageDataUrl(result.dataUrl);
-    document.getElementById('bstgBgUrl').value = '';
-    updateBgDropZonePreview(tab.backgroundImage);
-    applyBg();
+    await applyBackgroundImageDataUrl(result.dataUrl, { fileName: result.name || '' });
   });
 
   document.getElementById('bstgBgClear').addEventListener('click', () => {
@@ -579,6 +715,7 @@ async function persistThemeDraft(theme) {
   if (!theme) return;
   if (!state.settings.customThemes) state.settings.customThemes = [];
   if (!Array.isArray(state.settings.deletedThemeIds)) state.settings.deletedThemeIds = [];
+  const previousActiveThemeId = getResolvedThemeId(state.settings.activeThemeName || 'default-dark');
   const savedTheme = cloneThemeForEditor(theme);
   savedTheme.builtin = false;
   savedTheme.sourceThemeId = _themeEditorResolveSourceThemeId(savedTheme);
@@ -586,11 +723,15 @@ async function persistThemeDraft(theme) {
   if (idx >= 0) state.settings.customThemes[idx] = savedTheme;
   else state.settings.customThemes.push(savedTheme);
   state.settings.deletedThemeIds = state.settings.deletedThemeIds.filter(id => id !== savedTheme.id);
+  if (savedTheme.id !== previousActiveThemeId || !state.settings.themeStyleProfiles?.[savedTheme.id]) {
+    duplicateThemeStyleProfile(previousActiveThemeId, savedTheme.id);
+  }
   state.settings.activeThemeName = savedTheme.id;
   _themeEditorDraft = cloneThemeForEditor(savedTheme);
   _themeEditorSavedTheme = cloneThemeForEditor(savedTheme);
   _themeEditorSelection = { source: 'custom', id: savedTheme.id };
-  applyTheme(savedTheme);
+  applySettings();
+  loadActiveThemeStyleControls();
   saveState();
   await renderThemePicker();
 }
@@ -602,12 +743,14 @@ async function deleteThemeDraft() {
   if (!Array.isArray(state.settings.deletedThemeIds)) state.settings.deletedThemeIds = [];
   state.settings.customThemes = (state.settings.customThemes || []).filter(theme => theme.id !== themeId);
   if (!state.settings.deletedThemeIds.includes(themeId)) state.settings.deletedThemeIds.push(themeId);
+  removeThemeStyleProfile(themeId);
   state.settings.activeThemeName = fallbackId;
   const fallback = getThemeById(fallbackId) || getThemeById('default-dark');
   _themeEditorDraft = cloneThemeForEditor(fallback);
   _themeEditorSavedTheme = cloneThemeForEditor(fallback);
   _themeEditorSelection = inferThemeSelection(fallback);
-  applyTheme(fallback);
+  applySettings();
+  loadActiveThemeStyleControls();
   saveState();
   await renderThemePicker();
 }
@@ -906,8 +1049,9 @@ async function renderThemePicker() {
 
       card.addEventListener('click', async () => {
         state.settings.activeThemeName = theme.id;
-        applyTheme(theme);
+        applySettings();
         loadThemeEditor(theme, selection);
+        loadActiveThemeStyleControls();
         saveState();
         syncThemePickerUiState();
       });
@@ -946,6 +1090,24 @@ const FONT_OPTIONS = [
 ];
 
 const STYLE_SECTIONS = ['hubName', 'boardTitle', 'board', 'bookmark', 'folder', 'title'];
+const STYLE_THEME_COLOR_KEYS = Object.freeze({
+  hubNameColor: 'hubNameColorFromTheme',
+  boardTitleColor: 'boardTitleColorFromTheme',
+  boardColor: 'boardColorFromTheme',
+  bookmarkColor: 'bookmarkColorFromTheme',
+  folderColor: 'folderColorFromTheme',
+  titleColor: 'titleColorFromTheme',
+  titleLineColor: 'titleLineColorFromTheme'
+});
+const STYLE_THEME_COLOR_SECTIONS = Object.freeze({
+  hubNameColor: 'hubName',
+  boardTitleColor: 'boardTitle',
+  boardColor: 'board',
+  bookmarkColor: 'bookmark',
+  folderColor: 'folder',
+  titleColor: 'title',
+  titleLineColor: 'title'
+});
 
 function populateFontSelects() {
   ['stgHubNameFamily','stgBoardTitleFamily','stgBoardFamily','stgBookmarkFamily','stgFolderFamily','stgTitleFamily'].forEach(id => {
@@ -960,22 +1122,74 @@ function populateFontSelects() {
 }
 
 function ensureStyleSettings() {
-  if (!state.settings.styleOverrides) state.settings.styleOverrides = {};
-  STYLE_SECTIONS.forEach(section => {
-    if (state.settings.styleOverrides[section] !== true) state.settings.styleOverrides[section] = false;
-  });
-  if (!state.settings.globalFontScale) state.settings.globalFontScale = 'medium';
-  if (!state.settings.globalFontColor) state.settings.globalFontColor = '#e5e7eb';
-  if (state.settings.globalFontColorFromTheme === undefined) state.settings.globalFontColorFromTheme = true;
   if (state.settings.showAdvancedStyleSettings === undefined) state.settings.showAdvancedStyleSettings = false;
+  return getActiveThemeStyleSettings();
+}
+
+function getStyleSettingsSnapshot() {
+  return ensureStyleSettings();
+}
+
+function mutateActiveThemeStyleSettings(mutator) {
+  const themeId = getResolvedThemeId(state.settings.activeThemeName || 'default-dark');
+  const draft = cloneData(getThemeStyleProfile(themeId));
+  mutator(draft);
+  return setThemeStyleProfile(themeId, draft);
+}
+
+function updateThemeColorControlStates(style = getStyleSettingsSnapshot()) {
+  Object.entries(STYLE_THEME_COLOR_KEYS).forEach(([colorKey, toggleKey]) => {
+    const input = document.getElementById('stg' + colorKey[0].toUpperCase() + colorKey.slice(1));
+    const resetBtn = document.querySelector(`.color-reset-btn[data-color-key="${colorKey}"]`);
+    const checkbox = document.querySelector(`[data-theme-color-toggle="${toggleKey}"]`);
+    const sectionEnabled = !!style.styleOverrides?.[STYLE_THEME_COLOR_SECTIONS[colorKey]];
+    if (checkbox) checkbox.checked = style[toggleKey] === true;
+    if (checkbox) checkbox.disabled = !sectionEnabled;
+    const disabled = !sectionEnabled || style[toggleKey] === true;
+    if (input) input.disabled = disabled;
+    if (resetBtn) resetBtn.disabled = disabled;
+  });
+}
+
+function loadActiveThemeStyleControls() {
+  const style = getStyleSettingsSnapshot();
+  document.querySelectorAll(`input[name="stgGlobalFontScale"]`).forEach(r => { r.checked = r.value === (style.globalFontScale || 'medium'); });
+  document.getElementById('stgGlobalFontColor').value = style.globalFontColor || '#e5e7eb';
+  document.getElementById('stgGlobalThemeColor').checked = style.globalFontColorFromTheme !== false;
+  document.getElementById('stgGlobalFontColor').disabled = style.globalFontColorFromTheme !== false;
+  document.getElementById('stgBookmarkFont').value = style.bookmarkFontSize;
+  document.getElementById('stgFolderFont').value = style.folderFontSize;
+  document.getElementById('stgTitleFont').value = style.titleFontSize;
+  document.getElementById('stgLineThicknessVal').textContent = style.titleLineThickness;
+  document.getElementById('stgBoardTitleFont').value = style.boardTitleFontSize;
+  document.getElementById('stgBoardFont').value = style.boardFontSize;
+  document.getElementById('stgHubNameFont').value = style.hubNameFontSize || 18;
+  document.getElementById('stgHubNameFamily').value = style.hubNameFontFamily || '';
+  document.getElementById('stgBoardTitleFamily').value = style.boardTitleFontFamily || '';
+  document.getElementById('stgBoardFamily').value = style.boardFontFamily || '';
+  document.getElementById('stgBookmarkFamily').value = style.bookmarkFontFamily || '';
+  document.getElementById('stgFolderFamily').value = style.folderFontFamily || '';
+  document.getElementById('stgTitleFamily').value = style.titleFontFamily || '';
+  document.querySelectorAll('.fmt-btn').forEach(btn => btn.classList.toggle('active', !!style[btn.dataset.fmt]));
+  document.querySelectorAll('.align-btn').forEach(btn => btn.classList.toggle('active', (style[btn.dataset.alignKey] || 'left') === btn.dataset.alignVal));
+  Object.entries(COLOR_DEFAULTS).forEach(([key, def]) => {
+    document.getElementById('stg' + key[0].toUpperCase() + key.slice(1)).value = style[key] || def;
+  });
+  document.getElementById('stgTitleLineStyle').value = style.titleLineStyle || 'solid';
+  const sdSizeRadio = document.querySelector(`input[name="stgSpeedDialSize"][value="${state.settings.speedDialIconSize || 'medium'}"]`);
+  if (sdSizeRadio) sdSizeRadio.checked = true;
+  const essSizeRadio = document.querySelector(`input[name="stgEssentialsSize"][value="${state.settings.essentialsIconSize || 'medium'}"]`);
+  if (essSizeRadio) essSizeRadio.checked = true;
+  updateStyleAdvancedUI();
+  updateThemeColorControlStates(style);
 }
 
 function updateStyleAdvancedUI() {
-  ensureStyleSettings();
+  const style = ensureStyleSettings();
   document.querySelectorAll('.style-advanced-section').forEach(section => {
     section.classList.toggle('hidden', !state.settings.showAdvancedStyleSettings);
     const key = section.dataset.styleSection;
-    const enabled = !!state.settings.styleOverrides[key];
+    const enabled = !!style.styleOverrides[key];
     section.classList.toggle('style-advanced-section--disabled', !enabled);
     section.querySelectorAll('input, select, button').forEach(control => {
       if (control.matches('[data-style-override]')) return;
@@ -983,8 +1197,9 @@ function updateStyleAdvancedUI() {
     });
   });
   document.querySelectorAll('[data-style-override]').forEach(input => {
-    input.checked = !!state.settings.styleOverrides[input.dataset.styleOverride];
+    input.checked = !!style.styleOverrides[input.dataset.styleOverride];
   });
+  updateThemeColorControlStates(style);
 }
 
 function updateEssentialsWarning() {
@@ -1032,18 +1247,18 @@ async function updateDatabasePathControls() {
   applyBtn.disabled = !info.nativeReady;
 
   if (!info.extensionReady) {
-    statusEl.textContent = 'Extension not detected. Using browser localStorage only.';
+    statusEl.textContent = 'Extension not detected. Using browser storage only.';
     return;
   }
   if (!info.nativeReady) {
-    statusEl.textContent = 'Extension connected, but native host is unavailable. Shared disk sync is off.';
+    statusEl.textContent = 'Extension connected, but desktop sync is unavailable. Shared-file sync is off.';
     return;
   }
   statusEl.textContent = savedPath
     ? `Shared file active: ${savedPath}`
     : draftPath
       ? 'Path selected but not applied yet.'
-      : 'Native host is available, but no shared database path is configured yet.';
+      : 'Desktop sync is available, but no shared data file path is set yet.';
 }
 
 async function updateAboutBridgeStatus() {
@@ -1061,18 +1276,131 @@ async function updateAboutBridgeStatus() {
 
   const features = [];
   if (info.extensionReady) {
-    features.push('extension storage backup', 'send current tab to board inbox');
-    if (info.nativeReady) features.push('shared JSON file sync', 'background image picker', 'theme file import/export');
+    features.push('browser backup', 'send current tab to board inbox');
+    if (info.nativeReady) features.push('shared file sync', 'background image picker', 'theme file import/export');
   }
   featuresEl.textContent = features.length
-    ? `Extension features: ${features.join(', ')}.`
-    : 'Extension features: unavailable. The hub is running in localStorage-only mode.';
+    ? `Available features: ${features.join(', ')}.`
+    : 'Available features: unavailable. The hub is running in browser-storage-only mode.';
 
   storageNoteEl.textContent = info.nativeReady && info.databasePath
-    ? `Primary storage is the shared disk file at ${info.databasePath}. localStorage is only a browser-local cache.`
-    : 'Without the native host, the hub stores data in browser localStorage. Use Export JSON in General to keep regular backups.';
+    ? `Primary storage is the shared file at ${info.databasePath}. Browser storage is only a local cache.`
+    : 'Without desktop sync, the hub stores data in browser storage. Use Export hub data in General to keep regular backups.';
 
   updateSidebarExtensionStatus(info);
+}
+
+async function getSecretStorageStatus() {
+  if (typeof bridge === 'undefined') return { available: false, provider: '', error: 'Extension not detected' };
+  await bridge.whenReady;
+  if (!bridge.isAvailable() || !bridge.nativeIsAvailable() || typeof bridge.secretStatus !== 'function') {
+    return { available: false, provider: '', error: 'Native host unavailable' };
+  }
+  return bridge.secretStatus();
+}
+
+function updateServiceSecretUi(serviceName = 'nasa', status = null) {
+  const input = document.getElementById('stgApiKeyNasa');
+  const statusEl = document.getElementById('stgApiKeyNasaStatus');
+  if (serviceName !== 'nasa' || !input || !statusEl) return;
+  input.value = typeof getServiceSecret === 'function' ? getServiceSecret(serviceName) : '';
+  if (!status) {
+    statusEl.textContent = 'Used by the NASA APOD widget. Stored in Windows Credential Manager when desktop sync is available.';
+    return;
+  }
+  statusEl.textContent = status.available
+    ? 'Used by the NASA APOD widget. Stored in Windows Credential Manager, not in the shared JSON database.'
+    : `Used by the NASA APOD widget. Secret storage unavailable: ${status.error || 'native host unavailable'}.`;
+}
+
+async function loadServiceSecretsIntoSettingsUi() {
+  const status = await getSecretStorageStatus();
+  if (status.available && typeof bridge !== 'undefined' && typeof bridge.secretGet === 'function') {
+    for (const [serviceName, secretKey] of Object.entries(SERVICE_SECRET_KEYS)) {
+      const value = await bridge.secretGet(secretKey);
+      if (value || !getServiceSecret(serviceName)) setServiceSecretCache(serviceName, value || '');
+    }
+  }
+  updateServiceSecretUi('nasa', status);
+}
+
+async function persistServiceSecret(serviceName, value) {
+  if (!Object.prototype.hasOwnProperty.call(SERVICE_SECRET_KEYS, serviceName)) return false;
+  setServiceSecretCache(serviceName, value);
+  const secretKey = SERVICE_SECRET_KEYS[serviceName];
+  const status = await getSecretStorageStatus();
+  if (!status.available || typeof bridge === 'undefined') {
+    setServiceSecretsCanScrubState(false);
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = { nasa: '' };
+    state.settings.serviceApiKeys[serviceName] = value;
+    updateServiceSecretUi(serviceName, status);
+    saveState();
+    return false;
+  }
+  const ok = value
+    ? await bridge.secretSet(secretKey, value)
+    : await bridge.secretDelete(secretKey);
+  updateServiceSecretUi(serviceName, status);
+  if (ok) {
+    setServiceSecretsCanScrubState(true);
+    clearStoredServiceApiKeys(state);
+    saveState();
+  } else {
+    setServiceSecretsCanScrubState(false);
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = { nasa: '' };
+    state.settings.serviceApiKeys[serviceName] = value;
+    saveState();
+    showNotice('Could not update Windows Credential Manager. The key was kept in the shared JSON database for now.');
+  }
+  return ok;
+}
+
+function queueServiceSecretSave(serviceName, value) {
+  setServiceSecretCache(serviceName, value);
+  if (_serviceSecretSaveTimer) clearTimeout(_serviceSecretSaveTimer);
+  _serviceSecretSaveTimer = setTimeout(() => {
+    _serviceSecretSaveTimer = null;
+    persistServiceSecret(serviceName, value).catch(error => {
+      console.warn('Failed to save service secret', error);
+    });
+  }, 350);
+}
+
+async function initializeServiceSecrets() {
+  const legacyKeys = { ...(state.settings?.serviceApiKeys || {}) };
+  const status = await getSecretStorageStatus();
+  if (!status.available || typeof bridge === 'undefined') {
+    setServiceSecretsCanScrubState(false);
+    Object.entries(legacyKeys).forEach(([serviceName, value]) => {
+      if (value) setServiceSecretCache(serviceName, value);
+    });
+    return false;
+  }
+
+  let canScrub = true;
+  let migrated = false;
+  for (const [serviceName, secretKey] of Object.entries(SERVICE_SECRET_KEYS)) {
+    const stored = await bridge.secretGet(secretKey);
+    const legacy = typeof legacyKeys[serviceName] === 'string' ? legacyKeys[serviceName].trim() : '';
+    if (!stored && legacy) {
+      const ok = await bridge.secretSet(secretKey, legacy);
+      if (ok) {
+        setServiceSecretCache(serviceName, legacy);
+        migrated = true;
+      } else {
+        setServiceSecretCache(serviceName, legacy);
+        canScrub = false;
+      }
+    } else {
+      setServiceSecretCache(serviceName, stored || '');
+    }
+  }
+  setServiceSecretsCanScrubState(canScrub);
+  if (canScrub && (migrated || Object.values(legacyKeys).some(Boolean))) {
+    clearStoredServiceApiKeys(state);
+    saveState();
+  }
+  return canScrub;
 }
 
 async function updateSidebarExtensionStatus(info = null) {
@@ -1103,12 +1431,7 @@ function showSettingsPanel(tab = 'general') {
   const s = state.settings;
   ensureStyleSettings();
   document.getElementById('stgHubName').value = state.hubName || '';
-  document.querySelectorAll(`input[name="stgGlobalFontScale"]`).forEach(r => { r.checked = r.value === (s.globalFontScale || 'medium'); });
-  document.getElementById('stgGlobalFontColor').value = s.globalFontColor || '#e5e7eb';
-  document.getElementById('stgGlobalThemeColor').checked = s.globalFontColorFromTheme !== false;
-  document.getElementById('stgGlobalFontColor').disabled = s.globalFontColorFromTheme !== false;
   document.getElementById('stgShowAdvancedStyle').checked = !!s.showAdvancedStyleSettings;
-  document.getElementById('stgBookmarkFont').value = s.bookmarkFontSize;
   document.getElementById('stgShowBookmarkTags').checked = s.showBookmarkTags !== false;
   document.getElementById('stgShowBookmarkTooltips').checked = s.showBookmarkTooltips !== false;
   document.getElementById('stgWarnOnClose').checked = s.warnOnClose;
@@ -1120,47 +1443,28 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
-  document.getElementById('stgApiKeyNasa').value = s.serviceApiKeys?.nasa || '';
-  document.getElementById('stgFolderFont').value = s.folderFontSize;
+  document.getElementById('stgApiKeyNasa').value = typeof getServiceSecret === 'function' ? getServiceSecret('nasa') : '';
   document.getElementById('stgShowFolderTags').checked = s.showFolderTags !== false;
   document.getElementById('stgSidebarUseActiveOpacity').checked = s.sidebarUseActiveTabOpacity !== false;
   document.getElementById('stgSidebarOpacity').value = s.sidebarOpacity ?? 100;
   document.getElementById('stgSidebarOpacityVal').textContent = s.sidebarOpacity ?? 100;
-  document.getElementById('stgTitleFont').value = s.titleFontSize;
-  document.getElementById('stgLineThicknessVal').textContent = s.titleLineThickness;
-  document.getElementById('stgBoardTitleFont').value = s.boardTitleFontSize;
-  document.getElementById('stgBoardFont').value = s.boardFontSize;
   _themeEditorDraft = null;
   _themeEditorSelection = null;
   _themeEditorSavedTheme = null;
   populateFontSelects();
-  document.getElementById('stgHubNameFont').value      = s.hubNameFontSize || 18;
-  document.getElementById('stgHubNameFamily').value    = s.hubNameFontFamily || '';
-  document.getElementById('stgBoardTitleFamily').value = s.boardTitleFontFamily || '';
-  document.getElementById('stgBoardFamily').value      = s.boardFontFamily || '';
-  document.getElementById('stgBookmarkFamily').value   = s.bookmarkFontFamily || '';
-  document.getElementById('stgFolderFamily').value      = s.folderFontFamily || '';
-  document.getElementById('stgTitleFamily').value       = s.titleFontFamily || '';
-  document.querySelectorAll('.fmt-btn').forEach(btn => btn.classList.toggle('active', !!s[btn.dataset.fmt]));
-  document.querySelectorAll('.align-btn').forEach(btn => btn.classList.toggle('active', (s[btn.dataset.alignKey] || 'left') === btn.dataset.alignVal));
-  Object.entries(COLOR_DEFAULTS).forEach(([key, def]) => {
-    document.getElementById('stg' + key[0].toUpperCase() + key.slice(1)).value = s[key] || def;
-  });
-  document.getElementById('stgTitleLineStyle').value = s.titleLineStyle || 'solid';
-  const sdSizeRadio = document.querySelector(`input[name="stgSpeedDialSize"][value="${s.speedDialIconSize || 'medium'}"]`);
-  if (sdSizeRadio) sdSizeRadio.checked = true;
-  const essSizeRadio = document.querySelector(`input[name="stgEssentialsSize"][value="${s.essentialsIconSize || 'medium'}"]`);
-  if (essSizeRadio) essSizeRadio.checked = true;
   document.getElementById('stgShowEssentials').checked = s.showEssentials !== false;
   document.getElementById('stgEssCountVal').textContent = s.essentialsDisplayCount || 10;
+  loadActiveThemeStyleControls();
   updateLastExportedLabel();
   updateEssentialsWarning();
   updateSidebarOpacitySettingsUi();
-  updateStyleAdvancedUI();
   renderThemePicker();
   renderTagGroups();
   updateDatabasePathControls();
   updateAboutBridgeStatus();
+  loadServiceSecretsIntoSettingsUi().catch(error => {
+    console.warn('Failed to load service secrets', error);
+  });
 }
 
 function showTagManagerPanel() {
@@ -2195,21 +2499,28 @@ function attachSettingsListeners() {
 
   document.getElementById('stgApiKeyNasa').addEventListener('input', e => {
     ensureServiceApiKeySettings();
-    state.settings.serviceApiKeys.nasa = e.target.value.trim();
+    state.settings.serviceApiKeys.nasa = '';
+    queueServiceSecretSave('nasa', e.target.value.trim());
   });
 
   document.querySelectorAll('input[name="stgGlobalFontScale"]').forEach(radio => {
     radio.addEventListener('change', e => {
-      state.settings.globalFontScale = e.target.value;
+      mutateActiveThemeStyleSettings(style => {
+        style.globalFontScale = e.target.value;
+      });
       applySettings();
     });
   });
   document.getElementById('stgGlobalFontColor').addEventListener('input', e => {
-    state.settings.globalFontColor = e.target.value;
+    mutateActiveThemeStyleSettings(style => {
+      style.globalFontColor = e.target.value;
+    });
     applySettings();
   });
   document.getElementById('stgGlobalThemeColor').addEventListener('change', e => {
-    state.settings.globalFontColorFromTheme = e.target.checked;
+    mutateActiveThemeStyleSettings(style => {
+      style.globalFontColorFromTheme = e.target.checked;
+    });
     document.getElementById('stgGlobalFontColor').disabled = e.target.checked;
     applySettings();
   });
@@ -2220,8 +2531,9 @@ function attachSettingsListeners() {
   });
   document.querySelectorAll('[data-style-override]').forEach(input => {
     input.addEventListener('change', e => {
-      ensureStyleSettings();
-      state.settings.styleOverrides[e.target.dataset.styleOverride] = e.target.checked;
+      mutateActiveThemeStyleSettings(style => {
+        style.styleOverrides[e.target.dataset.styleOverride] = e.target.checked;
+      });
       updateStyleAdvancedUI();
       applySettings();
     });
@@ -2229,7 +2541,9 @@ function attachSettingsListeners() {
 
   const numSetting = (id, key, min, max) => {
     document.getElementById(id).addEventListener('input', e => {
-      state.settings[key] = Math.min(max, Math.max(min, parseInt(e.target.value) || min));
+      mutateActiveThemeStyleSettings(style => {
+        style[key] = Math.min(max, Math.max(min, parseInt(e.target.value, 10) || min));
+      });
       applySettings();
     });
   };
@@ -2240,6 +2554,23 @@ function attachSettingsListeners() {
   numSetting('stgTitleFont',      'titleFontSize',       8, 24);
   numSetting('stgBoardTitleFont', 'boardTitleFontSize', 14, 48);
   numSetting('stgHubNameFont',    'hubNameFontSize',    10, 48);
+  document.querySelectorAll('.settings-number-step-btn[data-number-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.numberTarget);
+      if (!input) return;
+      const direction = btn.dataset.stepDirection === 'down' ? -1 : 1;
+      const min = parseInt(input.min, 10);
+      const max = parseInt(input.max, 10);
+      const current = parseInt(input.value, 10);
+      const fallback = Number.isFinite(min) ? min : 0;
+      const next = Math.min(
+        Number.isFinite(max) ? max : Number.POSITIVE_INFINITY,
+        Math.max(Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY, (Number.isFinite(current) ? current : fallback) + direction)
+      );
+      input.value = next;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
 
   const boolSetting = (id, key, live = false) => document.getElementById(id).addEventListener('change', e => {
     state.settings[key] = e.target.checked;
@@ -2269,13 +2600,32 @@ function attachSettingsListeners() {
 
   const thicknessEl = document.getElementById('stgLineThicknessVal');
   document.getElementById('stgLineThicknessMinus').addEventListener('click', () => {
-    if (state.settings.titleLineThickness > 1) { state.settings.titleLineThickness--; thicknessEl.textContent = state.settings.titleLineThickness; applySettings(); }
+    const style = getStyleSettingsSnapshot();
+    if (style.titleLineThickness > 1) {
+      const next = mutateActiveThemeStyleSettings(draft => {
+        draft.titleLineThickness--;
+      });
+      thicknessEl.textContent = next.titleLineThickness;
+      applySettings();
+    }
   });
   document.getElementById('stgLineThicknessPlus').addEventListener('click', () => {
-    if (state.settings.titleLineThickness < 8) { state.settings.titleLineThickness++; thicknessEl.textContent = state.settings.titleLineThickness; applySettings(); }
+    const style = getStyleSettingsSnapshot();
+    if (style.titleLineThickness < 8) {
+      const next = mutateActiveThemeStyleSettings(draft => {
+        draft.titleLineThickness++;
+      });
+      thicknessEl.textContent = next.titleLineThickness;
+      applySettings();
+    }
   });
 
-  const familySetting = (id, key) => document.getElementById(id).addEventListener('change', e => { state.settings[key] = e.target.value; applySettings(); });
+  const familySetting = (id, key) => document.getElementById(id).addEventListener('change', e => {
+    mutateActiveThemeStyleSettings(style => {
+      style[key] = e.target.value;
+    });
+    applySettings();
+  });
   familySetting('stgHubNameFamily',    'hubNameFontFamily');
   familySetting('stgBoardTitleFamily', 'boardTitleFontFamily');
   familySetting('stgBoardFamily',      'boardFontFamily');
@@ -2285,8 +2635,10 @@ function attachSettingsListeners() {
 
   document.querySelectorAll('.fmt-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.settings[btn.dataset.fmt] = !state.settings[btn.dataset.fmt];
-      btn.classList.toggle('active', state.settings[btn.dataset.fmt]);
+      const next = mutateActiveThemeStyleSettings(style => {
+        style[btn.dataset.fmt] = !style[btn.dataset.fmt];
+      });
+      btn.classList.toggle('active', next[btn.dataset.fmt]);
       applySettings();
     });
   });
@@ -2294,7 +2646,9 @@ function attachSettingsListeners() {
   document.querySelectorAll('.align-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.alignKey;
-      state.settings[key] = btn.dataset.alignVal;
+      mutateActiveThemeStyleSettings(style => {
+        style[key] = btn.dataset.alignVal;
+      });
       document.querySelectorAll(`.align-btn[data-align-key="${key}"]`).forEach(b => b.classList.toggle('active', b.dataset.alignVal === btn.dataset.alignVal));
       applySettings();
     });
@@ -2302,18 +2656,41 @@ function attachSettingsListeners() {
 
   Object.entries(COLOR_DEFAULTS).forEach(([key]) => {
     const inputId = 'stg' + key[0].toUpperCase() + key.slice(1);
-    document.getElementById(inputId).addEventListener('input', e => { state.settings[key] = e.target.value; applySettings(); });
+    document.getElementById(inputId).addEventListener('input', e => {
+      mutateActiveThemeStyleSettings(style => {
+        style[key] = e.target.value;
+      });
+      applySettings();
+    });
   });
   document.querySelectorAll('.color-reset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const key = btn.dataset.colorKey;
-      state.settings[key] = '';
+      mutateActiveThemeStyleSettings(style => {
+        style[key] = '';
+      });
       document.getElementById('stg' + key[0].toUpperCase() + key.slice(1)).value = COLOR_DEFAULTS[key];
       applySettings();
     });
   });
 
-  document.getElementById('stgTitleLineStyle').addEventListener('change', e => { state.settings.titleLineStyle = e.target.value; applySettings(); });
+  document.querySelectorAll('[data-theme-color-toggle]').forEach(input => {
+    input.addEventListener('change', e => {
+      const toggleKey = e.target.dataset.themeColorToggle;
+      mutateActiveThemeStyleSettings(style => {
+        style[toggleKey] = e.target.checked;
+      });
+      updateThemeColorControlStates();
+      applySettings();
+    });
+  });
+
+  document.getElementById('stgTitleLineStyle').addEventListener('change', e => {
+    mutateActiveThemeStyleSettings(style => {
+      style.titleLineStyle = e.target.value;
+    });
+    applySettings();
+  });
 
   document.getElementById('stgShowEssentials').addEventListener('change', e => {
     state.settings.showEssentials = e.target.checked;
@@ -2341,6 +2718,7 @@ function attachSettingsListeners() {
       document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t === tab));
       const body = document.querySelector('.settings-body[data-active-tab]');
       if (body) body.dataset.activeTab = tab.dataset.tab;
+      if (tab.dataset.tab === 'style') loadActiveThemeStyleControls();
     });
   });
 

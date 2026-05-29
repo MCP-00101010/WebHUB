@@ -565,13 +565,28 @@ function handleContextMenuAction(action) {
       if (area === 'speed-dial-item') {
         const board = getActiveBoard();
         const sdItem = board?.speedDial.find(i => i?.id === contextTarget.itemId);
-        if (sdItem) { sdItem.faviconCache = ''; renderAll(); saveState(); }
+        if (sdItem) {
+          sdItem.faviconCache = '';
+          if (typeof requestNativeFaviconRefresh === 'function') requestNativeFaviconRefresh(sdItem);
+          renderAll();
+          saveState();
+        }
       } else if (area === 'essential') {
         const essItem = state.essentials[contextTarget.slot];
-        if (essItem) { essItem.faviconCache = ''; renderEssentials(); saveState(); }
+        if (essItem) {
+          essItem.faviconCache = '';
+          if (typeof requestNativeFaviconRefresh === 'function') requestNativeFaviconRefresh(essItem);
+          renderEssentials();
+          saveState();
+        }
       } else {
         const found = findBoardItemInColumns(getBoardForContext(contextTarget), contextTarget.itemId);
-        if (found?.item) { found.item.faviconCache = ''; renderAll(); saveState(); }
+        if (found?.item) {
+          found.item.faviconCache = '';
+          if (typeof requestNativeFaviconRefresh === 'function') requestNativeFaviconRefresh(found.item);
+          renderAll();
+          saveState();
+        }
       }
       break;
     }

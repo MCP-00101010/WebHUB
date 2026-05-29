@@ -14,21 +14,10 @@ function cloneData(value) {
     : JSON.parse(JSON.stringify(value));
 }
 
-const defaultSettings = {
-  warnOnClose: false,
-  confirmDeleteBoard: false,
-  confirmDeleteTab: false,
-  confirmDeleteSet: false,
-  confirmDeleteBookmark: false,
-  confirmDeleteFolder: false,
-  confirmDeleteTitleDivider: false,
-  confirmDeleteTag: false,
-  showBookmarkTooltips: true,
-  sharedAutoRefreshNotice: true,
+const defaultThemeStyleSettings = {
   globalFontScale: 'medium',
   globalFontColor: '#e5e7eb',
   globalFontColorFromTheme: true,
-  showAdvancedStyleSettings: false,
   styleOverrides: {
     hubName: false,
     boardTitle: false,
@@ -40,32 +29,60 @@ const defaultSettings = {
   bookmarkFontSize: 14,
   bookmarkFontFamily: '',
   bookmarkBold: false, bookmarkItalic: false, bookmarkUnderline: false,
-  showBookmarkTags: true,
   folderFontSize: 15,
   folderFontFamily: '',
   folderBold: false, folderItalic: false, folderUnderline: false,
-  showFolderTags: true,
   titleFontSize: 12,
   titleLineThickness: 1,
   titleLineColor: '',
+  titleLineColorFromTheme: false,
   titleLineStyle: 'solid',
   titleFontFamily: '',
   titleBold: false, titleItalic: false, titleUnderline: false,
   hubNameFontSize: 18,
   hubNameFontFamily: '',
   hubNameBold: false, hubNameItalic: false, hubNameUnderline: false,
-  hubNameTextAlign: 'left', hubNameColor: '',
+  hubNameTextAlign: 'left', hubNameColor: '', hubNameColorFromTheme: false,
   boardTitleFontSize: 22,
   boardTitleFontFamily: '',
   boardTitleBold: false, boardTitleItalic: false, boardTitleUnderline: false,
-  boardTitleTextAlign: 'left', boardTitleColor: '',
+  boardTitleTextAlign: 'left', boardTitleColor: '', boardTitleColorFromTheme: false,
   boardFontSize: 14,
   boardFontFamily: '',
   boardBold: false, boardItalic: false, boardUnderline: false,
-  boardTextAlign: 'left', boardColor: '',
-  bookmarkTextAlign: 'left', bookmarkColor: '',
-  folderTextAlign: 'left', folderColor: '',
-  titleColor: '',
+  boardTextAlign: 'left', boardColor: '', boardColorFromTheme: false,
+  bookmarkTextAlign: 'left', bookmarkColor: '', bookmarkColorFromTheme: false,
+  folderTextAlign: 'left', folderColor: '', folderColorFromTheme: false,
+  titleColor: '', titleColorFromTheme: false
+};
+
+const THEME_STYLE_COLOR_FALLBACKS = Object.freeze({
+  hubNameColor: 'var(--accent)',
+  boardTitleColor: 'var(--accent)',
+  boardColor: 'var(--accent)',
+  bookmarkColor: 'var(--accent)',
+  folderColor: 'var(--accent)',
+  titleColor: 'var(--accent)',
+  titleLineColor: 'var(--accent)'
+});
+
+const THEME_STYLE_SETTING_KEYS = Object.freeze(Object.keys(defaultThemeStyleSettings));
+
+const defaultSettings = {
+  warnOnClose: false,
+  confirmDeleteBoard: false,
+  confirmDeleteTab: false,
+  confirmDeleteSet: false,
+  confirmDeleteBookmark: false,
+  confirmDeleteFolder: false,
+  confirmDeleteTitleDivider: false,
+  confirmDeleteTag: false,
+  showBookmarkTooltips: true,
+  sharedAutoRefreshNotice: true,
+  showAdvancedStyleSettings: false,
+  ...cloneData(defaultThemeStyleSettings),
+  showBookmarkTags: true,
+  showFolderTags: true,
   tagGroups: [],
   serviceApiKeys: {
     nasa: ''
@@ -73,6 +90,7 @@ const defaultSettings = {
   activeThemeName: 'default-dark',
   customThemes: [],
   deletedThemeIds: [],
+  themeStyleProfiles: {},
   speedDialIconSize: 'medium',
   essentialsIconSize: 'medium',
   showEssentials: true,
@@ -179,7 +197,9 @@ let sharedDiskSaveInFlight = false;
 let sharedDiskQueuedSnapshot = null;
 let sharedDiskQueuedPath = '';
 let sharedDiskFlushTimer = null;
+let sharedDiskSaveGeneration = 0;
 let localCacheMeta = loadLocalCacheMeta();
+let localCacheQuotaNoticeShown = false;
 let inheritedTagContextCache = new WeakMap();
 let boardNavInheritedTagsCache = new Map();
 let liveBookmarkSourceCache = null;
@@ -220,9 +240,43 @@ function computeSnapshotHash(text) {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
+function isStorageQuotaError(error) {
+  return error?.name === 'QuotaExceededError' ||
+    error?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error?.code === 22 ||
+    error?.code === 1014 ||
+    /quota/i.test(error?.message || '');
+}
+
+function notifyLocalCacheQuota(sharedSaveTarget = false) {
+  if (localCacheQuotaNoticeShown) return;
+  localCacheQuotaNoticeShown = true;
+  const message = sharedSaveTarget
+    ? 'Browser cache is full; continuing to save changes to the shared database.'
+    : 'Browser storage is full. Changes are kept in this tab, but may not survive a reload until storage is freed or shared storage is available.';
+  if (typeof showNotice === 'function') showNotice(message);
+  else console.warn(`Morpheus: ${message}`);
+}
+
+function clearTrashCacheForQuotaRecovery() {
+  try {
+    localStorage.removeItem('morpheus-webhub-trash');
+    if (Array.isArray(recentlyDeleted)) recentlyDeleted = [];
+    if (typeof updateTrashBadge === 'function') updateTrashBadge();
+  } catch {}
+}
+
+function clearFullLocalCacheSnapshot() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+}
+
 function persistLocalCacheMeta(metaPatch = {}) {
   localCacheMeta = normalizeLocalCacheMeta({ ...localCacheMeta, ...metaPatch });
-  localStorage.setItem(LOCAL_CACHE_META_KEY, JSON.stringify(localCacheMeta));
+  try {
+    localStorage.setItem(LOCAL_CACHE_META_KEY, JSON.stringify(localCacheMeta));
+  } catch (error) {
+    console.warn('Morpheus: failed to persist local cache metadata', error);
+  }
   return localCacheMeta;
 }
 
@@ -245,6 +299,101 @@ function migrateStyleSettings(settings) {
   settings.styleOverrides.folder = differs('folderFontSize', 15) || !!settings.folderFontFamily || !!settings.folderBold || !!settings.folderItalic || !!settings.folderUnderline || differs('folderTextAlign', 'left') || !!settings.folderColor;
   settings.styleOverrides.title = differs('titleFontSize', 12) || differs('titleLineThickness', 1) || !!settings.titleLineColor || differs('titleLineStyle', 'solid') || !!settings.titleFontFamily || !!settings.titleBold || !!settings.titleItalic || !!settings.titleUnderline || !!settings.titleColor;
   settings.styleOverridesMigrated = true;
+}
+
+function normalizeThemeStyleSettings(style) {
+  const normalized = { ...cloneData(defaultThemeStyleSettings), ...(style || {}) };
+  normalized.styleOverrides = {
+    ...cloneData(defaultThemeStyleSettings.styleOverrides),
+    ...(style?.styleOverrides || {})
+  };
+  Object.keys(defaultThemeStyleSettings.styleOverrides).forEach(section => {
+    normalized.styleOverrides[section] = normalized.styleOverrides[section] === true;
+  });
+  return normalized;
+}
+
+function buildLegacyThemeStyleSettings(settings) {
+  const legacy = {};
+  THEME_STYLE_SETTING_KEYS.forEach(key => {
+    if (key === 'styleOverrides') {
+      legacy.styleOverrides = cloneData(settings.styleOverrides || defaultThemeStyleSettings.styleOverrides);
+      return;
+    }
+    if (settings[key] !== undefined) legacy[key] = cloneData(settings[key]);
+  });
+  return normalizeThemeStyleSettings(legacy);
+}
+
+function migrateThemeStyleProfiles(settings) {
+  const rawProfiles = settings.themeStyleProfiles && typeof settings.themeStyleProfiles === 'object' && !Array.isArray(settings.themeStyleProfiles)
+    ? settings.themeStyleProfiles
+    : {};
+  const normalizedProfiles = {};
+  Object.entries(rawProfiles).forEach(([themeId, profile]) => {
+    if (typeof themeId !== 'string' || !themeId.trim()) return;
+    normalizedProfiles[themeId] = normalizeThemeStyleSettings(profile);
+  });
+  settings.themeStyleProfiles = normalizedProfiles;
+
+  const activeThemeId = getResolvedThemeId(settings.activeThemeName || defaultSettings.activeThemeName);
+  const activeProfile = settings.themeStyleProfiles[activeThemeId];
+  if (!settings.themeStyleProfilesMigrated || !activeProfile) {
+    const legacyProfile = buildLegacyThemeStyleSettings(settings);
+    settings.themeStyleProfiles[activeThemeId] = normalizeThemeStyleSettings({
+      ...(activeProfile || {}),
+      ...legacyProfile,
+      styleOverrides: {
+        ...(activeProfile?.styleOverrides || {}),
+        ...(legacyProfile.styleOverrides || {})
+      }
+    });
+  }
+  settings.themeStyleProfilesMigrated = true;
+}
+
+function getThemeStyleProfile(themeId = null, { create = true } = {}) {
+  if (!state?.settings) return normalizeThemeStyleSettings(null);
+  const resolvedThemeId = getResolvedThemeId(themeId || state.settings.activeThemeName || defaultSettings.activeThemeName);
+  if (!state.settings.themeStyleProfiles || typeof state.settings.themeStyleProfiles !== 'object' || Array.isArray(state.settings.themeStyleProfiles)) {
+    state.settings.themeStyleProfiles = {};
+  }
+  let profile = state.settings.themeStyleProfiles[resolvedThemeId];
+  if (!profile) {
+    if (!create) return normalizeThemeStyleSettings(null);
+    profile = normalizeThemeStyleSettings(null);
+    state.settings.themeStyleProfiles[resolvedThemeId] = profile;
+    return profile;
+  }
+  const normalized = normalizeThemeStyleSettings(profile);
+  state.settings.themeStyleProfiles[resolvedThemeId] = normalized;
+  return normalized;
+}
+
+function setThemeStyleProfile(themeId, profile) {
+  if (!state?.settings) return normalizeThemeStyleSettings(profile);
+  const resolvedThemeId = getResolvedThemeId(themeId || state.settings.activeThemeName || defaultSettings.activeThemeName);
+  if (!state.settings.themeStyleProfiles || typeof state.settings.themeStyleProfiles !== 'object' || Array.isArray(state.settings.themeStyleProfiles)) {
+    state.settings.themeStyleProfiles = {};
+  }
+  const normalized = normalizeThemeStyleSettings(profile);
+  state.settings.themeStyleProfiles[resolvedThemeId] = normalized;
+  return normalized;
+}
+
+function getActiveThemeStyleSettings(options) {
+  return getThemeStyleProfile(state?.settings?.activeThemeName, options);
+}
+
+function duplicateThemeStyleProfile(sourceThemeId, targetThemeId) {
+  if (!targetThemeId) return normalizeThemeStyleSettings(null);
+  const source = getThemeStyleProfile(sourceThemeId, { create: false });
+  return setThemeStyleProfile(targetThemeId, cloneData(source));
+}
+
+function removeThemeStyleProfile(themeId) {
+  if (!state?.settings?.themeStyleProfiles || !themeId) return;
+  delete state.settings.themeStyleProfiles[themeId];
 }
 
 function migrateServiceApiKeys(settings) {
@@ -280,6 +429,43 @@ const DYNAMIC_SORT_LABELS = Object.freeze({
   'url-asc': 'URL A → Z',
   'url-desc': 'URL Z → A'
 });
+
+const SERVICE_SECRET_KEYS = Object.freeze({
+  nasa: 'service.nasa.apiKey'
+});
+
+let serviceSecretCache = Object.fromEntries(Object.keys(SERVICE_SECRET_KEYS).map(key => [key, '']));
+let serviceSecretsCanScrubState = false;
+
+function getServiceSecret(serviceName) {
+  const value = serviceSecretCache?.[serviceName];
+  if (typeof value === 'string' && value) return value.trim();
+  const legacy = state?.settings?.serviceApiKeys?.[serviceName];
+  return typeof legacy === 'string' ? legacy.trim() : '';
+}
+
+function setServiceSecretCache(serviceName, value) {
+  if (!Object.prototype.hasOwnProperty.call(SERVICE_SECRET_KEYS, serviceName)) return;
+  serviceSecretCache[serviceName] = typeof value === 'string' ? value.trim() : '';
+}
+
+function setServiceSecretsCanScrubState(value) {
+  serviceSecretsCanScrubState = value === true;
+}
+
+function canScrubStoredServiceApiKeys() {
+  return serviceSecretsCanScrubState === true;
+}
+
+function clearStoredServiceApiKeys(root = state) {
+  if (!root?.settings) return;
+  if (!root.settings.serviceApiKeys || typeof root.settings.serviceApiKeys !== 'object') {
+    root.settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
+  }
+  Object.keys(root.settings.serviceApiKeys).forEach(key => {
+    root.settings.serviceApiKeys[key] = '';
+  });
+}
 
 function normalizeDynamicSortMode(mode) {
   return Object.prototype.hasOwnProperty.call(DYNAMIC_SORT_LABELS, mode) ? mode : 'source';
@@ -827,6 +1013,7 @@ function parseStateJson(saved) {
     if (!parsed.settings) parsed.settings = { ...defaultSettings };
     else parsed.settings = { ...defaultSettings, ...parsed.settings };
     migrateStyleSettings(parsed.settings);
+    migrateThemeStyleProfiles(parsed.settings);
     migrateServiceApiKeys(parsed.settings);
     migrateWidgetServiceSettings(parsed);
     // Tag ID migration — must run before essentials migration (which also has tags)
@@ -871,9 +1058,14 @@ function loadState() {
 function ensureLocalCacheMetadata(snapshot = null, options = {}) {
   const currentSnapshot = snapshot ?? localStorage.getItem(STORAGE_KEY) ?? '';
   if (localCacheMeta.cachedAt && localCacheMeta.snapshotHash) return localCacheMeta;
+  const source = options.source === 'shared'
+    ? 'shared'
+    : options.source === 'local'
+      ? 'local'
+      : (localCacheMeta.source || 'local');
   return persistLocalCacheMeta({
     cachedAt: localCacheMeta.cachedAt || new Date().toISOString(),
-    source: options.source === 'shared' ? 'shared' : (localCacheMeta.source || 'local'),
+    source,
     snapshotHash: computeSnapshotHash(currentSnapshot),
     databasePath: options.databasePath ?? state?.databasePath ?? localCacheMeta.databasePath ?? '',
     sharedBaselineVersion: options.sharedBaselineVersion ?? sharedDiskBaselineVersion ?? localCacheMeta.sharedBaselineVersion ?? null,
@@ -884,22 +1076,50 @@ function ensureLocalCacheMetadata(snapshot = null, options = {}) {
 
 function persistStateToLocalCache(json = null, options = {}) {
   const snapshot = json ?? serializeStateSnapshot();
-  localStorage.setItem(STORAGE_KEY, snapshot);
-  const now = new Date().toISOString();
+  const sharedSaveTarget = options.sharedSaveTarget === true;
   const source = options.source === 'shared' ? 'shared' : 'local';
+  let stored = false;
+
+  try {
+    localStorage.setItem(STORAGE_KEY, snapshot);
+    stored = true;
+    localCacheQuotaNoticeShown = false;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) throw error;
+    console.warn('Morpheus: local browser cache quota exceeded', error);
+    clearTrashCacheForQuotaRecovery();
+    try {
+      localStorage.setItem(STORAGE_KEY, snapshot);
+      stored = true;
+      localCacheQuotaNoticeShown = false;
+    } catch (retryError) {
+      if (!isStorageQuotaError(retryError)) throw retryError;
+      clearFullLocalCacheSnapshot();
+      notifyLocalCacheQuota(sharedSaveTarget || source === 'shared');
+    }
+  }
+
+  const now = new Date().toISOString();
   const sharedVersion = options.sharedBaselineVersion ?? sharedDiskBaselineVersion ?? null;
   const sharedPath = (options.sharedBaselinePath ?? getSharedDiskBaselinePath() ?? '').trim();
-  persistLocalCacheMeta({
-    cachedAt: now,
-    source,
-    snapshotHash: computeSnapshotHash(snapshot),
+  const metaPatch = {
     databasePath: (options.databasePath ?? state?.databasePath ?? '').trim(),
     sharedBaselineVersion: sharedVersion,
     sharedBaselinePath: sharedPath,
     sharedSeenAt: source === 'shared'
       ? now
       : (options.sharedSeenAt ?? localCacheMeta.sharedSeenAt ?? null)
-  });
+  };
+  if (stored) {
+    metaPatch.cachedAt = now;
+    metaPatch.source = source;
+    metaPatch.snapshotHash = computeSnapshotHash(snapshot);
+  } else {
+    metaPatch.cachedAt = null;
+    metaPatch.source = source;
+    metaPatch.snapshotHash = '';
+  }
+  persistLocalCacheMeta(metaPatch);
   return snapshot;
 }
 
@@ -914,6 +1134,15 @@ function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
     sharedBaselinePath: sharedDiskBaselinePath,
     sharedSeenAt: new Date().toISOString()
   });
+}
+
+function acceptSharedDiskSnapshot(fileInfo, path = state?.databasePath || '') {
+  sharedDiskSaveGeneration += 1;
+  sharedDiskQueuedSnapshot = null;
+  sharedDiskQueuedPath = '';
+  clearSharedDiskFlushTimer();
+  setSharedDiskBaseline(fileInfo, path);
+  sharedDiskHasPendingChanges = false;
 }
 
 function resetSharedDiskBaseline(path = state?.databasePath || '') {
@@ -990,6 +1219,7 @@ function serializeStateSnapshot() {
   syncBoardCompatibilityState();
   trimFaviconCache();
   stripLegacySharedTagToggleFields(state);
+  if (canScrubStoredServiceApiKeys()) clearStoredServiceApiKeys(state);
   return JSON.stringify(state);
 }
 
@@ -1007,6 +1237,7 @@ async function flushSharedDiskSaveQueue() {
   clearSharedDiskFlushTimer();
 
   while (sharedDiskQueuedSnapshot && !sharedDiskWritesBlocked && bridge.isAvailable() && bridge.nativeIsAvailable()) {
+    const saveGeneration = sharedDiskSaveGeneration;
     const snapshot = sharedDiskQueuedSnapshot;
     const path = sharedDiskQueuedPath || (state?.databasePath || sharedDiskBaselinePath || '').trim();
     const expectedVersion = sharedDiskBaselineVersion;
@@ -1016,6 +1247,7 @@ async function flushSharedDiskSaveQueue() {
 
     try {
       const result = await bridge.saveState(snapshot, { expectedVersion });
+      if (saveGeneration !== sharedDiskSaveGeneration) break;
       if (!result?.ok) {
         if (!sharedDiskQueuedSnapshot) {
           sharedDiskQueuedSnapshot = snapshot;
@@ -1036,8 +1268,15 @@ async function flushSharedDiskSaveQueue() {
       } else {
         resetSharedDiskBaseline(result.databasePath || path || state.databasePath || '');
       }
+      persistStateToLocalCache(snapshot, {
+        source: 'shared',
+        databasePath: result.databasePath || path || state.databasePath || '',
+        sharedBaselineVersion: result.fileInfo?.version ?? sharedDiskBaselineVersion ?? null,
+        sharedBaselinePath: result.databasePath || path || state.databasePath || ''
+      });
       if (sharedDiskQueuedSnapshot) sharedDiskHasPendingChanges = true;
     } catch {
+      if (saveGeneration !== sharedDiskSaveGeneration) break;
       if (!sharedDiskQueuedSnapshot) {
         sharedDiskQueuedSnapshot = snapshot;
         sharedDiskQueuedPath = path;
@@ -1056,15 +1295,23 @@ function saveState(options = {}) {
   const { skipDiskSync = false } = options;
   invalidateDerivedCaches();
   const json = serializeStateSnapshot();
-  persistStateToLocalCache(json);
   isDirty = true;
+  let queuedSharedDiskSave = false;
   if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
     const shouldSyncSharedDisk = !skipDiskSync && bridge.nativeIsAvailable() && !!(state.databasePath || sharedDiskBaselinePath);
     if (shouldSyncSharedDisk && getSharedDiskBaselinePath() !== (state.databasePath || '').trim()) {
       resetSharedDiskBaseline(state.databasePath || '');
     }
-    if (shouldSyncSharedDisk && sharedDiskWritesBlocked) return;
-    if (shouldSyncSharedDisk) queueSharedDiskSave(json, state.databasePath || sharedDiskBaselinePath);
+    if (shouldSyncSharedDisk && !sharedDiskWritesBlocked) {
+      queueSharedDiskSave(json, state.databasePath || sharedDiskBaselinePath);
+      queuedSharedDiskSave = true;
+    }
+  }
+  try {
+    persistStateToLocalCache(json, { sharedSaveTarget: queuedSharedDiskSave });
+  } catch (error) {
+    console.warn('Morpheus: failed to persist local browser cache', error);
+    if (!queuedSharedDiskSave) throw error;
   }
 }
 

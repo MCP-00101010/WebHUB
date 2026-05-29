@@ -61,11 +61,10 @@ header {
 
 .actions { padding: 12px 14px 8px; }
 
-.btn-primary {
+.btn-primary,
+.btn-secondary {
   width: 100%;
   padding: 8px 12px;
-  background: #6d4aff;
-  color: #fff;
   border: none;
   border-radius: 6px;
   font-size: 13px;
@@ -73,8 +72,19 @@ header {
   cursor: pointer;
   transition: background 0.15s;
 }
+.btn-primary {
+  background: #6d4aff;
+  color: #fff;
+  margin-bottom: 8px;
+}
+.btn-secondary {
+  background: #2d2f35;
+  color: #d1d5db;
+}
 .btn-primary:hover:not(:disabled) { background: #7c5cff; }
-.btn-primary:disabled { background: #374151; color: #6b7280; cursor: default; }
+.btn-secondary:hover:not(:disabled) { background: #3b3f47; }
+.btn-primary:disabled,
+.btn-secondary:disabled { background: #374151; color: #6b7280; cursor: default; }
 
 .feedback { padding: 0 14px 12px; font-size: 12px; color: #6ee7b7; }
 .feedback.hidden { display: none; }

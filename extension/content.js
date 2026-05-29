@@ -10,7 +10,10 @@ if (IS_MORPHEUS) {
   // Receive tab data pushed from the popup via background.
   browser.runtime.onMessage.addListener(msg => {
     if (msg.type === 'MW_RECEIVE_TAB') {
-      window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_TAB', url: msg.url, title: msg.title }, '*');
+      window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_TAB', url: msg.url, title: msg.title, faviconCache: msg.faviconCache || '' }, '*');
+    }
+    if (msg.type === 'MW_RECEIVE_IMPORT_ITEMS') {
+      window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_IMPORT_ITEMS', items: msg.items || [], source: msg.source || '' }, '*');
     }
   });
 }

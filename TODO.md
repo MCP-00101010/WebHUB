@@ -14,6 +14,10 @@
 - background image performance and memory pass
   - continue reviewing the wider background image loading/rendering path for databases with many tabs that have backgrounds.
   - follow up beyond the current import-time downscaling pass if there are still avoidable rerenders, duplicate decoding paths, or retained image data causing pressure.
+- lightweight bookmark usage metadata
+  - add optional local-only bookmark usage fields such as `lastOpenedAt` and `openCount`, updated only when bookmarks are launched through the hub.
+  - explore generated Essentials alternatives such as `Recent bookmarks` and `Most used bookmarks` as read-only usage-driven views alongside the current manual Essentials workflow.
+  - include a way to clear/reset usage stats if this ships.
 
 ## Dynamic Sets and Folders
 
@@ -27,12 +31,8 @@
 
 ## Firefox Extension / Bridge
 
-- Add "Send To Import Manager" button to extension UI
-- Add a generic secret-storage bridge so API keys are kept out of hub state, exports, and the shared JSON database. Use OS-backed storage where available (Windows Credential Manager, Linux Secret Service/keyring), with a clearly labeled fallback only if no secure store exists.
-- Prefer adding generic extension/native-host capabilities for service integrations up front (for example secret get/set and other reusable bridge actions) so future widgets do not force frequent AMO re-signing for one-off extension changes.
-- Add browser-captured favicon support: when bookmarks come from the current tab or other extension-driven flows, pass Firefox's actual tab favicon URL/data through the bridge and cache it in `faviconCache` instead of relying only on public favicon lookups.
-- native-host favicon fetch/parse fallback for stubborn sites
-- Add background asset management: when a tab background image is picked from disk or URL, copy it into a managed sibling assets folder and store a stable relative path instead of inflating the JSON with data URLs.
+- Completed extension/native-host update round is tracked in CHANGELOG [0.11.66].
+- Prefer generic extension/native-host capabilities for service integrations up front so future widgets do not force frequent AMO re-signing for one-off extension changes.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.
 
 ## Documentation, Localization & Code Health
@@ -71,6 +71,7 @@ Post-feature-freeze work, best done once the string surface is stable:
 ## Cross-Cutting Notes
 
 - **Browser / OS agnosticism:** the page-side bridge is the key abstraction. Extension on Firefox/Zen, File System Access API on Chromium, manual fallback everywhere else. No platform-specific code in the app itself.
-- **Extension as optional enhancement:** the hub must remain fully functional without the extension. Gate every extension-dependent UI element on `bridge.isAvailable()`.
+- **Extension/native host as persistence baseline:** large hubs depend on the extension + native host for reliable disk-backed storage. Browser storage may remain as a small fallback/emergency cache, but full database persistence should not rely on `localStorage` or extension `storage.local`.
+- **Bridge-gated enhancement UI:** gate extension-dependent actions on `bridge.isAvailable()` / `bridge.nativeIsAvailable()` and clearly warn when disk-backed storage is unavailable.
 - **Inbox as the universal delivery mechanism:** the per-tab inbox is the single intake point for all external delivery, including move-to-board, extension tab sender, and Import Manager.
 - **Tag inheritance before ignore-toggle:** the per-item "ignore inheritance" flag is intentionally deferred until the core system has been live long enough to understand edge cases.

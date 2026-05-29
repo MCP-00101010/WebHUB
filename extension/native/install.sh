@@ -2,9 +2,15 @@
 # Morpheus WebHub — native messaging host installer (Linux / macOS)
 # Run from the extension/native/ directory:
 #   bash install.sh
+# Optional for temporary/debug add-ons:
+#   bash install.sh morpheus-webhub@local '<temporary-id>'
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ALLOWED_EXTENSIONS=("$@")
+if [ ${#ALLOWED_EXTENSIONS[@]} -eq 0 ]; then
+    ALLOWED_EXTENSIONS=("morpheus-webhub@local")
+fi
 
 echo "Morpheus WebHub — native host installer"
 echo ""
@@ -22,6 +28,9 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 echo "Python  : $PYTHON"
+echo "Allowed : ${ALLOWED_EXTENSIONS[*]}"
+
+ALLOWED_JSON=$(printf '%s\n' "${ALLOWED_EXTENSIONS[@]}" | "$PYTHON" -c 'import json,sys; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))')
 
 HOST="$SCRIPT_DIR/morpheus_host.py"
 chmod +x "$HOST"
@@ -55,7 +64,7 @@ cat > "$MANIFEST" <<JSON
   "description": "Morpheus WebHub native messaging host",
   "path": "$HOST",
   "type": "stdio",
-  "allowed_extensions": ["morpheus-webhub@local"]
+  "allowed_extensions": $ALLOWED_JSON
 }
 JSON
 

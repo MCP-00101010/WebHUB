@@ -461,6 +461,54 @@ function parseBookmarkHtml(htmlText) {
   return parseDL(doc.querySelector('DL'));
 }
 
+function normalizeExternalImportItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  if (item.type === 'folder') {
+    const children = (Array.isArray(item.children) ? item.children : [])
+      .map(normalizeExternalImportItem)
+      .filter(Boolean);
+    return createFolderRecord(item.title || 'Imported folder', {
+      id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      collapsed: true,
+      children
+    });
+  }
+  if (item.type === 'bookmark') {
+    const url = typeof item.url === 'string' ? item.url.trim() : '';
+    if (!url || !isValidUrl(url)) return null;
+    return {
+      id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      type: 'bookmark',
+      title: (item.title || url).trim(),
+      url: normalizeUrl(url),
+      tags: [],
+      faviconCache: typeof item.faviconCache === 'string' ? item.faviconCache : ''
+    };
+  }
+  return null;
+}
+
+function receiveExternalImportItems(items, options = {}) {
+  const normalized = (Array.isArray(items) ? items : [])
+    .map(normalizeExternalImportItem)
+    .filter(Boolean);
+  if (!normalized.length) {
+    showNotice('No bookmarks were received for Import Manager.');
+    return false;
+  }
+  pushUndoSnapshot();
+  if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
+  state.importManager.items.push(...normalized);
+  state.importManager.lastImportedAt = new Date().toISOString();
+  renderImportManagerPanel();
+  saveState();
+  showImportManagerPanel();
+  const { bookmarks, folders } = getImportManagerCounts();
+  const source = options.source === 'bookmarks-menu' ? ' from Firefox bookmarks' : '';
+  showNotice(`Imported ${bookmarks} bookmarks in ${folders} folders${source} into Import Manager.`);
+  return true;
+}
+
 function attachBookmarkImportListener() {
   const bmImportFile = document.getElementById('importBookmarksFile');
   if (!bmImportFile) return;

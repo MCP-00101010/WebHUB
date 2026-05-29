@@ -49,6 +49,9 @@ const searchFilters = {
 let activeTagFilters = new Set();
 let _tagFilterMode = 'or';
 let _tagPickerSort = 'az';
+const nativeFaviconPromises = new Map();
+const nativeFaviconMisses = new Set();
+const nativeFaviconRefreshRequests = new Set();
 
 function _faviconHostname(url) {
   try { return new URL(url).hostname; } catch { return ''; }
@@ -58,6 +61,44 @@ function resolveSidebarContainerAlpha(board = getActiveBoard()) {
   const settings = state.settings || {};
   if (settings.sidebarUseActiveTabOpacity !== false) return (board?.containerOpacity ?? 100) / 100;
   return Math.min(100, Math.max(10, settings.sidebarOpacity ?? 100)) / 100;
+}
+
+function resolveUiPanelAlpha() {
+  const settings = state.settings || {};
+  return Math.min(100, Math.max(10, settings.sidebarOpacity ?? 100)) / 100;
+}
+
+function requestNativeFaviconRefresh(item) {
+  const url = typeof item?.url === 'string' ? item.url.trim() : '';
+  if (!/^https?:\/\//i.test(url)) return;
+  nativeFaviconMisses.delete(url);
+  nativeFaviconRefreshRequests.add(url);
+}
+
+async function fetchNativeFaviconForItem(item, img, options = {}) {
+  if (!item?.url || item.faviconCache || typeof bridge === 'undefined' || typeof bridge.fetchFavicon !== 'function') return false;
+  const url = item.url.trim();
+  if (!/^https?:\/\//i.test(url) || (!options.ignoreMiss && nativeFaviconMisses.has(url))) return false;
+
+  let promise = nativeFaviconPromises.get(url);
+  if (!promise) {
+    promise = bridge.fetchFavicon(url)
+      .then(result => result?.dataUrl || '')
+      .catch(() => '')
+      .finally(() => nativeFaviconPromises.delete(url));
+    nativeFaviconPromises.set(url, promise);
+  }
+
+  const dataUrl = await promise;
+  if (!dataUrl) {
+    nativeFaviconMisses.add(url);
+    return false;
+  }
+  item.faviconCache = dataUrl;
+  img.onerror = null;
+  img.src = dataUrl;
+  saveState();
+  return true;
 }
 
 function setFavicon(img, item, sz) {
@@ -92,9 +133,9 @@ function setFavicon(img, item, sz) {
     `${origin}/favicon-32x32.png`,
     `${origin}/favicon-16x16.png`,
     `${origin}/android-chrome-192x192.png`,
-    `${origin}/android-chrome-512x512.png`,
-    `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`,
+    `${origin}/android-chrome-512x512.png`
   ];
+  const genericFallbackSrc = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
   const seen = new Set();
   const uniqueSrcs = srcs.filter(src => {
     if (!src || seen.has(src)) return false;
@@ -103,10 +144,23 @@ function setFavicon(img, item, sz) {
   });
   let i = 0;
   const tryNext = () => {
-    if (i >= uniqueSrcs.length) { img.onerror = null; return; }
+    if (i >= uniqueSrcs.length) {
+      img.onerror = null;
+      fetchNativeFaviconForItem(item, img).then(found => {
+        if (!found && !item.faviconCache) img.src = genericFallbackSrc;
+      });
+      return;
+    }
     img.onerror = tryNext;
     img.src = uniqueSrcs[i++];
   };
+  if (nativeFaviconRefreshRequests.has(item.url.trim())) {
+    nativeFaviconRefreshRequests.delete(item.url.trim());
+    fetchNativeFaviconForItem(item, img, { ignoreMiss: true }).then(found => {
+      if (!found && !item.faviconCache) tryNext();
+    });
+    return;
+  }
   tryNext();
 }
 
@@ -163,39 +217,45 @@ function buildTooltip(item, board = null) {
 
 function applySettings() {
   const s = state.settings;
+  const style = getActiveThemeStyleSettings();
   const r = document.documentElement.style;
-  const overrides = s.styleOverrides || {};
+  const overrides = style.styleOverrides || {};
   const fontPresets = {
     small: { base: 12, hub: 16, boardTitle: 18, nav: 13, title: 11 },
     medium: { base: 14, hub: 18, boardTitle: 22, nav: 14, title: 12 },
     large: { base: 16, hub: 21, boardTitle: 26, nav: 16, title: 14 }
   };
-  const preset = fontPresets[s.globalFontScale || 'medium'] || fontPresets.medium;
-  const globalColor = s.globalFontColorFromTheme === false
-    ? (s.globalFontColor || '#e5e7eb')
+  const preset = fontPresets[style.globalFontScale || 'medium'] || fontPresets.medium;
+  const globalColor = style.globalFontColorFromTheme === false
+    ? (style.globalFontColor || '#e5e7eb')
     : 'var(--accent)';
-  const globalMutedColor = s.globalFontColorFromTheme === false
-    ? (s.globalFontColor || '#e5e7eb')
+  const globalMutedColor = style.globalFontColorFromTheme === false
+    ? (style.globalFontColor || '#e5e7eb')
     : 'var(--accent)';
-  const sectionColor = (section, key, fallback = globalColor) => overrides[section] ? (s[key] || fallback) : fallback;
-  const sectionSize = (section, key, fallback) => overrides[section] ? (s[key] || fallback) : fallback;
+  const sectionColor = (section, key, fallback = globalColor) => {
+    if (!overrides[section]) return fallback;
+    if (style[`${key}FromTheme`] === true) return THEME_STYLE_COLOR_FALLBACKS[key] || fallback;
+    return style[key] || fallback;
+  };
+  const sectionSize = (section, key, fallback) => overrides[section] ? (style[key] || fallback) : fallback;
 
   r.setProperty('--board-font-size', `${sectionSize('board', 'boardFontSize', preset.nav)}px`);
   r.setProperty('--bookmark-font-size', `${sectionSize('bookmark', 'bookmarkFontSize', preset.base)}px`);
   r.setProperty('--folder-font-size', `${sectionSize('folder', 'folderFontSize', preset.nav + 1)}px`);
   r.setProperty('--title-font-size', `${sectionSize('title', 'titleFontSize', preset.title)}px`);
-  r.setProperty('--title-line-thickness', `${overrides.title ? s.titleLineThickness : 1}px`);
+  r.setProperty('--title-line-thickness', `${overrides.title ? style.titleLineThickness : 1}px`);
   r.setProperty('--global-font-color', globalColor);
   r.setProperty('--board-title-font-size', `${sectionSize('boardTitle', 'boardTitleFontSize', preset.boardTitle)}px`);
   r.setProperty('--tags-display', s.showTags ? 'flex' : 'none');
   r.setProperty('--tags-grid-display', s.showTags ? 'grid' : 'none');
   r.setProperty('--sidebar-container-alpha', resolveSidebarContainerAlpha());
+  r.setProperty('--ui-panel-alpha', resolveUiPanelAlpha());
 
-  const ff = (section, key) => overrides[section] ? (s[key] || 'inherit') : 'inherit';
-  const fw = (section, key, def = 'normal') => overrides[section] ? (s[key] ? 'bold' : def) : def;
-  const fi = (section, key) => overrides[section] && s[key] ? 'italic' : 'normal';
-  const td = (section, key) => overrides[section] && s[key] ? 'underline' : 'none';
-  const align = (section, key) => overrides[section] ? (s[key] || 'left') : 'left';
+  const ff = (section, key) => overrides[section] ? (style[key] || 'inherit') : 'inherit';
+  const fw = (section, key, def = 'normal') => overrides[section] ? (style[key] ? 'bold' : def) : def;
+  const fi = (section, key) => overrides[section] && style[key] ? 'italic' : 'normal';
+  const td = (section, key) => overrides[section] && style[key] ? 'underline' : 'none';
+  const align = (section, key) => overrides[section] ? (style[key] || 'left') : 'left';
 
   r.setProperty('--bookmark-font-family',        ff('bookmark', 'bookmarkFontFamily'));
   r.setProperty('--bookmark-font-weight',         fw('bookmark', 'bookmarkBold'));
@@ -239,8 +299,12 @@ function applySettings() {
   r.setProperty('--bookmark-color',               sectionColor('bookmark', 'bookmarkColor'));
   r.setProperty('--folder-color',                 sectionColor('folder', 'folderColor'));
   r.setProperty('--title-color',                  sectionColor('title', 'titleColor', globalMutedColor));
-  r.setProperty('--title-line-color',             overrides.title ? (s.titleLineColor || 'rgba(255,255,255,0.12)') : globalColor);
-  r.setProperty('--title-line-style',             overrides.title ? (s.titleLineStyle || 'solid') : 'solid');
+  r.setProperty('--title-line-color',             overrides.title
+    ? (style.titleLineColorFromTheme === true
+        ? (THEME_STYLE_COLOR_FALLBACKS.titleLineColor || globalColor)
+        : (style.titleLineColor || 'rgba(255,255,255,0.12)'))
+    : globalColor);
+  r.setProperty('--title-line-style',             overrides.title ? (style.titleLineStyle || 'solid') : 'solid');
 
   const sdSizes = { small: '34px', medium: '44px', large: '56px' };
   r.setProperty('--speed-link-size', sdSizes[s.speedDialIconSize] || '44px');
@@ -1148,7 +1212,7 @@ function createNavItem(item, depth = 0, parent = null) {
 function applyBoardBackground(board) {
   const shell = elements.appShell;
   const mp = elements.mainPanel;
-  const backgroundImage = board.backgroundImage ? `url(${board.backgroundImage})` : '';
+  const backgroundImage = board.backgroundImage ? `url(${JSON.stringify(board.backgroundImage)})` : '';
   const backgroundFit = board.backgroundFit === 'contain'
     ? 'contain'
     : board.backgroundFit === 'fill'
@@ -1156,6 +1220,10 @@ function applyBoardBackground(board) {
       : 'cover';
   const containerAlpha = (board.containerOpacity ?? 100) / 100;
   const sidebarAlpha = resolveSidebarContainerAlpha(board);
+  const uiPanelAlpha = resolveUiPanelAlpha();
+  document.documentElement.style.setProperty('--container-alpha', containerAlpha);
+  document.documentElement.style.setProperty('--sidebar-container-alpha', sidebarAlpha);
+  document.documentElement.style.setProperty('--ui-panel-alpha', uiPanelAlpha);
   if (shell) {
     shell.style.backgroundImage = backgroundImage;
     shell.style.backgroundSize = backgroundFit;
@@ -1462,6 +1530,10 @@ function renderBoardTabBar(board, activeTab) {
   spacer.className = 'collection-tab-bar-spacer';
   tabBar.appendChild(spacer);
 
+  const actionGroup = document.createElement('div');
+  actionGroup.className = 'collection-tab-actions';
+  tabBar.appendChild(actionGroup);
+
   const settingsBtn = document.createElement('button');
   settingsBtn.type = 'button';
   settingsBtn.className = 'collection-tab-settings-btn';
@@ -1479,7 +1551,19 @@ function renderBoardTabBar(board, activeTab) {
     }
     showBoardSettingsPanel();
   });
-  tabBar.appendChild(settingsBtn);
+  const setBarToggleBtn = elements.setBarToggleBtn;
+  if (setBarToggleBtn) {
+    const setBarToggleLabel = !activeTab
+      ? 'No active tab'
+      : (activeTab.showSetBar === false ? 'Show set bar' : 'Hide set bar');
+    setBarToggleBtn.className = 'icon-btn collection-tab-settings-btn collection-tab-set-toggle';
+    setBarToggleBtn.title = setBarToggleLabel;
+    setBarToggleBtn.setAttribute('aria-label', setBarToggleLabel);
+    setBarToggleBtn.disabled = !!board.locked || !activeTab;
+    actionGroup.appendChild(setBarToggleBtn);
+  }
+
+  actionGroup.appendChild(settingsBtn);
 
   tabBar.oncontextmenu = event => {
     if (event.target.closest('.collection-tab, .collection-tab-add, .collection-tab-settings-btn')) return;
@@ -1511,13 +1595,6 @@ function renderTabSetBar(board, activeTab) {
   const linkedSets = setIds
     .map(setId => findSetById(setId))
     .filter(Boolean);
-
-  if (!linkedSets.length) {
-    const empty = document.createElement('span');
-    empty.className = 'set-bar-empty';
-    empty.textContent = 'No sets linked to this tab yet.';
-    setBar.appendChild(empty);
-  }
 
   linkedSets.forEach(set => {
     const setItems = resolveSetItems(set);
@@ -1627,6 +1704,9 @@ function renderBoard(options = {}) {
   if (!board) {
     elements.mainPanel.classList.add('no-board');
     elements.mainPanel.style.backgroundImage = '';
+    document.documentElement.style.setProperty('--container-alpha', 1);
+    document.documentElement.style.setProperty('--sidebar-container-alpha', resolveSidebarContainerAlpha(null));
+    document.documentElement.style.setProperty('--ui-panel-alpha', resolveUiPanelAlpha());
     if (elements.appShell) {
       elements.appShell.style.backgroundImage = '';
       elements.appShell.style.setProperty('--sidebar-container-alpha', resolveSidebarContainerAlpha(null));
