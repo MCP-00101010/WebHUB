@@ -5,6 +5,7 @@
   <meta name="morpheus-webhub" content="1.0" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Morpheus WebHub</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css" />
   <link rel="stylesheet" href="source/styles.css" />
 </head>
 <body>
@@ -78,6 +79,14 @@
       <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </symbol>
+
+      <!-- Reload / refresh -->
+      <symbol id="icon-reload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7v5h-5"/>
+        <path d="M4 17v-5h5"/>
+        <path d="M6.1 9a7 7 0 0 1 11.7-2.5L20 9"/>
+        <path d="M17.9 15a7 7 0 0 1-11.7 2.5L4 15"/>
       </symbol>
 
       <!-- Chevron down (collapse folder) -->
@@ -232,7 +241,7 @@
 
           <div class="sidebar-meta-row">
             <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.84</button>
+            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.101</button>
           </div>
         </section>
 
@@ -1018,7 +1027,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.84</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.101</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Browser extension</span>
@@ -1341,6 +1350,7 @@
   <div id="contextMenu" class="context-menu hidden"></div>
   <div id="tooltip" class="tooltip hidden"></div>
   <script src="source/bridge.js" defer></script>
+  <script src="vendor/maplibre-gl/maplibre-gl.js" defer></script>
   <script src="source/themes.js" defer></script>
   <script src="source/widgets.js" defer></script>
   <script src="source/icons.js" defer></script>

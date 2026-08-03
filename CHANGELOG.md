@@ -5,6 +5,260 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.101] — 2026-08-03
+
+### Fixed
+
+- **Stable Weather Map settings** — typing in the origin search, moving the origin zoom slider, or changing other Weather Map controls now updates only the settings preview instead of repeatedly destroying and rebuilding the live widget behind the modal.
+- **Origin changes apply on Done** — committing a new origin location or zoom now destroys the previous map without recapturing its old camera under the new origin, clears the obsolete browser-local view, and renders at the newly configured origin.
+
+### Tests
+
+- Added regression coverage for deferred Weather Map settings rendering and origin commits that discard the previous camera without mutating the new configuration.
+
+---
+
+## [0.11.100] — 2026-08-03
+
+### Added
+
+- **Weather Map origin and current view** — settings now distinguish the shared origin location/zoom from the browser-local current map centre/zoom created by live map interaction.
+- **Origin zoom control** — Weather Map settings include a 3–13 zoom slider with quarter-level steps and a non-interactive MapLibre preview showing the configured origin location, zoom, marker, and basemap.
+- **Reset-to-origin action** — the Weather Map now has a reload-style action beside its settings icon that clears only its browser-local view, returns to the configured origin centre and zoom, and refreshes forecast data there.
+
+### Tests
+
+- Added coverage for zoom normalization, origin defaults, reset-to-origin database isolation, settings/preview wiring, and preview styling.
+
+---
+
+## [0.11.99] — 2026-08-03
+
+### Changed
+
+- **Browser-local Weather Map view** — map camera and zoom, locally dragged forecast centre, active overlays, selected forecast hour, and attribution state now survive Hub reloads in a widget-specific browser preference record.
+- **Shared database isolation** — interacting with the Weather Map no longer changes its shared widget coordinates or attribution configuration and no longer invokes a Hub database save. Configured location, units, and basemap remain normal shared widget settings.
+
+### Tests
+
+- Added coverage for restoring Weather Map view state after runtime reset, retaining local forecast centres across data requests, and leaving widget database data untouched by map interactions.
+
+---
+
+## [0.11.98] — 2026-08-03
+
+### Changed
+
+- **Weather startup refresh** — both the basic Weather and Weather Map widgets now force one fresh Open-Meteo request when the Hub page loads or reloads, even when a saved response is still inside its normal cache lifetime.
+- **Hourly forecast refresh** — each weather widget checks the clock once per minute and refreshes once when a new hour begins. Ordinary widget rerenders within the same hour do not make duplicate requests.
+
+### Tests
+
+- Added coverage for per-hour refresh claims, startup/hour scheduling in both weather widgets, and Weather Map forced refreshes against a fresh cache.
+
+---
+
+## [0.11.97] — 2026-08-03
+
+### Added
+
+- **Weather reload action** — the basic Weather widget now has a reload icon beside its settings icon that immediately requests fresh Open-Meteo data, bypassing the normal 30-minute cache and retry delay.
+
+### Changed
+
+- **Reload feedback** — the new action spins and remains disabled while its request is running, while the widget continues showing its saved forecast with a refreshing status.
+
+### Tests
+
+- Added coverage for forced refreshes against a fresh cache, Weather-only action registration, icon placement, and loading feedback styling.
+
+---
+
+## [0.11.96] — 2026-08-03
+
+### Fixed
+
+- **Hourly forecast drag isolation** — the hourly scroller now resolves its containing widget when interaction begins, after the forecast has joined the live DOM, so horizontal dragging disables widget movement and scrolls the forecast as intended.
+
+### Tests
+
+- Added a regression case covering handlers installed while the hourly forecast is detached and pointer interaction after it is attached to its widget.
+
+---
+
+## [0.11.95] — 2026-08-03
+
+### Changed
+
+- **Readable hourly strip** — the basic Weather widget's 24-hour forecast now stays on one row with approximately eight hours visible at once.
+- **Grab-to-scroll forecast** — drag left or right anywhere over the hourly strip to browse the remaining hours without moving the widget itself; mouse and touch pointers are supported.
+
+### Tests
+
+- Added coverage for pointer-driven scrolling, widget-drag isolation, the single-row eight-card layout, and grab cursor feedback.
+
+---
+
+## [0.11.94] — 2026-08-03
+
+### Added
+
+- **Optional 24-hour Weather forecast** — the basic Weather widget can now show the next 24 hours between current conditions and the daily forecast, including time, temperature, rain chance, and a day/night-aware condition icon.
+- **Responsive hourly layout** — hourly cards use two rows of 12 at ordinary widget widths, expand to one row of 24 in very wide widgets, and remain horizontally scrollable in narrow columns.
+
+### Changed
+
+- **Hourly-aware Weather cache** — cached Weather responses now include the required hourly fields; switching the new display toggle reuses the current response without making another request.
+
+### Tests
+
+- Added coverage for hourly request parameters, current-hour extraction, the 24-hour display toggle, cache reuse, and responsive hourly styling.
+
+---
+
+## [0.11.93] — 2026-08-03
+
+### Added
+
+- **Current-time reset** — Weather Map timelines now include a **Now** button that stops playback and jumps to the forecast frame nearest the current time and date.
+- **Full-width forecast scales** — precipitation, temperature, and cloud overlays now use wide colour gradients with their values printed directly at the corresponding colour stops.
+
+### Changed
+
+- **Cleaner wind presentation** — removed the redundant wind-speed legend because each animated wind marker already displays its local speed.
+- **Stable legend rendering** — quantitative scales are only rebuilt when units or enabled overlays change, rather than on every forecast animation frame.
+
+### Tests
+
+- Added coverage for nearest-current-hour selection, unit-specific legend values, wind-legend removal, the Now control, and full-width labelled gradient styling.
+
+---
+
+## [0.11.92] — 2026-08-03
+
+### Fixed
+
+- **Weather Map drag flicker** — forecast refreshes after map recentering now update the existing MapLibre source, markers, timeline, status, and controls in place instead of destroying and recreating the canvas.
+- **Continuous forecast display** — the previous overlays remain visible while a new map-centre forecast is loading, including when a request fails or is superseded by a later drag.
+
+### Tests
+
+- Added regression coverage ensuring the post-fetch Weather Map refresher does not destroy the map, clear the widget DOM, or invoke a full widget render.
+
+---
+
+## [0.11.91] — 2026-08-03
+
+### Changed
+
+- **Persistent attribution control** — Weather Maps remember whether the compact attribution line is expanded or collapsed across location refreshes, widget moves, column rerenders, and Hub reloads.
+- **Theme-aware zoom controls** — replaced MapLibre's fixed dark plus/minus artwork with CSS-drawn icons that inherit the active Hub panel, text, border, hover, and accent colors.
+
+### Tests
+
+- Added coverage for attribution-state carry-over and capture, saved Weather Map defaults, and theme-variable navigation-control styling.
+
+---
+
+## [0.11.90] — 2026-08-03
+
+### Added
+
+- **Map-driven location changes** — dragging a Weather Map now recentres its Open-Meteo forecast grid, updates the displayed coordinates, persists the new location, and leaves Hub widget dragging disabled while the pointer is over the map.
+- **Camera preservation** — weather maps retain their centre and zoom while widgets are moved or board columns rerender.
+- **Responsive map sizing** — MapLibre canvases now observe their container and resize after attachment, widget movement, and column-width changes.
+
+### Changed
+
+- **Higher map zoom** — increased the maximum zoom from 9 to 13 and enabled normal wheel zoom over the map.
+- **Cleaner wind display** — removed the dark circular backgrounds from wind markers while retaining high-contrast arrows and speed labels.
+
+### Fixed
+
+- **Stale recentre requests** — forecast responses are now associated with the coordinates that initiated them, preventing rapid consecutive map drags from caching data for the wrong centre.
+
+### Tests
+
+- Added coverage for camera carry-over, camera capture, higher zoom, container resize handling, map-drag location updates, stale-request protection, and marker styling.
+
+---
+
+## [0.11.89] — 2026-08-03
+
+### Added
+
+- **Combined weather overlays** — wind, rain, temperature, and cloud controls are now independent toggles, allowing any combination of forecast layers to be displayed together.
+- **Animated weather** — wind arrows flow in the forecast direction and rain fields pulse to make changing intensity easier to read; decorative motion respects the reduced-motion preference.
+- **Forecast playback** — added play and pause controls that animate all enabled layers together across the 48-hour forecast timeline.
+
+### Changed
+
+- **Overlay composition** — temperature, cloud, and rain now use dedicated stacked MapLibre layers with individual legends and visibility state.
+- **Map lifecycle cleanup** — forecast playback timers and rain animation frames are stopped whenever a weather map is destroyed.
+
+### Tests
+
+- Added coverage for multi-layer state, independently visible map layers, forecast animation controls, reduced-motion handling, and animation teardown.
+
+---
+
+## [0.11.88] — 2026-08-03
+
+### Added
+
+- **Regional Weather Map widget** — added an interactive OpenFreeMap basemap with Open-Meteo forecast layers for wind, rain, temperature, and cloud cover around a selected location.
+- **Forecast timeline** — weather maps include an hourly slider covering the next 48 hours, with layer-specific legends and metric or imperial measurements.
+- **Pinned local map runtime** — vendored MapLibre GL JS 5.24.0 and its BSD licence so executable map code is loaded locally rather than from a third-party script CDN.
+
+### Changed
+
+- **Widget interaction handling** — interactive widget surfaces no longer start a widget drag while the user is manipulating a map.
+- **Map lifecycle cleanup** — MapLibre instances and wind markers are explicitly destroyed before board-column rerenders to avoid retained WebGL contexts.
+
+### Tests
+
+- Added coverage for Weather Map registration, regional grid bounds, batched Open-Meteo request parameters, forecast-layer extraction, pinned map assets, map teardown, and map-control styling; reran the complete JavaScript suite.
+
+---
+
+## [0.11.87] — 2026-08-03
+
+### Added
+
+- **Weather units** — weather widgets can switch between metric measurements (°C, km/h and mm) and imperial measurements (°F, mph and inches).
+- **Forecast orientation** — forecast days can be displayed as the existing vertical list or as a horizontally scrolling row of compact day cards.
+
+### Tests
+
+- Extended weather-widget coverage for unit-specific Open-Meteo parameters, unit-aware cache invalidation, layout-only cache reuse, and horizontal forecast styling.
+
+---
+
+## [0.11.86] — 2026-08-03
+
+### Added
+
+- **Open-Meteo weather widget** — added a column widget with searchable global location selection, current conditions, precipitation probability, and a configurable 1–16 day forecast.
+- **Local forecast cache** — weather responses refresh every 30 minutes and stay in a widget-specific browser cache, preventing background forecast updates from rewriting the shared Hub database.
+
+### Tests
+
+- Added coverage for widget registration, forecast-length limits, Open-Meteo request construction, cache invalidation, shared-state isolation, and weather UI styling.
+
+---
+
+## [0.11.85] — 2026-08-03
+
+### Changed
+
+- **Larger selection hit target** — bookmark and folder selection checkboxes retain their existing 15px visual size but now accept clicks within an additional 5px invisible margin on every side, reducing accidental bookmark opens.
+
+### Tests
+
+- Verified JavaScript syntax, selection event propagation, and stylesheet consistency after the hit-target adjustment.
+
+---
+
 ## [0.11.84] — 2026-08-03
 
 ### Fixed
