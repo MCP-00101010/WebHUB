@@ -1011,7 +1011,34 @@ function renderEssentials() {
 function renderNav() {
   clearNavWidgetTimers();
   elements.navList.innerHTML = '';
-  state.navItems.forEach(item => elements.navList.appendChild(createNavItem(item)));
+  const orderedItems = _orderedNavItemsForRender(state.navItems);
+  if (orderedItems.some((item, index) => item !== state.navItems[index])) {
+    state.navItems.splice(0, state.navItems.length, ...orderedItems);
+  }
+  const bottomGroup = document.createElement('div');
+  bottomGroup.className = 'nav-bottom-widget-group';
+  orderedItems.forEach(item => {
+    const element = createNavItem(item);
+    if (_isBottomAlignedNavWidget(item)) {
+      element.classList.add('nav-widget-item--bottom');
+      bottomGroup.appendChild(element);
+    } else {
+      elements.navList.appendChild(element);
+    }
+  });
+  if (bottomGroup.childElementCount) elements.navList.appendChild(bottomGroup);
+}
+
+function _isBottomAlignedNavWidget(item) {
+  return item?.type === 'widget' && item.config?.sidebarBottom === true;
+}
+
+function _orderedNavItemsForRender(items) {
+  const list = Array.isArray(items) ? items : [];
+  return [
+    ...list.filter(item => !_isBottomAlignedNavWidget(item)),
+    ...list.filter(item => _isBottomAlignedNavWidget(item))
+  ];
 }
 
 function createNavItem(item, depth = 0, parent = null) {
@@ -1028,6 +1055,10 @@ function createNavItem(item, depth = 0, parent = null) {
     if (def) {
       const body = document.createElement('div');
       body.className = 'nav-widget-body';
+      _appendWidgetActionButtons(el, item, body, 'navpane', {
+        sidebarBottomAvailable: !parent,
+        onSettingsRefresh: () => renderNav()
+      });
       el.appendChild(body);
       def.render(item, body, 'navpane');
     }
@@ -1037,7 +1068,7 @@ function createNavItem(item, depth = 0, parent = null) {
       handleNavContextMenu(e, item, parent, depth);
     });
     el.addEventListener('dragstart', e => {
-      if (e.target.closest('input, textarea, button, label, select')) { e.preventDefault(); return; }
+      if (e.target.closest('input, textarea, button, label, select, .widget-interactive-surface')) { e.preventDefault(); return; }
       e.stopPropagation();
       dragPayload = { area: 'nav', itemId: item.id, itemType: 'widget', widgetType: item.widgetType, parentId: parent ? parent.id : null };
       e.dataTransfer.setData('text/plain', item.id);

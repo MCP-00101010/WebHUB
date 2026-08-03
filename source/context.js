@@ -667,7 +667,10 @@ function handleContextMenuAction(action) {
       showFolderModal('edit', contextTarget);
       break;
     case 'editWidget':
-      openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); });
+      openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); }, {
+        widgetContext: contextTarget.area === 'nav-item' ? 'navpane' : 'column',
+        sidebarBottomAvailable: contextTarget.area === 'nav-item' && !contextTarget.parentId
+      });
       break;
     case 'lockItem':
       if (contextTarget.item) {
@@ -697,6 +700,7 @@ function handleContextMenuAction(action) {
         openWidgetSettings(widget, null, {
           isNew: true,
           deferUndo: true,
+          widgetContext: 'column',
           onDone: () => {
             pushUndoSnapshot();
             const board = getActiveBoard();
@@ -711,6 +715,7 @@ function handleContextMenuAction(action) {
         openWidgetSettings(widget, null, {
           isNew: true,
           deferUndo: true,
+          widgetContext: 'navpane',
           onDone: () => {
             pushUndoSnapshot();
             state.navItems.push(widget);

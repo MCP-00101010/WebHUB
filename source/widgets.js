@@ -12,6 +12,16 @@ const _weatherMapMemoryCache = new Map();
 const _weatherMapRuntime = new Map();
 const _weatherMapInstances = new Map();
 const _weatherMapViewMemory = new Map();
+const _astronomyRuntime = new Map();
+const _issTrackerInstances = new Map();
+const _issTrackerRuntime = new Map();
+let _issTleMemoryCache = null;
+const _rssMemoryCache = new Map();
+const _rssViewMemory = new Map();
+const _rssRuntime = new Map();
+const _ipInfoMemoryCache = new Map();
+const _ipInfoSpeedMemoryCache = new Map();
+const _ipInfoRuntime = new Map();
 
 const WEATHER_CACHE_PREFIX = 'morpheus-webhub-weather:';
 const WEATHER_CACHE_SCHEMA_VERSION = 'hourly-v1';
@@ -30,6 +40,31 @@ const WEATHER_MAP_LAYER_OPTIONS = [
   ['clouds', 'Clouds']
 ];
 const WEATHER_MAP_LAYER_ORDER = ['temperature', 'clouds', 'rain'];
+const ISS_TLE_CACHE_KEY = 'morpheus-webhub-iss-tle:v1';
+const ISS_VIEW_PREFIX = 'morpheus-webhub-iss-view:';
+const ISS_TLE_TTL_MS = 6 * 60 * 60 * 1000;
+const ISS_TLE_RETRY_MS = 10 * 60 * 1000;
+const ISS_PATH_BEHIND_MINUTES = 45;
+const ISS_PATH_AHEAD_MINUTES = 100;
+const RSS_CACHE_PREFIX = 'morpheus-webhub-rss-cache:';
+const RSS_VIEW_PREFIX = 'morpheus-webhub-rss-view:';
+const RSS_CACHE_SCHEMA = 1;
+const RSS_MAX_FEEDS = 12;
+const RSS_MAX_RESPONSE_CHARS = 2 * 1024 * 1024;
+const RSS_RETRY_MS = 5 * 60 * 1000;
+const IP_INFO_CACHE_PREFIX = 'morpheus-webhub-ip-info:';
+const IP_INFO_SPEED_CACHE_PREFIX = 'morpheus-webhub-ip-speed:';
+const IP_INFO_REQUEST_TIMEOUT_MS = 12000;
+const IP_INFO_RETRY_MS = 5 * 60 * 1000;
+const IP_INFO_SPEED_TIMEOUT_MS = 60 * 1000;
+const IP_INFO_SPEED_MEASUREMENTS = [
+  { type: 'latency', numPackets: 8 },
+  { type: 'download', bytes: 1e6, count: 2, bypassMinDuration: true },
+  { type: 'download', bytes: 5e6, count: 2, bypassMinDuration: true },
+  { type: 'download', bytes: 1e7, count: 1, bypassMinDuration: true },
+  { type: 'upload', bytes: 1e6, count: 2, bypassMinDuration: true },
+  { type: 'upload', bytes: 4e6, count: 2, bypassMinDuration: true }
+];
 
 function _setWidgetTimer(widgetId, context, fn, ms) {
   const key = `${widgetId}:${context}`;
@@ -52,6 +87,7 @@ function clearColumnWidgetTimers() {
     if (key.endsWith(':column')) { clearInterval(timer); _widgetTimers.delete(key); }
   });
   _destroyAllWeatherMaps();
+  _destroyAllIssTrackers();
 }
 
 function clearNavWidgetTimers() {
@@ -68,9 +104,59 @@ function _newWidgetState(widgetType) {
     type: 'widget',
     widgetType,
     title: '',
-    config: { ...def.defaultConfig },
+    config: cloneData(def.defaultConfig),
     data: cloneData(def.defaultData)
   };
+}
+
+function _appendWidgetActionButtons(host, widget, body, context, options = {}) {
+  const def = WIDGET_REGISTRY[widget.widgetType];
+  if (!def) return;
+  const rerenderBody = () => {
+    if (!body.isConnected) return;
+    body.innerHTML = '';
+    def.render(widget, body, context);
+  };
+  const refreshAfterSettings = options.onSettingsRefresh || rerenderBody;
+
+  const settingsBtn = document.createElement('button');
+  settingsBtn.type = 'button';
+  settingsBtn.className = 'widget-action-btn';
+  settingsBtn.title = 'Widget settings';
+  settingsBtn.setAttribute('aria-label', `Edit ${widget.title || def.name} widget`);
+  settingsBtn.appendChild(icon('icon-settings'));
+  settingsBtn.addEventListener('click', event => {
+    event.stopPropagation();
+    openWidgetSettings(widget, refreshAfterSettings, {
+      widgetContext: context,
+      sidebarBottomAvailable: options.sidebarBottomAvailable
+    });
+  });
+  host.appendChild(settingsBtn);
+
+  if (typeof def.reload !== 'function') return;
+  const reloadBtn = document.createElement('button');
+  reloadBtn.type = 'button';
+  reloadBtn.className = 'widget-action-btn widget-action-btn--reload';
+  const reloadLabel = def.reloadLabel || `Reload ${widget.title || def.name} data`;
+  reloadBtn.title = reloadLabel;
+  reloadBtn.setAttribute('aria-label', reloadLabel);
+  reloadBtn.appendChild(icon('icon-reload'));
+  reloadBtn.addEventListener('click', async event => {
+    event.stopPropagation();
+    if (reloadBtn.disabled) return;
+    reloadBtn.disabled = true;
+    reloadBtn.classList.add('is-loading');
+    try {
+      const request = def.reload(widget);
+      rerenderBody();
+      await request;
+    } finally {
+      reloadBtn.disabled = false;
+      reloadBtn.classList.remove('is-loading');
+    }
+  });
+  host.appendChild(reloadBtn);
 }
 
 // --- Column widget element ---
@@ -86,49 +172,9 @@ function createWidgetElement(widget, columnId) {
   el.dataset.itemType = 'widget';
   el.draggable = true;
 
-  const settingsBtn = document.createElement('button');
-  settingsBtn.type = 'button';
-  settingsBtn.className = 'widget-action-btn';
-  settingsBtn.title = 'Widget settings';
-  settingsBtn.setAttribute('aria-label', `Edit ${widget.title || def.name} widget`);
-  settingsBtn.appendChild(icon('icon-settings'));
-  settingsBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    openWidgetSettings(widget, () => {
-      body.innerHTML = '';
-      def.render(widget, body, 'column');
-    });
-  });
-  el.appendChild(settingsBtn);
-
-  if (typeof def.reload === 'function') {
-    const reloadBtn = document.createElement('button');
-    reloadBtn.type = 'button';
-    reloadBtn.className = 'widget-action-btn widget-action-btn--reload';
-    const reloadLabel = def.reloadLabel || `Reload ${widget.title || def.name} data`;
-    reloadBtn.title = reloadLabel;
-    reloadBtn.setAttribute('aria-label', reloadLabel);
-    reloadBtn.appendChild(icon('icon-reload'));
-    reloadBtn.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (reloadBtn.disabled) return;
-      reloadBtn.disabled = true;
-      reloadBtn.classList.add('is-loading');
-      try {
-        const request = def.reload(widget);
-        body.innerHTML = '';
-        def.render(widget, body, 'column');
-        await request;
-      } finally {
-        reloadBtn.disabled = false;
-        reloadBtn.classList.remove('is-loading');
-      }
-    });
-    el.appendChild(reloadBtn);
-  }
-
   const body = document.createElement('div');
   body.className = 'widget-body';
+  _appendWidgetActionButtons(el, widget, body, 'column');
   el.appendChild(body);
   def.render(widget, body, 'column');
 
@@ -182,10 +228,28 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   const body       = document.getElementById('wstgBody');
   const subtitle   = document.getElementById('wstgSubtitle');
 
+  panel.classList.toggle('widget-settings-panel--wide', def.settingsPanelWidth === 'wide');
   if (subtitle) subtitle.textContent = (options.isNew ? 'New ' : 'Edit ') + def.name;
   titleInput.value = widget.title || '';
   body.innerHTML   = '';
   def.renderSettings(widget, body);
+  if (options.widgetContext === 'navpane' && options.sidebarBottomAvailable !== false) {
+    const placementRow = document.createElement('div');
+    placementRow.className = 'settings-row widget-sidebar-placement-row';
+    const placementLabel = document.createElement('span');
+    placementLabel.textContent = 'Align at sidebar bottom';
+    const placementToggle = document.createElement('label');
+    placementToggle.className = 'settings-toggle';
+    const placementInput = document.createElement('input');
+    placementInput.type = 'checkbox';
+    placementInput.dataset.cfg = 'sidebarBottom';
+    placementInput.checked = widget.config?.sidebarBottom === true;
+    const placementTrack = document.createElement('span');
+    placementTrack.className = 'toggle-track';
+    placementToggle.append(placementInput, placementTrack);
+    placementRow.append(placementLabel, placementToggle);
+    body.appendChild(placementRow);
+  }
   if (!body.querySelector('.settings-section')) {
     const section = document.createElement('div');
     section.className = 'settings-section widget-settings-section';
@@ -291,15 +355,6 @@ function _fmtCountdown(ms) {
   if (d > 0) return `${d}d ${_pad2(h)}h ${_pad2(m)}m`;
   if (h > 0) return `${h}h ${_pad2(m)}m ${_pad2(s)}s`;
   return `${_pad2(m)}m ${_pad2(s)}s`;
-}
-
-function _fmtCountdownCompact(ms) {
-  const d = Math.floor(ms / 86400000);
-  const h = Math.floor((ms % 86400000) / 3600000);
-  const m = Math.floor((ms % 3600000) / 60000);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 function _todayIsoKey() {
@@ -1225,6 +1280,429 @@ function _weatherMapCurrentHourIndex(cache, now = Date.now()) {
   return nearestIndex;
 }
 
+// ---- ISS Tracker helpers ----
+
+function _normalizeLongitude(value) {
+  return (((Number(value) + 180) % 360) + 360) % 360 - 180;
+}
+
+function _normalizeIssMapStyle(value) {
+  return value === 'liberty' ? 'liberty' : 'dark';
+}
+
+function _issMapStyleUrl(value) {
+  return `https://tiles.openfreemap.org/styles/${_normalizeIssMapStyle(value)}`;
+}
+
+function _issViewKey(widgetId) {
+  return `${ISS_VIEW_PREFIX}${widgetId}`;
+}
+
+function _readIssView(widgetId) {
+  try {
+    const view = JSON.parse(localStorage.getItem(_issViewKey(widgetId)) || 'null');
+    if (!view) return null;
+    const camera = {
+      longitude: Number(view.longitude),
+      latitude: Number(view.latitude),
+      zoom: Number(view.zoom),
+      bearing: Number(view.bearing || 0),
+      pitch: Number(view.pitch || 0)
+    };
+    return Object.values(camera).every(Number.isFinite)
+      ? {
+          ...camera,
+          focusOnIss: view.focusOnIss === true,
+          attributionExpanded: typeof view.attributionExpanded === 'boolean' ? view.attributionExpanded : undefined
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function _writeIssView(widgetId, map, updates = {}) {
+  if (!map?.getCenter || !map?.getZoom) return null;
+  try {
+    const center = map.getCenter();
+    const camera = {
+      longitude: _normalizeLongitude(center.lng),
+      latitude: Math.max(-89, Math.min(89, Number(center.lat))),
+      zoom: Number(map.getZoom()),
+      bearing: Number(map.getBearing?.() || 0),
+      pitch: Number(map.getPitch?.() || 0)
+    };
+    if (!Object.values(camera).every(Number.isFinite)) return null;
+    const previous = _readIssView(widgetId);
+    const view = {
+      ...camera,
+      focusOnIss: updates.focusOnIss ?? previous?.focusOnIss ?? false,
+      attributionExpanded: updates.attributionExpanded ?? previous?.attributionExpanded
+    };
+    localStorage.setItem(_issViewKey(widgetId), JSON.stringify(view));
+    return view;
+  } catch {
+    return null;
+  }
+}
+
+function _validIssTle(value) {
+  return !!(value
+    && typeof value.line1 === 'string' && value.line1.startsWith('1 ')
+    && typeof value.line2 === 'string' && value.line2.startsWith('2 '));
+}
+
+function _readIssTleCache() {
+  if (_validIssTle(_issTleMemoryCache)) return _issTleMemoryCache;
+  try {
+    const cached = JSON.parse(localStorage.getItem(ISS_TLE_CACHE_KEY) || 'null');
+    if (_validIssTle(cached)) {
+      _issTleMemoryCache = cached;
+      return cached;
+    }
+  } catch {}
+  return null;
+}
+
+function _writeIssTleCache(value) {
+  const cache = {
+    header: String(value?.header || 'ISS (ZARYA)'),
+    line1: String(value?.line1 || '').trim(),
+    line2: String(value?.line2 || '').trim(),
+    fetchedAt: Number(value?.fetchedAt || Date.now()),
+    source: String(value?.source || 'Where The ISS At')
+  };
+  if (!_validIssTle(cache)) throw new Error('The ISS data source returned an invalid orbital element set.');
+  _issTleMemoryCache = cache;
+  try { localStorage.setItem(ISS_TLE_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  return cache;
+}
+
+function _isIssTleFresh(cache) {
+  return !!cache && Date.now() - Number(cache.fetchedAt || 0) < ISS_TLE_TTL_MS;
+}
+
+function _getIssRuntime(widgetId) {
+  let runtime = _issTrackerRuntime.get(widgetId);
+  if (!runtime) {
+    runtime = { status: 'idle', error: '', nextRetryAt: 0 };
+    _issTrackerRuntime.set(widgetId, runtime);
+  }
+  return runtime;
+}
+
+async function _fetchIssTle() {
+  try {
+    const response = await fetch('https://api.wheretheiss.at/v1/satellites/25544/tles');
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok) throw new Error(payload?.error || `Where The ISS At returned ${response.status}`);
+    return _writeIssTleCache({
+      header: payload?.header,
+      line1: payload?.line1,
+      line2: payload?.line2,
+      source: 'Where The ISS At'
+    });
+  } catch (primaryError) {
+    try {
+      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE');
+      const text = await response.text();
+      if (!response.ok) throw new Error(`CelesTrak returned ${response.status}`);
+      const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const line1Index = lines.findIndex(line => line.startsWith('1 '));
+      return _writeIssTleCache({
+        header: line1Index > 0 ? lines[line1Index - 1] : 'ISS (ZARYA)',
+        line1: lines[line1Index],
+        line2: lines[line1Index + 1],
+        source: 'CelesTrak'
+      });
+    } catch {
+      throw primaryError;
+    }
+  }
+}
+
+function _ensureIssTle(widget, options = {}) {
+  const force = options.force === true;
+  const cache = _readIssTleCache();
+  if (!force && _isIssTleFresh(cache)) return null;
+  const runtime = _getIssRuntime(widget.id);
+  if (!force && runtime.nextRetryAt > Date.now()) return null;
+  const fetchKey = 'iss-tle';
+  if (_widgetFetches.has(fetchKey)) return _widgetFetches.get(fetchKey);
+  runtime.status = 'loading';
+  runtime.error = '';
+  const request = _fetchIssTle()
+    .then(() => {
+      _issTrackerRuntime.forEach(item => {
+        item.status = 'ready';
+        item.error = '';
+        item.nextRetryAt = 0;
+      });
+    })
+    .catch(error => {
+      runtime.status = 'error';
+      runtime.error = error?.message || 'Unable to refresh ISS orbital data.';
+      runtime.nextRetryAt = Date.now() + ISS_TLE_RETRY_MS;
+    })
+    .finally(() => {
+      _widgetFetches.delete(fetchKey);
+      _issTrackerRuntime.forEach((_, widgetId) => _refreshWidget(widgetId, 'column'));
+    });
+  _widgetFetches.set(fetchKey, request);
+  return request;
+}
+
+function _issSatrec(cache = _readIssTleCache()) {
+  if (!_validIssTle(cache) || typeof satellite === 'undefined') return null;
+  try {
+    const satrec = satellite.twoline2satrec(cache.line1, cache.line2);
+    return satrec?.error ? null : satrec;
+  } catch {
+    return null;
+  }
+}
+
+function _issPosition(satrec, date = new Date()) {
+  if (!satrec || typeof satellite === 'undefined') return null;
+  try {
+    const propagated = satellite.propagate(satrec, date);
+    if (!propagated?.position || !propagated?.velocity) return null;
+    const geodetic = satellite.eciToGeodetic(propagated.position, satellite.gstime(date));
+    const speed = Math.hypot(propagated.velocity.x, propagated.velocity.y, propagated.velocity.z);
+    const position = {
+      date,
+      longitude: satellite.degreesLong(geodetic.longitude),
+      latitude: satellite.degreesLat(geodetic.latitude),
+      altitude: geodetic.height,
+      speed
+    };
+    return Object.values(position).slice(1).every(Number.isFinite) ? position : null;
+  } catch {
+    return null;
+  }
+}
+
+function _splitAntimeridian(points) {
+  if (!Array.isArray(points) || points.length < 2) return [];
+  const lines = [[points[0]]];
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const delta = current[0] - previous[0];
+    if (Math.abs(delta) <= 180) {
+      lines.at(-1).push(current);
+      continue;
+    }
+    const eastward = delta < -180;
+    const adjustedLongitude = current[0] + (eastward ? 360 : -360);
+    const boundary = eastward ? 180 : -180;
+    const ratio = (boundary - previous[0]) / (adjustedLongitude - previous[0]);
+    const latitude = previous[1] + (current[1] - previous[1]) * ratio;
+    lines.at(-1).push([boundary, latitude]);
+    lines.push([[-boundary, latitude], current]);
+  }
+  return lines.filter(line => line.length > 1);
+}
+
+function _issGroundTrack(satrec, now = new Date()) {
+  const past = [];
+  const future = [];
+  for (let minute = -ISS_PATH_BEHIND_MINUTES; minute <= ISS_PATH_AHEAD_MINUTES; minute += 1) {
+    const position = _issPosition(satrec, new Date(now.getTime() + minute * 60 * 1000));
+    if (!position) continue;
+    (minute <= 0 ? past : future).push([position.longitude, position.latitude]);
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [
+      { type: 'Feature', properties: { segment: 'past' }, geometry: { type: 'MultiLineString', coordinates: _splitAntimeridian(past) } },
+      { type: 'Feature', properties: { segment: 'future' }, geometry: { type: 'MultiLineString', coordinates: _splitAntimeridian(future) } }
+    ]
+  };
+}
+
+function _subsolarPoint(date = new Date()) {
+  const radians = Math.PI / 180;
+  const julianDate = date.getTime() / 86400000 + 2440587.5;
+  const days = julianDate - 2451545;
+  const meanLongitude = (280.460 + 0.9856474 * days) * radians;
+  const meanAnomaly = (357.528 + 0.9856003 * days) * radians;
+  const eclipticLongitude = meanLongitude + (1.915 * Math.sin(meanAnomaly) + 0.020 * Math.sin(2 * meanAnomaly)) * radians;
+  const obliquity = (23.439 - 0.0000004 * days) * radians;
+  const rightAscension = Math.atan2(Math.cos(obliquity) * Math.sin(eclipticLongitude), Math.cos(eclipticLongitude)) / radians;
+  const declination = Math.asin(Math.sin(obliquity) * Math.sin(eclipticLongitude)) / radians;
+  const centuries = days / 36525;
+  const sidereal = 280.46061837 + 360.98564736629 * days + 0.000387933 * centuries * centuries - centuries * centuries * centuries / 38710000;
+  return { longitude: _normalizeLongitude(rightAscension - sidereal), latitude: declination };
+}
+
+function _issLongitudeRange(start, end, step = 1) {
+  const values = [];
+  const direction = end >= start ? 1 : -1;
+  const increment = Math.abs(step) * direction;
+  for (let value = start; direction > 0 ? value < end : value > end; value += increment) {
+    values.push(value);
+  }
+  values.push(end);
+  return values;
+}
+
+function _issNightRectangle(west, east) {
+  const bottom = _issLongitudeRange(west, east).map(longitude => [longitude, -89.9]);
+  const top = _issLongitudeRange(east, west).map(longitude => [longitude, 89.9]);
+  const ring = [...bottom, ...top];
+  ring.push([...ring[0]]);
+  return ring;
+}
+
+function _issDayNightGeoJson(date = new Date()) {
+  const sun = _subsolarPoint(date);
+  const radians = Math.PI / 180;
+  const declination = sun.latitude * radians;
+
+  if (Math.abs(Math.sin(declination)) < 0.0001) {
+    const west = _normalizeLongitude(sun.longitude + 90);
+    const east = west + 180;
+    const ranges = east <= 180
+      ? [[west, east]]
+      : [[west, 180], [-180, east - 360]];
+    const polygons = ranges.map(([rangeWest, rangeEast]) => [_issNightRectangle(rangeWest, rangeEast)]);
+    return {
+      night: {
+        type: 'Feature',
+        properties: {},
+        geometry: polygons.length === 1
+          ? { type: 'Polygon', coordinates: polygons[0] }
+          : { type: 'MultiPolygon', coordinates: polygons }
+      },
+      border: {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'MultiLineString',
+          coordinates: [west, _normalizeLongitude(east)].map(longitude => [[longitude, -89.9], [longitude, 89.9]])
+        }
+      }
+    };
+  }
+
+  const boundary = _issLongitudeRange(-180, 180).map(longitude => {
+    const longitudeDifference = (longitude - sun.longitude) * radians;
+    const latitude = Math.atan(
+      -Math.cos(declination) * Math.cos(longitudeDifference) / Math.sin(declination)
+    ) / radians;
+    return [longitude, latitude];
+  });
+  const poleLatitude = sun.latitude > 0 ? -89.9 : 89.9;
+  const poleEdge = _issLongitudeRange(-180, 180).map(longitude => [longitude, poleLatitude]);
+  const ring = sun.latitude > 0
+    ? [...poleEdge, ...boundary.slice().reverse()]
+    : [...boundary, ...poleEdge.slice().reverse()];
+  ring.push([...ring[0]]);
+  return {
+    night: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } },
+    border: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: [boundary] } }
+  };
+}
+
+function _destroyIssTracker(widgetId) {
+  const instance = _issTrackerInstances.get(widgetId);
+  if (!instance) return;
+  _captureIssAttribution(instance);
+  _writeIssView(widgetId, instance.map, {
+    focusOnIss: instance.focusOnIss,
+    attributionExpanded: instance.attributionExpanded
+  });
+  if (instance.resizeFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(instance.resizeFrame);
+  try { instance.resizeObserver?.disconnect(); } catch {}
+  if (instance.widgetCard) instance.widgetCard.draggable = true;
+  try { instance.marker?.remove(); } catch {}
+  try { instance.map?.remove(); } catch {}
+  _issTrackerInstances.delete(widgetId);
+}
+
+function _destroyAllIssTrackers() {
+  [..._issTrackerInstances.keys()].forEach(_destroyIssTracker);
+}
+
+function _captureIssAttribution(instance) {
+  const container = instance?.map?.getContainer?.()?.querySelector?.('.maplibregl-ctrl-attrib.maplibregl-compact');
+  if (!container) return null;
+  const expanded = container.classList.contains('maplibregl-compact-show');
+  instance.attributionExpanded = expanded;
+  _writeIssView(instance.widgetId, instance.map, {
+    focusOnIss: instance.focusOnIss,
+    attributionExpanded: expanded
+  });
+  return expanded;
+}
+
+function _restoreIssAttribution(instance) {
+  const container = instance?.map?.getContainer?.()?.querySelector?.('.maplibregl-ctrl-attrib.maplibregl-compact');
+  if (!container) return;
+  if (typeof instance.attributionExpanded !== 'boolean') {
+    instance.attributionExpanded = container.classList.contains('maplibregl-compact-show');
+  }
+  container.classList.toggle('maplibregl-compact-show', instance.attributionExpanded);
+  container.toggleAttribute?.('open', !instance.attributionExpanded);
+
+  const button = container.querySelector('.maplibregl-ctrl-attrib-button');
+  if (!button || instance.attributionButton === button) return;
+  instance.attributionButton = button;
+  button.addEventListener('click', () => {
+    instance.attributionExpanded = container.classList.contains('maplibregl-compact-show');
+    _writeIssView(instance.widgetId, instance.map, {
+      focusOnIss: instance.focusOnIss,
+      attributionExpanded: instance.attributionExpanded
+    });
+  });
+}
+
+function _scheduleIssResize(instance) {
+  if (!instance?.map?.resize) return;
+  if (typeof requestAnimationFrame !== 'function') {
+    try { instance.map.resize(); } catch {}
+    return;
+  }
+  if (instance.resizeFrame) cancelAnimationFrame(instance.resizeFrame);
+  instance.resizeFrame = requestAnimationFrame(() => {
+    instance.resizeFrame = 0;
+    if (_issTrackerInstances.get(instance.widgetId) !== instance) return;
+    try { instance.map.resize(); } catch {}
+  });
+}
+
+function _issSetSourceData(map, sourceId, data) {
+  const source = map?.getSource?.(sourceId);
+  if (source?.setData) source.setData(data);
+}
+
+function _updateIssTracker(instance, date = new Date(), forceGeometry = false) {
+  if (!instance?.satrec || _issTrackerInstances.get(instance.widgetId) !== instance) return null;
+  const position = _issPosition(instance.satrec, date);
+  if (!position) return null;
+  instance.currentPosition = position;
+  instance.marker?.setLngLat([position.longitude, position.latitude]);
+  if (instance.focusOnIss && instance.mapReady) {
+    instance.map.jumpTo({ center: [position.longitude, position.latitude] });
+  }
+  instance.latitudeValue.textContent = `${Math.abs(position.latitude).toFixed(2)}° ${position.latitude >= 0 ? 'N' : 'S'}`;
+  instance.longitudeValue.textContent = `${Math.abs(position.longitude).toFixed(2)}° ${position.longitude >= 0 ? 'E' : 'W'}`;
+  instance.altitudeValue.textContent = `${Math.round(position.altitude)} km`;
+  instance.speedValue.textContent = `${Math.round(position.speed * 3600).toLocaleString()} km/h`;
+
+  const minuteKey = Math.floor(date.getTime() / 60000);
+  if (forceGeometry || instance.geometryMinute !== minuteKey) {
+    instance.geometryMinute = minuteKey;
+    _issSetSourceData(instance.map, instance.sourceIds.track, _issGroundTrack(instance.satrec, date));
+    const daylight = _issDayNightGeoJson(date);
+    _issSetSourceData(instance.map, instance.sourceIds.night, daylight.night);
+    _issSetSourceData(instance.map, instance.sourceIds.terminator, daylight.border);
+  }
+  return position;
+}
+
 
 // ---- Clock widget ----
 
@@ -1237,24 +1715,17 @@ WIDGET_REGISTRY['clock'] = {
 
   render(widget, el, context) {
     const c = widget.config;
-    if (context === 'navpane') {
-      el.className = 'nav-widget-clock';
-      const tick = () => { el.textContent = _fmtTime(_tzDate(c.timezone), c); };
-      tick();
-      _setWidgetTimer(widget.id, context, tick, 1000);
-    } else {
-      el.className = 'widget-clock';
-      el.innerHTML = `<div class="widget-clock-time"></div>${c.showDate ? '<div class="widget-clock-date"></div>' : ''}`;
-      const timeEl = el.querySelector('.widget-clock-time');
-      const dateEl = el.querySelector('.widget-clock-date');
-      const tick = () => {
-        const now = _tzDate(c.timezone);
-        timeEl.textContent = _fmtTime(now, c);
-        if (dateEl) dateEl.textContent = _fmtDate(now);
-      };
-      tick();
-      _setWidgetTimer(widget.id, context, tick, 1000);
-    }
+    el.className = 'widget-clock';
+    el.innerHTML = `<div class="widget-clock-time"></div>${c.showDate ? '<div class="widget-clock-date"></div>' : ''}`;
+    const timeEl = el.querySelector('.widget-clock-time');
+    const dateEl = el.querySelector('.widget-clock-date');
+    const tick = () => {
+      const now = _tzDate(c.timezone);
+      timeEl.textContent = _fmtTime(now, c);
+      if (dateEl) dateEl.textContent = _fmtDate(now);
+    };
+    tick();
+    _setWidgetTimer(widget.id, context, tick, 1000);
   },
 
   renderSettings(widget, container) {
@@ -1323,41 +1794,24 @@ WIDGET_REGISTRY['countdown'] = {
 
   render(widget, el, context) {
     const c = widget.config;
-    if (context === 'navpane') {
-      el.className = 'nav-widget-countdown';
-      const tick = () => {
-        if (!c.targetDate) { el.textContent = '—'; return; }
-        const diff = new Date(c.targetDate) - Date.now();
-        if (diff <= 0) {
-          el.textContent = c.label || 'Today!';
-          clearInterval(_widgetTimers.get(`${widget.id}:navpane`));
-          _widgetTimers.delete(`${widget.id}:navpane`);
-          return;
-        }
-        el.textContent = _fmtCountdownCompact(diff);
-      };
-      tick();
-      _setWidgetTimer(widget.id, context, tick, 1000);
-    } else {
-      el.className = 'widget-countdown';
-      el.innerHTML = '<div class="widget-countdown-label"></div><div class="widget-countdown-value"></div>';
-      const labelEl = el.querySelector('.widget-countdown-label');
-      const valueEl = el.querySelector('.widget-countdown-value');
-      const tick = () => {
-        labelEl.textContent = c.label || 'Event';
-        if (!c.targetDate) { valueEl.textContent = 'No date set'; return; }
-        const diff = new Date(c.targetDate) - Date.now();
-        if (diff <= 0) {
-          valueEl.textContent = '🎉 Today!';
-          clearInterval(_widgetTimers.get(`${widget.id}:column`));
-          _widgetTimers.delete(`${widget.id}:column`);
-          return;
-        }
-        valueEl.textContent = _fmtCountdown(diff);
-      };
-      tick();
-      _setWidgetTimer(widget.id, context, tick, 1000);
-    }
+    el.className = 'widget-countdown';
+    el.innerHTML = '<div class="widget-countdown-label"></div><div class="widget-countdown-value"></div>';
+    const labelEl = el.querySelector('.widget-countdown-label');
+    const valueEl = el.querySelector('.widget-countdown-value');
+    const tick = () => {
+      labelEl.textContent = c.label || 'Event';
+      if (!c.targetDate) { valueEl.textContent = 'No date set'; return; }
+      const diff = new Date(c.targetDate) - Date.now();
+      if (diff <= 0) {
+        valueEl.textContent = '🎉 Today!';
+        clearInterval(_widgetTimers.get(`${widget.id}:${context}`));
+        _widgetTimers.delete(`${widget.id}:${context}`);
+        return;
+      }
+      valueEl.textContent = _fmtCountdown(diff);
+    };
+    tick();
+    _setWidgetTimer(widget.id, context, tick, 1000);
   },
 
   renderSettings(widget, container) {
@@ -2721,5 +3175,2321 @@ WIDGET_REGISTRY['weatherMap'] = {
       event.preventDefault();
       runSearch();
     });
+  }
+};
+
+// ---- ISS Tracker widget ----
+
+WIDGET_REGISTRY['issTracker'] = {
+  name: 'ISS Tracker',
+  description: 'Live ISS position, orbital ground track and Earth day/night boundary on an interactive globe',
+  allowedIn: ['column'],
+  defaultConfig: { mapStyle: 'dark', showNightShade: true },
+  defaultData: {},
+  liveSettingsPreview: false,
+  reloadLabel: 'Refresh ISS orbital data',
+
+  reload(widget) {
+    return _ensureIssTle(widget, { force: true });
+  },
+
+  render(widget, el, context) {
+    _destroyIssTracker(widget.id);
+    const runtime = _getIssRuntime(widget.id);
+    const savedView = _readIssView(widget.id);
+    let cache = _readIssTleCache();
+    if (!_isIssTleFresh(cache)) _ensureIssTle(widget);
+
+    _setWidgetRefresher(widget.id, context, () => {
+      if (!el.isConnected) {
+        _widgetRefreshers.delete(`${widget.id}:${context}`);
+        return;
+      }
+      el.innerHTML = '';
+      WIDGET_REGISTRY.issTracker.render(widget, el, context);
+    });
+
+    el.className = 'widget-iss-tracker';
+    const header = document.createElement('div');
+    header.className = 'widget-iss-header';
+    const heading = document.createElement('div');
+    heading.className = 'widget-iss-heading';
+    const title = document.createElement('strong');
+    title.textContent = 'International Space Station';
+    const live = document.createElement('span');
+    live.className = 'widget-iss-live';
+    live.textContent = 'LIVE';
+    heading.append(title, live);
+    const locateButton = document.createElement('button');
+    locateButton.type = 'button';
+    locateButton.className = 'widget-iss-locate';
+    locateButton.textContent = 'Find ISS';
+    locateButton.title = 'Centre the globe on the ISS';
+    header.append(heading, locateButton);
+    el.appendChild(header);
+
+    const mapShell = document.createElement('div');
+    mapShell.className = 'widget-iss-map-shell widget-interactive-surface';
+    const mapContainer = document.createElement('div');
+    mapContainer.className = 'widget-iss-map-canvas';
+    const focusButton = document.createElement('button');
+    focusButton.type = 'button';
+    focusButton.className = 'widget-iss-focus-button';
+    focusButton.textContent = '◎ Focus ISS';
+    focusButton.title = 'Keep the ISS centred as it moves';
+    focusButton.setAttribute('aria-pressed', String(savedView?.focusOnIss === true));
+    focusButton.classList.toggle('active', savedView?.focusOnIss === true);
+    const northButton = document.createElement('button');
+    northButton.type = 'button';
+    northButton.className = 'widget-iss-north-button';
+    northButton.textContent = 'N';
+    northButton.title = 'Reset north';
+    northButton.setAttribute('aria-label', 'Reset globe north');
+    const status = document.createElement('div');
+    status.className = 'widget-iss-status';
+    const updateStatus = () => {
+      status.classList.remove('hidden', 'is-error');
+      if (runtime.status === 'error') {
+        status.classList.add('is-error');
+        status.textContent = cache
+          ? `Using saved orbital data. ${runtime.error}`
+          : runtime.error;
+      } else if (runtime.status === 'loading') {
+        status.textContent = cache ? 'Refreshing orbital data…' : 'Loading ISS orbital data…';
+      } else if (!cache) {
+        status.textContent = 'Waiting for ISS orbital data…';
+      } else {
+        status.classList.add('hidden');
+      }
+    };
+    updateStatus();
+    mapShell.append(mapContainer, focusButton, northButton, status);
+    el.appendChild(mapShell);
+
+    const legend = document.createElement('div');
+    legend.className = 'widget-iss-legend';
+    legend.innerHTML = '<span class="is-past">Previous path</span><span class="is-future">Upcoming path</span><span class="is-terminator">Day/night border</span>';
+    el.appendChild(legend);
+
+    const facts = document.createElement('div');
+    facts.className = 'widget-iss-facts';
+    const factElements = {};
+    [['latitude', 'Latitude'], ['longitude', 'Longitude'], ['altitude', 'Altitude'], ['speed', 'Speed']].forEach(([key, label]) => {
+      const fact = document.createElement('div');
+      fact.className = 'widget-iss-fact';
+      const caption = document.createElement('span');
+      caption.textContent = label;
+      const value = document.createElement('strong');
+      value.textContent = '—';
+      fact.append(caption, value);
+      facts.appendChild(fact);
+      factElements[`${key}Value`] = value;
+    });
+    el.appendChild(facts);
+
+    const attribution = document.createElement('div');
+    attribution.className = 'widget-iss-attribution';
+    attribution.innerHTML = 'Orbit: <a href="https://wheretheiss.at/w/developer" target="_blank" rel="noreferrer noopener">Where The ISS At</a> / <a href="https://celestrak.org/" target="_blank" rel="noreferrer noopener">CelesTrak</a> · local SGP4 propagation';
+    attribution.addEventListener('mousedown', event => event.stopPropagation());
+    el.appendChild(attribution);
+
+    if (typeof maplibregl === 'undefined' || typeof satellite === 'undefined') {
+      status.classList.remove('hidden');
+      status.classList.add('is-error');
+      status.textContent = 'The globe or orbit engine failed to load.';
+      return;
+    }
+
+    cache = _readIssTleCache();
+    const satrec = _issSatrec(cache);
+    if (cache && !satrec && runtime.status !== 'loading') _ensureIssTle(widget, { force: true });
+    const initialPosition = _issPosition(satrec, new Date());
+    const mapOptions = {
+      container: mapContainer,
+      style: _issMapStyleUrl(widget.config?.mapStyle),
+      center: savedView
+        ? [savedView.longitude, savedView.latitude]
+        : [initialPosition?.longitude || 0, initialPosition?.latitude || 15],
+      zoom: savedView?.zoom ?? 1.15,
+      bearing: savedView?.bearing || 0,
+      pitch: savedView?.pitch || 0,
+      minZoom: 0.4,
+      maxZoom: 8,
+      dragRotate: true,
+      pitchWithRotate: false,
+      renderWorldCopies: false,
+      attributionControl: {
+        compact: true,
+        customAttribution: '<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>'
+      }
+    };
+    let map = null;
+    try {
+      map = new maplibregl.Map(mapOptions);
+      map.touchZoomRotate?.disableRotation?.();
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    } catch (error) {
+      status.classList.remove('hidden');
+      status.classList.add('is-error');
+      status.textContent = error?.message || 'Unable to initialise the ISS globe.';
+      return;
+    }
+
+    const widgetCard = el.closest('.widget-card');
+    const disableWidgetDrag = () => { if (widgetCard) widgetCard.draggable = false; };
+    const restoreWidgetDrag = () => { if (widgetCard) widgetCard.draggable = true; };
+    mapShell.addEventListener('mouseenter', disableWidgetDrag);
+    mapShell.addEventListener('mouseleave', restoreWidgetDrag);
+    mapShell.addEventListener('touchstart', disableWidgetDrag, { passive: true });
+    mapShell.addEventListener('touchend', restoreWidgetDrag, { passive: true });
+    mapShell.addEventListener('dragstart', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    const sourceIds = {
+      track: `iss-track-${widget.id}`,
+      night: `iss-night-${widget.id}`,
+      terminator: `iss-terminator-${widget.id}`
+    };
+    const instance = {
+      widgetId: widget.id,
+      widgetCard,
+      map,
+      satrec,
+      sourceIds,
+      marker: null,
+      currentPosition: initialPosition,
+      focusOnIss: savedView?.focusOnIss === true,
+      attributionExpanded: savedView?.attributionExpanded,
+      attributionButton: null,
+      mapReady: false,
+      geometryMinute: null,
+      refreshCheckMinute: null,
+      resizeFrame: 0,
+      resizeObserver: null,
+      ...factElements
+    };
+    _issTrackerInstances.set(widget.id, instance);
+    _restoreIssAttribution(instance);
+
+    if (typeof ResizeObserver === 'function') {
+      instance.resizeObserver = new ResizeObserver(() => _scheduleIssResize(instance));
+      instance.resizeObserver.observe(mapShell);
+    }
+    _scheduleIssResize(instance);
+
+    map.on('load', () => {
+      if (_issTrackerInstances.get(widget.id) !== instance) return;
+      try {
+        _restoreIssAttribution(instance);
+        map.setProjection?.({ type: 'globe' });
+        map.setSky?.({
+          'sky-color': '#07111f',
+          'sky-horizon-blend': 0.18,
+          'horizon-color': '#13243a',
+          'horizon-fog-blend': 0.05,
+          'fog-color': '#07111f',
+          'fog-ground-blend': 0.1
+        });
+        const daylight = _issDayNightGeoJson(new Date());
+        map.addSource(sourceIds.night, { type: 'geojson', data: daylight.night });
+        map.addSource(sourceIds.terminator, { type: 'geojson', data: daylight.border });
+        map.addSource(sourceIds.track, { type: 'geojson', data: satrec ? _issGroundTrack(satrec, new Date()) : { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: `${sourceIds.night}-fill`,
+          type: 'fill',
+          source: sourceIds.night,
+          layout: { visibility: widget.config?.showNightShade === false ? 'none' : 'visible' },
+          paint: { 'fill-color': '#020711', 'fill-opacity': 0.56, 'fill-antialias': true }
+        });
+        map.addLayer({
+          id: `${sourceIds.night}-border`,
+          type: 'line',
+          source: sourceIds.terminator,
+          paint: { 'line-color': '#9db7d6', 'line-width': 1.35, 'line-opacity': 0.82 }
+        });
+        map.addLayer({
+          id: `${sourceIds.track}-past`,
+          type: 'line',
+          source: sourceIds.track,
+          filter: ['==', ['get', 'segment'], 'past'],
+          paint: { 'line-color': '#92d700', 'line-width': 2, 'line-opacity': 0.46, 'line-dasharray': [1.5, 1.3] }
+        });
+        map.addLayer({
+          id: `${sourceIds.track}-future`,
+          type: 'line',
+          source: sourceIds.track,
+          filter: ['==', ['get', 'segment'], 'future'],
+          paint: { 'line-color': '#b6f200', 'line-width': 2.4, 'line-opacity': 0.95 }
+        });
+
+        const markerElement = document.createElement('div');
+        markerElement.className = 'widget-iss-marker';
+        markerElement.title = 'International Space Station';
+        markerElement.innerHTML = '<span class="widget-iss-marker-icon">◆</span><span class="widget-iss-marker-label">ISS</span>';
+        instance.marker = new maplibregl.Marker({ element: markerElement, anchor: 'center' })
+          .setLngLat(initialPosition ? [initialPosition.longitude, initialPosition.latitude] : [0, 0])
+          .addTo(map);
+        markerElement.classList.toggle('hidden', !initialPosition);
+        instance.mapReady = true;
+        _updateIssTracker(instance, new Date(), true);
+        _scheduleIssResize(instance);
+        updateStatus();
+      } catch (error) {
+        status.classList.remove('hidden');
+        status.classList.add('is-error');
+        status.textContent = error?.message || 'Unable to finish initialising the ISS globe.';
+      }
+    });
+
+    map.on('moveend', () => {
+      if (_issTrackerInstances.get(widget.id) === instance && !instance.focusOnIss) {
+        _writeIssView(widget.id, map);
+      }
+    });
+
+    focusButton.addEventListener('click', event => {
+      event.stopPropagation();
+      instance.focusOnIss = !instance.focusOnIss;
+      focusButton.classList.toggle('active', instance.focusOnIss);
+      focusButton.setAttribute('aria-pressed', String(instance.focusOnIss));
+      _writeIssView(widget.id, map, { focusOnIss: instance.focusOnIss });
+      if (instance.focusOnIss && instance.currentPosition && instance.mapReady) {
+        map.easeTo({
+          center: [instance.currentPosition.longitude, instance.currentPosition.latitude],
+          duration: 450
+        });
+      }
+    });
+
+    northButton.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      map.easeTo({ bearing: 0, pitch: 0, roll: 0, duration: 450 });
+    });
+
+    locateButton.addEventListener('click', event => {
+      event.stopPropagation();
+      const position = instance.currentPosition || _issPosition(instance.satrec, new Date());
+      if (!position) return;
+      map.easeTo({
+        center: [position.longitude, position.latitude],
+        zoom: Math.max(1.5, Math.min(3.2, map.getZoom())),
+        duration: 850
+      });
+    });
+
+    _setWidgetTimer(widget.id, context, () => {
+      const currentInstance = _issTrackerInstances.get(widget.id);
+      if (!currentInstance) return;
+      const now = new Date();
+      _updateIssTracker(currentInstance, now);
+      const minute = Math.floor(now.getTime() / 60000);
+      if (currentInstance.refreshCheckMinute !== minute) {
+        currentInstance.refreshCheckMinute = minute;
+        const latestCache = _readIssTleCache();
+        if (!_isIssTleFresh(latestCache)) _ensureIssTle(widget);
+      }
+    }, 1000);
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config || {};
+    container.innerHTML = `
+      <div class="settings-row">
+        <span>Basemap</span>
+        <div class="board-fit-radios weather-option-radios">
+          <label class="board-fit-label"><input type="radio" name="issMapStyle" data-cfg="mapStyle" value="dark" ${_normalizeIssMapStyle(c.mapStyle) === 'dark' ? 'checked' : ''}/><span>Dark</span></label>
+          <label class="board-fit-label"><input type="radio" name="issMapStyle" data-cfg="mapStyle" value="liberty" ${_normalizeIssMapStyle(c.mapStyle) === 'liberty' ? 'checked' : ''}/><span>Liberty</span></label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>Shade night side</span>
+        <label class="settings-toggle"><input type="checkbox" data-cfg="showNightShade" ${c.showNightShade !== false ? 'checked' : ''}/><span class="toggle-track"></span></label>
+      </div>
+      <div class="settings-help">Drag the globe with the left mouse button and use the mouse wheel or map controls to zoom. Globe orientation and zoom are saved only in this browser.</div>`;
+  }
+};
+
+// ---- Astronomy / Night Sky widget ----
+
+const ASTRONOMY_PLANETS = [
+  ['Mercury', '☿'],
+  ['Venus', '♀'],
+  ['Mars', '♂'],
+  ['Jupiter', '♃'],
+  ['Saturn', '♄']
+];
+const ASTRONOMY_MOON_PHASES = [
+  'New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
+  'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent'
+];
+const ASTRONOMY_QUARTER_NAMES = ['New Moon', 'First Quarter', 'Full Moon', 'Last Quarter'];
+
+function _astronomyCoordinates(config) {
+  if (!config || config.latitude === '' || config.longitude === '') return null;
+  const latitude = Number(config.latitude);
+  const longitude = Number(config.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return {
+    latitude,
+    longitude,
+    locationName: String(config.locationName || '').trim(),
+    timezone: config.timezone && config.timezone !== 'auto' ? config.timezone : ''
+  };
+}
+
+function _findWeatherWidgetLocation(excludeWidgetId = '') {
+  if (typeof state === 'undefined' || !state) return null;
+  const visited = new Set();
+  const walk = value => {
+    if (!value || typeof value !== 'object' || visited.has(value)) return null;
+    visited.add(value);
+    if (value.id !== excludeWidgetId && value.type === 'widget'
+        && (value.widgetType === 'weather' || value.widgetType === 'weatherMap')) {
+      const location = _astronomyCoordinates(value.config);
+      if (location) return location;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const match = walk(item);
+        if (match) return match;
+      }
+      return null;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'data' || key === 'settings') continue;
+      const match = walk(child);
+      if (match) return match;
+    }
+    return null;
+  };
+  return walk(state.boards || []);
+}
+
+function _astronomyLocation(widget) {
+  const config = widget?.config || {};
+  if (config.useWeatherLocation !== false) {
+    const weatherLocation = _findWeatherWidgetLocation(widget?.id || '');
+    if (weatherLocation) return { ...weatherLocation, inherited: true };
+  }
+  const configured = _astronomyCoordinates(config);
+  return configured ? { ...configured, inherited: false } : null;
+}
+
+function _normalizeAstronomyEventDays(value) {
+  const parsed = Number.parseInt(value, 10);
+  return [30, 90, 180, 365].includes(parsed) ? parsed : 90;
+}
+
+function _astronomyTimeZone(location) {
+  return location?.timezone || undefined;
+}
+
+function _astronomyFormatTime(value, location) {
+  const date = value?.date instanceof Date ? value.date : value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return '—';
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: _astronomyTimeZone(location), hour: '2-digit', minute: '2-digit'
+    }).format(date);
+  } catch {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+function _astronomyFormatDate(value, location, includeTime = false) {
+  const date = value?.date instanceof Date ? value.date : value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return '—';
+  const options = { timeZone: _astronomyTimeZone(location), month: 'short', day: 'numeric' };
+  if (includeTime) Object.assign(options, { hour: '2-digit', minute: '2-digit' });
+  try { return new Intl.DateTimeFormat(undefined, options).format(date); }
+  catch { return date.toLocaleDateString(undefined, options); }
+}
+
+function _astronomyPhaseName(angle) {
+  return ASTRONOMY_MOON_PHASES[Math.round(Number(angle || 0) / 45) % 8];
+}
+
+function _astronomyDirection(azimuth) {
+  const labels = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return labels[Math.round((((Number(azimuth) % 360) + 360) % 360) / 45) % 8];
+}
+
+function _astronomyHorizontal(A, body, date, observer) {
+  const equatorial = A.Equator(body, date, observer, true, true);
+  return A.Horizon(date, observer, equatorial.ra, equatorial.dec, 'normal');
+}
+
+function _astronomyMoonPath(phaseAngle) {
+  const angle = ((Number(phaseAngle) % 360) + 360) % 360;
+  const waxing = angle <= 180;
+  const radians = angle * Math.PI / 180;
+  const points = [];
+  const steps = 48;
+  for (let index = 0; index <= steps; index += 1) {
+    const y = -1 + (2 * index / steps);
+    const edge = Math.sqrt(Math.max(0, 1 - y * y));
+    const x = waxing ? edge : -edge;
+    points.push([x, y]);
+  }
+  for (let index = steps; index >= 0; index -= 1) {
+    const y = -1 + (2 * index / steps);
+    const edge = Math.sqrt(Math.max(0, 1 - y * y));
+    const x = waxing ? Math.cos(radians) * edge : -Math.cos(radians) * edge;
+    points.push([x, y]);
+  }
+  return points.map(([x, y], index) => `${index ? 'L' : 'M'} ${(50 + x * 48).toFixed(2)} ${(50 + y * 48).toFixed(2)}`).join(' ') + ' Z';
+}
+
+function _createAstronomyMoonDisc(widget, phaseAngle, phaseName) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.classList.add('widget-astronomy-moon-disc');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', phaseName);
+  const defs = document.createElementNS(ns, 'defs');
+  const clip = document.createElementNS(ns, 'clipPath');
+  const clipId = `astronomy-moon-${String(widget.id).replace(/[^a-z0-9_-]/gi, '')}`;
+  clip.id = clipId;
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', _astronomyMoonPath(phaseAngle));
+  clip.appendChild(path);
+  defs.appendChild(clip);
+  const darkImage = document.createElementNS(ns, 'image');
+  darkImage.setAttribute('href', 'assets/astronomy/nasa-lro-moon-mosaic.png');
+  darkImage.setAttribute('x', '2');
+  darkImage.setAttribute('y', '2');
+  darkImage.setAttribute('width', '96');
+  darkImage.setAttribute('height', '96');
+  darkImage.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  darkImage.classList.add('widget-astronomy-moon-dark');
+  const brightImage = darkImage.cloneNode(false);
+  brightImage.classList.remove('widget-astronomy-moon-dark');
+  brightImage.classList.add('widget-astronomy-moon-lit');
+  brightImage.setAttribute('clip-path', `url(#${clipId})`);
+  const rim = document.createElementNS(ns, 'circle');
+  rim.setAttribute('cx', '50');
+  rim.setAttribute('cy', '50');
+  rim.setAttribute('r', '48');
+  rim.classList.add('widget-astronomy-moon-rim');
+  svg.append(defs, darkImage, brightImage, rim);
+  return svg;
+}
+
+function _astronomyDarkWindow(A, observer, now) {
+  const sunNow = _astronomyHorizontal(A, A.Body.Sun, now, observer);
+  let start;
+  if (sunNow.altitude <= -12) {
+    start = new Date(now);
+  } else {
+    start = A.SearchAltitude(A.Body.Sun, observer, -1, now, 2, -12)?.date || new Date(now);
+  }
+  const dawnSearch = new Date(start.getTime() + 60 * 1000);
+  let end = A.SearchAltitude(A.Body.Sun, observer, 1, dawnSearch, 2, -12)?.date;
+  if (!end || end <= start) end = new Date(start.getTime() + 12 * 60 * 60 * 1000);
+  return { start, end, isDarkNow: sunNow.altitude <= -12 };
+}
+
+function _astronomyVisiblePlanets(A, observer, now, darkWindow) {
+  const results = [];
+  const stepMs = 30 * 60 * 1000;
+  for (const [name, symbol] of ASTRONOMY_PLANETS) {
+    const body = A.Body[name];
+    let best = null;
+    for (let time = darkWindow.start.getTime(); time <= darkWindow.end.getTime(); time += stepMs) {
+      const date = new Date(time);
+      const horizontal = _astronomyHorizontal(A, body, date, observer);
+      if (!best || horizontal.altitude > best.altitude) best = { date, ...horizontal };
+    }
+    if (!best || best.altitude < 3) continue;
+    const currentHorizontal = _astronomyHorizontal(A, body, now, observer);
+    const magnitude = A.Illumination(body, best.date).mag;
+    results.push({
+      name,
+      symbol,
+      bestTime: best.date,
+      altitude: best.altitude,
+      direction: _astronomyDirection(best.azimuth),
+      magnitude,
+      visibleNow: darkWindow.isDarkNow && currentHorizontal.altitude >= 3
+    });
+  }
+  return results.sort((a, b) => Number(b.visibleNow) - Number(a.visibleNow) || a.bestTime - b.bestTime);
+}
+
+function _astronomyMeteorPeriod(shower, peakYear) {
+  const [peakMonth, peakDay] = shower.peak;
+  const [startMonth, startDay] = shower.start;
+  const [endMonth, endDay] = shower.end;
+  const startYear = startMonth > peakMonth ? peakYear - 1 : peakYear;
+  const endYear = endMonth < peakMonth ? peakYear + 1 : peakYear;
+  return {
+    start: new Date(Date.UTC(startYear, startMonth - 1, startDay, 12)),
+    peak: new Date(Date.UTC(peakYear, peakMonth - 1, peakDay, 12)),
+    end: new Date(Date.UTC(endYear, endMonth - 1, endDay, 12))
+  };
+}
+
+function _astronomyMeteorShowers(A, now, eventDays) {
+  const showers = globalThis.ASTRONOMY_EVENT_CATALOG?.meteorShowers || [];
+  const horizon = new Date(now.getTime() + eventDays * 86400000);
+  const matches = [];
+  for (const shower of showers) {
+    for (let year = now.getUTCFullYear() - 1; year <= now.getUTCFullYear() + 1; year += 1) {
+      const period = _astronomyMeteorPeriod(shower, year);
+      const active = now >= period.start && now <= period.end;
+      if (!active && (period.peak < now || period.peak > horizon)) continue;
+      const moonlight = Math.round(A.Illumination(A.Body.Moon, period.peak).phase_fraction * 100);
+      matches.push({ ...shower, ...period, active, moonlight });
+    }
+  }
+  const unique = [...new Map(matches.map(item => [`${item.id}:${item.peak.getUTCFullYear()}`, item])).values()];
+  return unique.sort((a, b) => Number(b.active) - Number(a.active) || a.peak - b.peak).slice(0, 3);
+}
+
+function _astronomyUpcomingEvents(A, observer, now, location, eventDays) {
+  const horizon = new Date(now.getTime() + eventDays * 86400000);
+  const events = [];
+  const add = (date, title, detail, type = 'event') => {
+    const parsed = date?.date instanceof Date ? date.date : date instanceof Date ? date : new Date(date);
+    if (Number.isFinite(parsed.getTime()) && parsed >= now && parsed <= horizon) events.push({ date: parsed, title, detail, type });
+  };
+
+  for (const year of [now.getUTCFullYear(), now.getUTCFullYear() + 1]) {
+    const seasons = A.Seasons(year);
+    add(seasons.mar_equinox, 'March equinox', 'Equal-length day and night');
+    add(seasons.jun_solstice, 'June solstice', 'Seasonal turning point');
+    add(seasons.sep_equinox, 'September equinox', 'Equal-length day and night');
+    add(seasons.dec_solstice, 'December solstice', 'Seasonal turning point');
+  }
+
+  const solarEclipse = A.SearchLocalSolarEclipse(now, observer);
+  if (solarEclipse?.peak?.time && Number(solarEclipse.peak.altitude) > -1) {
+    add(solarEclipse.peak.time, `${solarEclipse.kind[0].toUpperCase()}${solarEclipse.kind.slice(1)} solar eclipse`,
+      `${Math.round(Number(solarEclipse.obscuration || 0) * 100)}% obscuration · ${Math.round(solarEclipse.peak.altitude)}° high`, 'eclipse');
+  }
+  const lunarEclipse = A.SearchLunarEclipse(now);
+  if (lunarEclipse?.peak) {
+    const lunarAltitude = _astronomyHorizontal(A, A.Body.Moon, lunarEclipse.peak.date, observer).altitude;
+    add(lunarEclipse.peak, `${lunarEclipse.kind[0].toUpperCase()}${lunarEclipse.kind.slice(1)} lunar eclipse`,
+      lunarAltitude > 0 ? `${Math.round(lunarAltitude)}° above the local horizon at peak` : 'Moon below the local horizon at peak', 'eclipse');
+  }
+
+  for (const name of ['Mercury', 'Venus']) {
+    const elongation = A.SearchMaxElongation(A.Body[name], now);
+    add(elongation?.time, `${name} at greatest elongation`,
+      `${Math.round(elongation?.elongation || 0)}° from the Sun · ${elongation?.visibility || ''} sky`, 'planet');
+  }
+  for (const name of ['Mars', 'Jupiter', 'Saturn']) {
+    const opposition = A.SearchRelativeLongitude(A.Body[name], 0, now);
+    add(opposition, `${name} at opposition`, 'Bright and visible for most of the night', 'planet');
+  }
+
+  for (const approach of (globalThis.ASTRONOMY_EVENT_CATALOG?.closeApproaches || [])) {
+    const distanceMillionKm = Number(approach.distanceAu) * 149.5978707;
+    add(approach.date, `${approach.name} close approach`,
+      `${distanceMillionKm.toFixed(1)} million km from Earth · proximity does not guarantee naked-eye visibility`, 'comet');
+  }
+
+  return events.sort((a, b) => a.date - b.date).slice(0, 10);
+}
+
+function _astronomySnapshot(widget, now = new Date()) {
+  const location = _astronomyLocation(widget);
+  if (!location || typeof Astronomy === 'undefined') return null;
+  const eventDays = _normalizeAstronomyEventDays(widget.config?.eventDays);
+  const hourKey = Math.floor(now.getTime() / 3600000);
+  const signature = `${location.latitude.toFixed(5)}:${location.longitude.toFixed(5)}:${location.timezone}:${eventDays}:${hourKey}`;
+  const cached = _astronomyRuntime.get(widget.id);
+  if (cached?.signature === signature && cached.snapshot) return cached.snapshot;
+
+  const A = Astronomy;
+  const observer = new A.Observer(location.latitude, location.longitude, 0);
+  const phaseAngle = A.MoonPhase(now);
+  const illumination = A.Illumination(A.Body.Moon, now);
+  const darkWindow = _astronomyDarkWindow(A, observer, now);
+  const nextQuarter = A.SearchMoonQuarter(now);
+  const snapshot = {
+    generatedAt: now,
+    location,
+    phaseAngle,
+    phaseName: _astronomyPhaseName(phaseAngle),
+    illumination: Math.round(illumination.phase_fraction * 100),
+    moonAge: phaseAngle / 360 * 29.530588,
+    moonDistanceKm: illumination.geo_dist * A.KM_PER_AU,
+    moonRise: A.SearchRiseSet(A.Body.Moon, observer, 1, now, 2),
+    moonSet: A.SearchRiseSet(A.Body.Moon, observer, -1, now, 2),
+    nextMoonPhase: nextQuarter ? { name: ASTRONOMY_QUARTER_NAMES[nextQuarter.quarter], date: nextQuarter.time.date } : null,
+    sunrise: A.SearchRiseSet(A.Body.Sun, observer, 1, now, 2),
+    sunset: A.SearchRiseSet(A.Body.Sun, observer, -1, now, 2),
+    nightStart: darkWindow.isDarkNow ? now : darkWindow.start,
+    nightEnd: darkWindow.end,
+    isDarkNow: darkWindow.isDarkNow,
+    planets: _astronomyVisiblePlanets(A, observer, now, darkWindow),
+    meteors: _astronomyMeteorShowers(A, now, eventDays),
+    events: _astronomyUpcomingEvents(A, observer, now, location, eventDays)
+  };
+  _astronomyRuntime.set(widget.id, { signature, snapshot, hourKey });
+  return snapshot;
+}
+
+function _astronomyAppendFact(parent, label, value) {
+  const fact = document.createElement('div');
+  fact.className = 'widget-astronomy-fact';
+  const labelEl = document.createElement('span');
+  labelEl.className = 'widget-astronomy-fact-label';
+  labelEl.textContent = label;
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = value;
+  fact.append(labelEl, valueEl);
+  parent.appendChild(fact);
+}
+
+function _astronomyChronologicalDaylight(snapshot) {
+  const entries = [
+    { label: 'Sunrise', value: snapshot.sunrise },
+    { label: 'Sunset', value: snapshot.sunset },
+    { label: snapshot.isDarkNow ? 'Dark now' : 'Dark sky', value: snapshot.nightStart },
+    { label: 'Dawn', value: snapshot.nightEnd }
+  ];
+  const dateOf = entry => entry.value?.date instanceof Date ? entry.value.date : entry.value;
+  return entries
+    .filter(entry => Number.isFinite(dateOf(entry)?.getTime?.()))
+    .sort((left, right) => dateOf(left) - dateOf(right));
+}
+
+function _astronomySection(title) {
+  const section = document.createElement('section');
+  section.className = 'widget-astronomy-section';
+  const heading = document.createElement('div');
+  heading.className = 'widget-astronomy-section-title';
+  heading.textContent = title;
+  section.appendChild(heading);
+  return section;
+}
+
+WIDGET_REGISTRY['astronomy'] = {
+  name: 'Astronomy & Night Sky',
+  description: 'Moon phase, twilight, visible planets, meteor showers and upcoming sky events',
+  allowedIn: ['column'],
+  defaultConfig: {
+    useWeatherLocation: true,
+    locationName: '',
+    latitude: '',
+    longitude: '',
+    timezone: 'auto',
+    eventDays: 90,
+    showPlanets: true,
+    showMeteorShowers: true,
+    showEvents: true
+  },
+  defaultData: {},
+  liveSettingsPreview: false,
+
+  onSettingsCommit(widget) {
+    _astronomyRuntime.delete(widget.id);
+  },
+
+  reload(widget) {
+    _astronomyRuntime.delete(widget.id);
+    return Promise.resolve();
+  },
+
+  render(widget, el, context) {
+    _setWidgetRefresher(widget.id, context, () => {
+      if (!el.isConnected) {
+        _widgetRefreshers.delete(`${widget.id}:${context}`);
+        return;
+      }
+      el.innerHTML = '';
+      WIDGET_REGISTRY.astronomy.render(widget, el, context);
+    });
+    el.className = 'widget-astronomy';
+
+    const location = _astronomyLocation(widget);
+    if (!location) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'widget-weather-placeholder';
+      placeholder.textContent = widget.config?.useWeatherLocation !== false
+        ? 'Add a configured Weather widget, or choose a separate sky location in this widget’s settings.'
+        : 'Choose a sky location in the widget settings.';
+      el.appendChild(placeholder);
+      return;
+    }
+    if (typeof Astronomy === 'undefined') {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'widget-weather-placeholder is-error';
+      placeholder.textContent = 'Astronomy Engine failed to load.';
+      el.appendChild(placeholder);
+      return;
+    }
+
+    let snapshot;
+    try {
+      snapshot = _astronomySnapshot(widget);
+    } catch (error) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'widget-weather-placeholder is-error';
+      placeholder.textContent = error?.message || 'Unable to calculate sky conditions.';
+      el.appendChild(placeholder);
+      return;
+    }
+    const renderedHour = Math.floor(snapshot.generatedAt.getTime() / 3600000);
+    _setWidgetTimer(widget.id, context, () => {
+      if (Math.floor(Date.now() / 3600000) === renderedHour) return;
+      _astronomyRuntime.delete(widget.id);
+      _refreshWidget(widget.id, context);
+    }, 60 * 1000);
+
+    const locationLine = document.createElement('div');
+    locationLine.className = 'widget-astronomy-location';
+    locationLine.textContent = location.locationName || `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`;
+    if (location.inherited) locationLine.title = 'Using the first configured Weather widget location';
+    el.appendChild(locationLine);
+
+    const moon = document.createElement('section');
+    moon.className = 'widget-astronomy-moon';
+    moon.appendChild(_createAstronomyMoonDisc(widget, snapshot.phaseAngle, snapshot.phaseName));
+    const moonDetails = document.createElement('div');
+    moonDetails.className = 'widget-astronomy-moon-details';
+    const moonName = document.createElement('strong');
+    moonName.className = 'widget-astronomy-moon-name';
+    moonName.textContent = snapshot.phaseName;
+    const moonSummary = document.createElement('div');
+    moonSummary.className = 'widget-astronomy-moon-summary';
+    moonSummary.textContent = `${snapshot.illumination}% illuminated · ${snapshot.moonAge.toFixed(1)} days old`;
+    const moonTimes = document.createElement('div');
+    moonTimes.className = 'widget-astronomy-moon-times';
+    moonTimes.textContent = `Rise ${_astronomyFormatTime(snapshot.moonRise, location)} · Set ${_astronomyFormatTime(snapshot.moonSet, location)}`;
+    const nextPhase = document.createElement('div');
+    nextPhase.className = 'widget-astronomy-next-phase';
+    nextPhase.textContent = snapshot.nextMoonPhase
+      ? `Next: ${snapshot.nextMoonPhase.name} · ${_astronomyFormatDate(snapshot.nextMoonPhase.date, location, true)}`
+      : 'Next primary phase unavailable';
+    moonDetails.append(moonName, moonSummary, moonTimes, nextPhase);
+    moon.appendChild(moonDetails);
+    el.appendChild(moon);
+
+    const daylight = document.createElement('div');
+    daylight.className = 'widget-astronomy-daylight';
+    _astronomyChronologicalDaylight(snapshot).forEach(entry => {
+      _astronomyAppendFact(daylight, entry.label, _astronomyFormatDate(entry.value, location, true));
+    });
+    el.appendChild(daylight);
+
+    if (widget.config?.showPlanets !== false) {
+      const section = _astronomySection('Visible planets tonight');
+      const grid = document.createElement('div');
+      grid.className = 'widget-astronomy-planets';
+      if (!snapshot.planets.length) {
+        const empty = document.createElement('div');
+        empty.className = 'widget-astronomy-empty';
+        empty.textContent = 'No naked-eye planets rise above the local horizon during dark-sky hours.';
+        grid.appendChild(empty);
+      }
+      snapshot.planets.forEach(planet => {
+        const card = document.createElement('div');
+        card.className = `widget-astronomy-planet${planet.visibleNow ? ' is-visible-now' : ''}`;
+        const symbol = document.createElement('span');
+        symbol.className = 'widget-astronomy-planet-symbol';
+        symbol.textContent = planet.symbol;
+        const details = document.createElement('span');
+        details.className = 'widget-astronomy-planet-details';
+        const title = document.createElement('strong');
+        title.textContent = planet.name;
+        const meta = document.createElement('span');
+        meta.textContent = `${planet.visibleNow ? 'Visible now' : `Best ${_astronomyFormatTime(planet.bestTime, location)}`} · ${planet.direction} · ${Math.round(planet.altitude)}° high · mag ${planet.magnitude.toFixed(1)}`;
+        details.append(title, meta);
+        card.append(symbol, details);
+        grid.appendChild(card);
+      });
+      section.appendChild(grid);
+      el.appendChild(section);
+    }
+
+    if (widget.config?.showMeteorShowers !== false) {
+      const section = _astronomySection('Meteor showers');
+      const list = document.createElement('div');
+      list.className = 'widget-astronomy-list';
+      if (!snapshot.meteors.length) {
+        const empty = document.createElement('div');
+        empty.className = 'widget-astronomy-empty';
+        empty.textContent = `No major shower peaks in the next ${_normalizeAstronomyEventDays(widget.config?.eventDays)} days.`;
+        list.appendChild(empty);
+      }
+      snapshot.meteors.forEach(shower => {
+        const row = document.createElement('div');
+        row.className = 'widget-astronomy-list-row';
+        const main = document.createElement('div');
+        main.className = 'widget-astronomy-list-main';
+        const title = document.createElement('strong');
+        title.textContent = shower.name;
+        if (shower.active) {
+          const badge = document.createElement('span');
+          badge.className = 'widget-astronomy-active-badge';
+          badge.textContent = 'Active';
+          title.appendChild(badge);
+        }
+        const detail = document.createElement('span');
+        detail.textContent = `Peak ${_astronomyFormatDate(shower.peak, location)} · up to ${shower.zhr}/hr · ${shower.radiant} · ${shower.moonlight}% Moon`;
+        main.append(title, detail);
+        row.appendChild(main);
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      el.appendChild(section);
+    }
+
+    if (widget.config?.showEvents !== false) {
+      const section = _astronomySection(`Upcoming · ${_normalizeAstronomyEventDays(widget.config?.eventDays)} days`);
+      const list = document.createElement('div');
+      list.className = 'widget-astronomy-events';
+      if (!snapshot.events.length) {
+        const empty = document.createElement('div');
+        empty.className = 'widget-astronomy-empty';
+        empty.textContent = 'No selected major events in this period.';
+        list.appendChild(empty);
+      }
+      snapshot.events.forEach(event => {
+        const row = document.createElement('div');
+        row.className = `widget-astronomy-event is-${event.type}`;
+        const date = document.createElement('time');
+        date.dateTime = event.date.toISOString();
+        date.textContent = _astronomyFormatDate(event.date, location);
+        const details = document.createElement('span');
+        const title = document.createElement('strong');
+        title.textContent = event.title;
+        const meta = document.createElement('span');
+        meta.textContent = event.detail;
+        details.append(title, meta);
+        row.append(date, details);
+        list.appendChild(row);
+      });
+      section.appendChild(list);
+      el.appendChild(section);
+    }
+
+    const attribution = document.createElement('div');
+    attribution.className = 'widget-astronomy-attribution';
+    attribution.innerHTML = '<a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noreferrer noopener">Astronomy Engine</a> · <a href="https://www.imo.net/resources/calendar/" target="_blank" rel="noreferrer noopener">IMO showers</a> · <a href="https://science.nasa.gov/resource/moon-mosaic/" target="_blank" rel="noreferrer noopener">NASA/LRO Moon</a> · JPL comet snapshot';
+    attribution.addEventListener('mousedown', event => event.stopPropagation());
+    el.appendChild(attribution);
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config || {};
+    const weatherLocation = _findWeatherWidgetLocation(widget.id);
+    const useWeather = c.useWeatherLocation !== false;
+    container.innerHTML = `
+      <div class="settings-row settings-row--top">
+        <span>Use Weather location</span>
+        <label class="settings-toggle"><input type="checkbox" data-cfg="useWeatherLocation" ${useWeather ? 'checked' : ''}/><span class="toggle-track"></span></label>
+      </div>
+      <div class="astronomy-weather-location settings-muted"></div>
+      <div class="settings-row astronomy-own-location-row ${useWeather ? 'is-disabled' : ''}">
+        <span>Separate location</span>
+        <div class="weather-location-picker">
+          <div class="weather-location-search-row">
+            <input type="search" class="settings-text-input astronomy-location-search" placeholder="City or postcode" autocomplete="off" ${useWeather ? 'disabled' : ''}/>
+            <button type="button" class="secondary-btn astronomy-location-search-btn" ${useWeather ? 'disabled' : ''}>Search</button>
+          </div>
+          <div class="astronomy-location-selected settings-muted"></div>
+          <div class="astronomy-location-results weather-location-results"></div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>Upcoming events</span>
+        <select class="settings-select" data-cfg="eventDays">
+          ${[30, 90, 180, 365].map(days => `<option value="${days}" ${_normalizeAstronomyEventDays(c.eventDays) === days ? 'selected' : ''}>Next ${days} days</option>`).join('')}
+        </select>
+      </div>
+      <div class="settings-row"><span>Visible planets</span><label class="settings-toggle"><input type="checkbox" data-cfg="showPlanets" ${c.showPlanets !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-row"><span>Meteor showers</span><label class="settings-toggle"><input type="checkbox" data-cfg="showMeteorShowers" ${c.showMeteorShowers !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-row"><span>Upcoming events list</span><label class="settings-toggle"><input type="checkbox" data-cfg="showEvents" ${c.showEvents !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>`;
+
+    const useWeatherInput = container.querySelector('[data-cfg="useWeatherLocation"]');
+    const weatherLocationStatus = container.querySelector('.astronomy-weather-location');
+    const ownLocationRow = container.querySelector('.astronomy-own-location-row');
+    const input = container.querySelector('.astronomy-location-search');
+    const searchBtn = container.querySelector('.astronomy-location-search-btn');
+    const selected = container.querySelector('.astronomy-location-selected');
+    const results = container.querySelector('.astronomy-location-results');
+    weatherLocationStatus.textContent = weatherLocation
+      ? `Available: ${weatherLocation.locationName || `${weatherLocation.latitude.toFixed(3)}, ${weatherLocation.longitude.toFixed(3)}`}`
+      : 'No configured Weather widget found.';
+    selected.textContent = c.locationName ? `Selected: ${c.locationName}` : 'No separate location selected.';
+
+    useWeatherInput.addEventListener('change', () => {
+      const disabled = useWeatherInput.checked;
+      ownLocationRow.classList.toggle('is-disabled', disabled);
+      input.disabled = disabled;
+      searchBtn.disabled = disabled;
+      if (disabled) results.innerHTML = '';
+    });
+
+    const showMessage = (message, isError = false) => {
+      results.innerHTML = '';
+      const row = document.createElement('div');
+      row.className = `weather-location-message${isError ? ' is-error' : ''}`;
+      row.textContent = message;
+      results.appendChild(row);
+    };
+    const runSearch = async () => {
+      const query = input.value.trim();
+      if (query.length < 2) return showMessage('Enter at least two characters.', true);
+      searchBtn.disabled = true;
+      showMessage('Searching...');
+      try {
+        const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+        url.searchParams.set('name', query);
+        url.searchParams.set('count', '6');
+        url.searchParams.set('language', (navigator.language || 'en').split('-')[0]);
+        url.searchParams.set('format', 'json');
+        const response = await fetch(url, { signal: _wstgAbort?.signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.reason || `Location search returned ${response.status}`);
+        const locations = Array.isArray(payload?.results) ? payload.results : [];
+        results.innerHTML = '';
+        if (!locations.length) return showMessage('No matching locations found.');
+        locations.forEach(result => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'weather-location-result';
+          const parts = [result.name, result.admin1, result.country].filter(Boolean);
+          button.textContent = [...new Set(parts)].join(', ');
+          button.addEventListener('click', () => {
+            widget.config.locationName = button.textContent;
+            widget.config.latitude = result.latitude;
+            widget.config.longitude = result.longitude;
+            widget.config.timezone = result.timezone || 'auto';
+            selected.textContent = `Selected: ${button.textContent}`;
+            results.innerHTML = '';
+          });
+          results.appendChild(button);
+        });
+      } catch (error) {
+        if (error?.name !== 'AbortError') showMessage(error?.message || 'Location search failed.', true);
+      } finally {
+        searchBtn.disabled = useWeatherInput.checked;
+      }
+    };
+    searchBtn.addEventListener('click', runSearch);
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      runSearch();
+    });
+  }
+};
+
+// ---- RSS Reader widget ----
+
+function _rssNewFeedId() {
+  return `rss-feed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function _rssFeedConfigs(widget) {
+  widget.config = widget.config || {};
+  if (!Array.isArray(widget.config.feeds)) widget.config.feeds = [];
+  const seen = new Set();
+  widget.config.feeds = widget.config.feeds.slice(0, RSS_MAX_FEEDS).map(feed => {
+    const normalized = feed && typeof feed === 'object' ? feed : {};
+    let id = String(normalized.id || '').trim();
+    if (!id || seen.has(id)) id = _rssNewFeedId();
+    seen.add(id);
+    return {
+      id,
+      name: String(normalized.name || '').trim(),
+      url: String(normalized.url || '').trim()
+    };
+  });
+  return widget.config.feeds;
+}
+
+function _normalizeRssArticleLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  return [10, 20, 40, 80].includes(parsed) ? parsed : 20;
+}
+
+function _normalizeRssRefreshMinutes(value) {
+  const parsed = Number.parseInt(value, 10);
+  return [15, 30, 60, 180].includes(parsed) ? parsed : 30;
+}
+
+function _normalizeRssLayout(value) {
+  return value === 'expanded' ? 'expanded' : 'compact';
+}
+
+function _rssValidUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    return /^https?:$/.test(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function _rssCacheKey(widgetId) {
+  return `${RSS_CACHE_PREFIX}${widgetId}`;
+}
+
+function _readRssCache(widgetId) {
+  if (_rssMemoryCache.has(widgetId)) return _rssMemoryCache.get(widgetId);
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(_rssCacheKey(widgetId)) || 'null'); } catch { cache = null; }
+  if (!cache || cache.schema !== RSS_CACHE_SCHEMA || typeof cache.feeds !== 'object') {
+    cache = { schema: RSS_CACHE_SCHEMA, feeds: {} };
+  }
+  _rssMemoryCache.set(widgetId, cache);
+  return cache;
+}
+
+function _writeRssCache(widgetId, cache) {
+  const normalized = { schema: RSS_CACHE_SCHEMA, feeds: cache?.feeds || {} };
+  _rssMemoryCache.set(widgetId, normalized);
+  try { localStorage.setItem(_rssCacheKey(widgetId), JSON.stringify(normalized)); } catch {}
+  return normalized;
+}
+
+function _rssViewKey(widgetId) {
+  return `${RSS_VIEW_PREFIX}${widgetId}`;
+}
+
+function _readRssView(widgetId) {
+  if (_rssViewMemory.has(widgetId)) return _rssViewMemory.get(widgetId);
+  let view = null;
+  try { view = JSON.parse(localStorage.getItem(_rssViewKey(widgetId)) || 'null'); } catch { view = null; }
+  view = {
+    activeFeedId: String(view?.activeFeedId || 'all'),
+    search: String(view?.search || ''),
+    readIds: Array.isArray(view?.readIds) ? view.readIds.slice(-2000) : [],
+    starredIds: Array.isArray(view?.starredIds) ? view.starredIds.slice(-1000) : []
+  };
+  _rssViewMemory.set(widgetId, view);
+  return view;
+}
+
+function _writeRssView(widgetId, updates = {}) {
+  const current = _readRssView(widgetId);
+  const view = {
+    ...current,
+    ...updates,
+    readIds: Array.isArray(updates.readIds) ? [...new Set(updates.readIds)].slice(-2000) : current.readIds,
+    starredIds: Array.isArray(updates.starredIds) ? [...new Set(updates.starredIds)].slice(-1000) : current.starredIds
+  };
+  _rssViewMemory.set(widgetId, view);
+  try { localStorage.setItem(_rssViewKey(widgetId), JSON.stringify(view)); } catch {}
+  return view;
+}
+
+function _getRssRuntime(widgetId) {
+  let runtime = _rssRuntime.get(widgetId);
+  if (!runtime) {
+    runtime = { loading: new Set(), nextRetryAt: new Map() };
+    _rssRuntime.set(widgetId, runtime);
+  }
+  return runtime;
+}
+
+function _rssHash(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function _rssElementsByLocalName(node, names) {
+  const wanted = new Set(names.map(name => name.toLowerCase()));
+  return Array.from(node?.getElementsByTagName?.('*') || [])
+    .filter(element => wanted.has(String(element.localName || element.nodeName || '').toLowerCase()));
+}
+
+function _rssDirectChild(node, names) {
+  const children = Array.from(node?.children || []);
+  for (const name of names) {
+    const match = children.find(element => String(element.localName || element.nodeName || '').toLowerCase() === name.toLowerCase());
+    if (match) return match;
+  }
+  return null;
+}
+
+function _rssNodeText(node) {
+  return String(node?.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function _rssPlainText(value) {
+  const html = String(value || '').trim();
+  if (!html) return '';
+  try {
+    const documentFragment = new DOMParser().parseFromString(html, 'text/html');
+    return String(documentFragment.body?.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch {
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+}
+
+function _rssResolveUrl(value, baseUrl) {
+  try {
+    const url = new URL(String(value || '').trim(), baseUrl);
+    return /^https?:$/.test(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function _rssEntryLink(node, baseUrl) {
+  const links = Array.from(node?.children || []).filter(element => String(element.localName || '').toLowerCase() === 'link');
+  const atomLink = links.find(element => !element.getAttribute('rel') || element.getAttribute('rel') === 'alternate')
+    || links[0];
+  return _rssResolveUrl(atomLink?.getAttribute?.('href') || _rssNodeText(atomLink), baseUrl);
+}
+
+function _rssEntryImage(node, rawContent, baseUrl) {
+  const media = _rssElementsByLocalName(node, ['enclosure', 'thumbnail', 'content'])
+    .find(element => {
+      const url = element.getAttribute?.('url') || element.getAttribute?.('href');
+      const type = String(element.getAttribute?.('type') || '');
+      return url && (String(element.prefix || '').toLowerCase() === 'media'
+        || /image/i.test(type)
+        || String(element.localName || '').toLowerCase() === 'thumbnail');
+    });
+  const mediaUrl = _rssResolveUrl(media?.getAttribute?.('url') || media?.getAttribute?.('href'), baseUrl);
+  if (mediaUrl) return mediaUrl;
+  try {
+    const fragment = new DOMParser().parseFromString(String(rawContent || ''), 'text/html');
+    return _rssResolveUrl(fragment.querySelector('img')?.getAttribute('src'), baseUrl);
+  } catch {
+    return '';
+  }
+}
+
+function _parseRssFeed(xmlText, feed, responseUrl = feed.url, fetchedAt = Date.now()) {
+  const documentXml = new DOMParser().parseFromString(String(xmlText || ''), 'application/xml');
+  if (documentXml.querySelector('parsererror')) throw new Error('Feed returned invalid XML.');
+  const root = documentXml.documentElement;
+  const rootName = String(root?.localName || '').toLowerCase();
+  const isAtom = rootName === 'feed' || _rssElementsByLocalName(documentXml, ['entry']).length > 0;
+  const itemNodes = _rssElementsByLocalName(documentXml, isAtom ? ['entry'] : ['item']);
+  if (!['rss', 'rdf', 'feed'].includes(rootName) && !itemNodes.length) {
+    throw new Error('The URL did not return an RSS or Atom feed.');
+  }
+  const channel = _rssElementsByLocalName(documentXml, ['channel'])[0] || root;
+  const parsedTitle = _rssNodeText(_rssDirectChild(channel, ['title'])) || feed.name || 'Untitled feed';
+  const items = itemNodes.map((node, index) => {
+    const title = _rssNodeText(_rssDirectChild(node, ['title'])) || 'Untitled article';
+    const link = _rssEntryLink(node, responseUrl);
+    const guid = _rssNodeText(_rssDirectChild(node, ['guid', 'id'])) || link;
+    const contentNode = _rssDirectChild(node, ['encoded', 'content', 'description', 'summary']);
+    const rawContent = String(contentNode?.textContent || '');
+    const summary = _rssPlainText(rawContent).slice(0, 1000);
+    const dateText = _rssNodeText(_rssDirectChild(node, ['pubdate', 'published', 'updated', 'date']));
+    const parsedDate = Date.parse(dateText);
+    const authorNode = _rssDirectChild(node, ['creator', 'author']);
+    const author = _rssNodeText(_rssDirectChild(authorNode, ['name'])) || _rssNodeText(authorNode);
+    const identity = guid || `${title}:${dateText}:${index}`;
+    return {
+      id: `${feed.id}:${_rssHash(identity)}`,
+      title,
+      link,
+      summary,
+      image: _rssEntryImage(node, rawContent, responseUrl),
+      author,
+      timestamp: Number.isFinite(parsedDate) ? parsedDate : fetchedAt,
+      dateText
+    };
+  }).sort((left, right) => right.timestamp - left.timestamp);
+  return { title: parsedTitle, items };
+}
+
+async function _fetchRssText(url) {
+  let directError = null;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
+  try {
+    const response = await fetch(url, {
+      credentials: 'omit',
+      redirect: 'follow',
+      cache: 'no-store',
+      signal: controller?.signal,
+      headers: { Accept: 'application/atom+xml, application/rss+xml, application/xml, text/xml, */*;q=0.2' }
+    });
+    if (!response.ok) throw new Error(`Feed returned ${response.status}`);
+    const text = await response.text();
+    if (text.length > RSS_MAX_RESPONSE_CHARS) throw new Error('Feed exceeds the 2 MiB response limit');
+    return { text, finalUrl: response.url || url, transport: 'direct' };
+  } catch (error) {
+    directError = error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
+  if (typeof bridge !== 'undefined' && typeof bridge.fetchFeed === 'function') {
+    const relayed = await bridge.fetchFeed(url);
+    if (relayed?.text) return { ...relayed, transport: 'extension' };
+  }
+  const reason = directError?.name === 'AbortError' ? 'Feed request timed out.' : (directError?.message || 'Direct feed request failed.');
+  throw new Error(`${reason} The extension relay could not fetch it either.`);
+}
+
+function _rssFeedFresh(widget, entry) {
+  return !!entry?.fetchedAt
+    && Date.now() - Number(entry.fetchedAt) < _normalizeRssRefreshMinutes(widget.config?.refreshMinutes) * 60 * 1000;
+}
+
+function _ensureRssData(widget, options = {}) {
+  const feeds = _rssFeedConfigs(widget);
+  if (!feeds.length) return null;
+  const runtime = _getRssRuntime(widget.id);
+  const force = options.force === true;
+  const selectedFeedId = options.feedId || '';
+  const tasks = [];
+
+  feeds.forEach(feed => {
+    if (selectedFeedId && feed.id !== selectedFeedId) return;
+    const validUrl = _rssValidUrl(feed.url);
+    if (!validUrl) return;
+    const cached = _readRssCache(widget.id).feeds[feed.id];
+    if (!force && _rssFeedFresh(widget, cached) && cached.url === validUrl) return;
+    if (!force && Number(runtime.nextRetryAt.get(feed.id) || 0) > Date.now()) return;
+    const fetchKey = `rss:${widget.id}:${feed.id}`;
+    if (_widgetFetches.has(fetchKey)) {
+      tasks.push(_widgetFetches.get(fetchKey));
+      return;
+    }
+    runtime.loading.add(feed.id);
+    const request = _fetchRssText(validUrl)
+      .then(response => {
+        const parsed = _parseRssFeed(response.text, feed, response.finalUrl || validUrl);
+        const cache = _readRssCache(widget.id);
+        cache.feeds[feed.id] = {
+          url: validUrl,
+          title: parsed.title,
+          fetchedAt: Date.now(),
+          transport: response.transport,
+          error: '',
+          items: parsed.items.slice(0, 80)
+        };
+        _writeRssCache(widget.id, cache);
+        runtime.nextRetryAt.delete(feed.id);
+        return { ok: true, feedId: feed.id };
+      })
+      .catch(error => {
+        const cache = _readRssCache(widget.id);
+        const previous = cache.feeds[feed.id] || { url: validUrl, title: feed.name || validUrl, items: [] };
+        cache.feeds[feed.id] = {
+          ...previous,
+          url: validUrl,
+          error: error?.message || 'Unable to load feed.',
+          lastAttemptAt: Date.now()
+        };
+        _writeRssCache(widget.id, cache);
+        runtime.nextRetryAt.set(feed.id, Date.now() + RSS_RETRY_MS);
+        return { ok: false, feedId: feed.id, error };
+      })
+      .finally(() => {
+        runtime.loading.delete(feed.id);
+        _widgetFetches.delete(fetchKey);
+      });
+    _widgetFetches.set(fetchKey, request);
+    tasks.push(request);
+  });
+
+  if (!tasks.length) return null;
+  return Promise.all(tasks).finally(() => _refreshWidget(widget.id, 'column'));
+}
+
+function _rssCanonicalUrl(value) {
+  try {
+    const url = new URL(value);
+    url.hash = '';
+    [...url.searchParams.keys()].forEach(key => {
+      if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);
+    });
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+function _rssItemsForView(widget, activeFeedId = 'all', search = '') {
+  const feeds = _rssFeedConfigs(widget);
+  const cache = _readRssCache(widget.id);
+  const selectedFeeds = activeFeedId === 'all' || activeFeedId === 'starred'
+    ? feeds
+    : feeds.filter(feed => feed.id === activeFeedId);
+  const merged = [];
+  const seen = new Map();
+  selectedFeeds.forEach(feed => {
+    const entry = cache.feeds[feed.id];
+    (entry?.items || []).slice(0, _normalizeRssArticleLimit(widget.config?.articleLimit)).forEach(item => {
+      const key = _rssCanonicalUrl(item.link) || item.title.toLowerCase();
+      if (['all', 'starred'].includes(activeFeedId) && seen.has(key)) {
+        const existing = seen.get(key);
+        if (!existing.feedNames.includes(feed.name || entry.title)) existing.feedNames.push(feed.name || entry.title);
+        if (!existing.itemIds.includes(item.id)) existing.itemIds.push(item.id);
+        return;
+      }
+      const enriched = {
+        ...item,
+        favoriteId: `rss-star:${_rssHash(key)}`,
+        feedId: feed.id,
+        feedName: feed.name || entry?.title || 'Feed',
+        feedNames: [feed.name || entry?.title || 'Feed'],
+        itemIds: [item.id]
+      };
+      seen.set(key, enriched);
+      merged.push(enriched);
+    });
+  });
+  const query = String(search || '').trim().toLowerCase();
+  const starred = activeFeedId === 'starred' ? new Set(_readRssView(widget.id).starredIds) : null;
+  return merged
+    .filter(item => !starred || starred.has(item.favoriteId))
+    .filter(item => !query || `${item.title} ${item.summary} ${item.author} ${item.feedNames.join(' ')}`.toLowerCase().includes(query))
+    .sort((left, right) => right.timestamp - left.timestamp);
+}
+
+function _rssRelativeTime(timestamp) {
+  const difference = Number(timestamp) - Date.now();
+  const absolute = Math.abs(difference);
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  if (absolute < 60 * 60 * 1000) return formatter.format(Math.round(difference / 60000), 'minute');
+  if (absolute < 24 * 60 * 60 * 1000) return formatter.format(Math.round(difference / 3600000), 'hour');
+  if (absolute < 7 * 24 * 60 * 60 * 1000) return formatter.format(Math.round(difference / 86400000), 'day');
+  try { return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return ''; }
+}
+
+function _rssPruneAfterSettings(widget) {
+  const feeds = _rssFeedConfigs(widget);
+  const valid = new Map(feeds.map(feed => [feed.id, _rssValidUrl(feed.url)]));
+  const cache = _readRssCache(widget.id);
+  Object.keys(cache.feeds).forEach(feedId => {
+    if (!valid.has(feedId) || cache.feeds[feedId]?.url !== valid.get(feedId)) delete cache.feeds[feedId];
+  });
+  _writeRssCache(widget.id, cache);
+  const view = _readRssView(widget.id);
+  if (!['all', 'starred'].includes(view.activeFeedId) && !valid.has(view.activeFeedId)) {
+    _writeRssView(widget.id, { activeFeedId: 'all' });
+  }
+  _rssRuntime.delete(widget.id);
+}
+
+WIDGET_REGISTRY['rssReader'] = {
+  name: 'RSS Reader',
+  description: 'Tabbed RSS and Atom feeds with a combined chronological view',
+  allowedIn: ['column'],
+  settingsPanelWidth: 'wide',
+  defaultConfig: {
+    feeds: [],
+    articleLimit: 20,
+    refreshMinutes: 30,
+    layout: 'compact',
+    showImages: true
+  },
+  defaultData: {},
+  liveSettingsPreview: false,
+  reloadLabel: 'Refresh all RSS feeds',
+
+  reload(widget) {
+    return _ensureRssData(widget, { force: true });
+  },
+
+  onSettingsCommit(widget) {
+    _rssPruneAfterSettings(widget);
+  },
+
+  render(widget, el, context) {
+    const feeds = _rssFeedConfigs(widget);
+    const runtime = _getRssRuntime(widget.id);
+    let view = _readRssView(widget.id);
+    if (!['all', 'starred'].includes(view.activeFeedId) && !feeds.some(feed => feed.id === view.activeFeedId)) {
+      view = _writeRssView(widget.id, { activeFeedId: 'all' });
+    }
+
+    _setWidgetRefresher(widget.id, context, () => {
+      if (!el.isConnected) {
+        _widgetRefreshers.delete(`${widget.id}:${context}`);
+        return;
+      }
+      el.innerHTML = '';
+      WIDGET_REGISTRY.rssReader.render(widget, el, context);
+    });
+
+    el.className = `widget-rss-reader is-${_normalizeRssLayout(widget.config?.layout)}`;
+    if (widget.title) {
+      const heading = document.createElement('div');
+      heading.className = 'widget-rss-heading';
+      heading.textContent = widget.title;
+      el.appendChild(heading);
+    }
+    if (!feeds.length) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'widget-rss-empty';
+      placeholder.textContent = 'Add one or more RSS or Atom feed URLs in the widget settings.';
+      el.appendChild(placeholder);
+      return;
+    }
+
+    _ensureRssData(widget);
+    _setWidgetTimer(widget.id, context, () => _ensureRssData(widget), 60 * 1000);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'widget-rss-tabs widget-interactive-surface';
+    tabs.setAttribute('role', 'tablist');
+    const toolbar = document.createElement('div');
+    toolbar.className = 'widget-rss-toolbar widget-interactive-surface';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'widget-rss-search';
+    search.placeholder = 'Search articles';
+    search.value = view.search;
+    search.setAttribute('aria-label', 'Search RSS articles');
+    const markRead = document.createElement('button');
+    markRead.type = 'button';
+    markRead.className = 'widget-rss-mark-read';
+    markRead.textContent = 'Mark shown read';
+    toolbar.append(search, markRead);
+
+    const status = document.createElement('div');
+    status.className = 'widget-rss-status';
+    const articles = document.createElement('div');
+    articles.className = 'widget-rss-articles widget-interactive-surface';
+    el.append(tabs, toolbar, status, articles);
+
+    const renderTabs = () => {
+      const cache = _readRssCache(widget.id);
+      const read = new Set(_readRssView(widget.id).readIds);
+      tabs.innerHTML = '';
+      const definitions = [
+        { id: 'all', name: 'All', items: _rssItemsForView(widget, 'all', '') },
+        { id: 'starred', name: '★ Starred', items: _rssItemsForView(widget, 'starred', '') },
+        ...feeds.map(feed => ({
+          id: feed.id,
+          name: feed.name || cache.feeds[feed.id]?.title || 'Feed',
+          items: _rssItemsForView(widget, feed.id, '')
+        }))
+      ];
+      definitions.forEach(definition => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'widget-rss-tab';
+        button.dataset.feedId = definition.id;
+        button.setAttribute('role', 'tab');
+        const active = _readRssView(widget.id).activeFeedId === definition.id;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+        const label = document.createElement('span');
+        label.textContent = definition.name;
+        const unreadCount = definition.items.filter(item => item.itemIds.some(itemId => !read.has(itemId))).length;
+        button.appendChild(label);
+        if (unreadCount) {
+          const badge = document.createElement('span');
+          badge.className = 'widget-rss-unread-badge';
+          badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+          button.appendChild(badge);
+        }
+        button.addEventListener('click', event => {
+          event.stopPropagation();
+          view = _writeRssView(widget.id, { activeFeedId: definition.id });
+          renderTabs();
+          renderArticles();
+        });
+        tabs.appendChild(button);
+      });
+    };
+
+    const renderStatus = () => {
+      const cache = _readRssCache(widget.id);
+      const loading = runtime.loading.size;
+      const errors = feeds
+        .map(feed => ({
+          name: feed.name || cache.feeds[feed.id]?.title || 'Feed',
+          error: _rssValidUrl(feed.url) ? (cache.feeds[feed.id]?.error || '') : 'Enter a valid HTTP(S) feed URL in settings.'
+        }))
+        .filter(item => item.error);
+      status.innerHTML = '';
+      status.classList.toggle('hidden', !loading && !errors.length);
+      if (loading) {
+        const loadingLine = document.createElement('div');
+        loadingLine.textContent = `Refreshing ${loading} feed${loading === 1 ? '' : 's'}…`;
+        status.appendChild(loadingLine);
+      }
+      errors.forEach(item => {
+        const line = document.createElement('div');
+        line.className = 'is-error';
+        line.textContent = `${item.name}: ${item.error}`;
+        status.appendChild(line);
+      });
+    };
+
+    const renderArticles = () => {
+      const currentView = _readRssView(widget.id);
+      const read = new Set(currentView.readIds);
+      const starred = new Set(currentView.starredIds);
+      const items = _rssItemsForView(widget, currentView.activeFeedId, currentView.search);
+      articles.innerHTML = '';
+      markRead.disabled = !items.some(item => item.itemIds.some(itemId => !read.has(itemId)));
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'widget-rss-empty';
+        empty.textContent = currentView.search ? 'No articles match this search.' : 'No articles are available in this view yet.';
+        articles.appendChild(empty);
+        renderStatus();
+        return;
+      }
+      items.forEach(item => {
+        const article = document.createElement('article');
+        const itemIsRead = item.itemIds.every(itemId => read.has(itemId));
+        article.className = `widget-rss-article${itemIsRead ? ' is-read' : ' is-unread'}`;
+        if (widget.config?.showImages !== false && _normalizeRssLayout(widget.config?.layout) === 'expanded' && item.image) {
+          const image = document.createElement('img');
+          image.className = 'widget-rss-image';
+          image.src = item.image;
+          image.alt = '';
+          image.loading = 'lazy';
+          image.referrerPolicy = 'no-referrer';
+          image.addEventListener('error', () => image.remove(), { once: true });
+          article.appendChild(image);
+        }
+        const content = document.createElement('div');
+        content.className = 'widget-rss-article-content';
+        const titleRow = document.createElement('div');
+        titleRow.className = 'widget-rss-title-row';
+        const link = document.createElement('a');
+        link.className = 'widget-rss-title';
+        link.href = item.link || '#';
+        link.target = '_blank';
+        link.rel = 'noreferrer noopener';
+        link.textContent = item.title;
+        if (!item.link) link.removeAttribute('href');
+        link.addEventListener('click', () => {
+          if (item.itemIds.every(itemId => read.has(itemId))) return;
+          item.itemIds.forEach(itemId => read.add(itemId));
+          _writeRssView(widget.id, { readIds: [...read] });
+          article.classList.remove('is-unread');
+          article.classList.add('is-read');
+          renderTabs();
+        });
+        const star = document.createElement('button');
+        star.type = 'button';
+        star.className = `widget-rss-star${starred.has(item.favoriteId) ? ' active' : ''}`;
+        star.textContent = starred.has(item.favoriteId) ? '★' : '☆';
+        star.title = starred.has(item.favoriteId) ? 'Remove favourite' : 'Add favourite';
+        star.setAttribute('aria-pressed', String(starred.has(item.favoriteId)));
+        star.addEventListener('click', event => {
+          event.stopPropagation();
+          if (starred.has(item.favoriteId)) starred.delete(item.favoriteId);
+          else starred.add(item.favoriteId);
+          _writeRssView(widget.id, { starredIds: [...starred] });
+          star.classList.toggle('active', starred.has(item.favoriteId));
+          star.textContent = starred.has(item.favoriteId) ? '★' : '☆';
+          star.setAttribute('aria-pressed', String(starred.has(item.favoriteId)));
+          renderTabs();
+          if (_readRssView(widget.id).activeFeedId === 'starred') renderArticles();
+        });
+        titleRow.append(link, star);
+        const meta = document.createElement('div');
+        meta.className = 'widget-rss-meta';
+        const source = document.createElement('span');
+        source.textContent = item.feedNames.join(' + ');
+        const time = document.createElement('time');
+        time.dateTime = new Date(item.timestamp).toISOString();
+        time.textContent = _rssRelativeTime(item.timestamp);
+        meta.append(source, time);
+        content.append(titleRow, meta);
+        if (_normalizeRssLayout(widget.config?.layout) === 'expanded' && item.summary) {
+          const summary = document.createElement('p');
+          summary.className = 'widget-rss-summary';
+          summary.textContent = item.summary;
+          content.appendChild(summary);
+        }
+        article.appendChild(content);
+        articles.appendChild(article);
+      });
+      renderStatus();
+    };
+
+    tabs.addEventListener('wheel', event => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      tabs.scrollLeft += event.deltaY;
+      event.preventDefault();
+    }, { passive: false });
+    search.addEventListener('input', () => {
+      view = _writeRssView(widget.id, { search: search.value });
+      renderArticles();
+    });
+    markRead.addEventListener('click', event => {
+      event.stopPropagation();
+      const currentView = _readRssView(widget.id);
+      const read = new Set(currentView.readIds);
+      _rssItemsForView(widget, currentView.activeFeedId, currentView.search)
+        .forEach(item => item.itemIds.forEach(itemId => read.add(itemId)));
+      view = _writeRssView(widget.id, { readIds: [...read] });
+      renderTabs();
+      renderArticles();
+    });
+
+    renderTabs();
+    renderArticles();
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config || {};
+    const feeds = _rssFeedConfigs(widget);
+    container.innerHTML = `
+      <div class="rss-settings-feed-section">
+        <div class="rss-settings-feed-label">Feed tabs</div>
+        <div class="rss-settings-feed-editor">
+          <div class="rss-settings-feed-list"></div>
+          <button type="button" class="secondary-btn rss-settings-add-feed">Add feed</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>Articles per feed</span>
+        <select class="settings-select" data-cfg="articleLimit">
+          ${[10, 20, 40, 80].map(limit => `<option value="${limit}" ${_normalizeRssArticleLimit(c.articleLimit) === limit ? 'selected' : ''}>${limit}</option>`).join('')}
+        </select>
+      </div>
+      <div class="settings-row">
+        <span>Automatic refresh</span>
+        <select class="settings-select" data-cfg="refreshMinutes">
+          ${[[15, '15 minutes'], [30, '30 minutes'], [60, 'Hourly'], [180, 'Every 3 hours']].map(([minutes, label]) => `<option value="${minutes}" ${_normalizeRssRefreshMinutes(c.refreshMinutes) === minutes ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="settings-row">
+        <span>Article layout</span>
+        <div class="board-fit-radios weather-option-radios">
+          <label class="board-fit-label"><input type="radio" name="rssLayout" data-cfg="layout" value="compact" ${_normalizeRssLayout(c.layout) === 'compact' ? 'checked' : ''}/><span>Compact</span></label>
+          <label class="board-fit-label"><input type="radio" name="rssLayout" data-cfg="layout" value="expanded" ${_normalizeRssLayout(c.layout) === 'expanded' ? 'checked' : ''}/><span>Expanded</span></label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span>Article images</span>
+        <label class="settings-toggle"><input type="checkbox" data-cfg="showImages" ${c.showImages !== false ? 'checked' : ''}/><span class="toggle-track"></span></label>
+      </div>
+      <div class="settings-help">The All tab merges every feed chronologically and collapses duplicate links. Feeds that block direct browser access are requested through extension 1.0.21.</div>`;
+
+    const list = container.querySelector('.rss-settings-feed-list');
+    const addButton = container.querySelector('.rss-settings-add-feed');
+    const renderFeedRows = () => {
+      list.innerHTML = '';
+      feeds.forEach((feed, index) => {
+        const row = document.createElement('div');
+        row.className = 'rss-settings-feed-row';
+        const inputs = document.createElement('div');
+        inputs.className = 'rss-settings-feed-inputs';
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.className = 'settings-text-input';
+        name.placeholder = 'Tab name';
+        name.value = feed.name;
+        const url = document.createElement('input');
+        url.type = 'url';
+        url.className = 'settings-text-input';
+        url.placeholder = 'https://example.com/feed.xml';
+        url.value = feed.url;
+        const actions = document.createElement('div');
+        actions.className = 'rss-settings-feed-actions';
+        const up = document.createElement('button');
+        up.type = 'button';
+        up.className = 'icon-btn';
+        up.textContent = '↑';
+        up.title = 'Move feed up';
+        up.disabled = index === 0;
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.className = 'icon-btn';
+        down.textContent = '↓';
+        down.title = 'Move feed down';
+        down.disabled = index === feeds.length - 1;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'icon-btn is-danger';
+        remove.textContent = '×';
+        remove.title = 'Remove feed';
+        remove.setAttribute('aria-label', `Remove ${feed.name || 'feed'}`);
+        name.addEventListener('input', () => { feed.name = name.value; });
+        url.addEventListener('input', () => { feed.url = url.value; });
+        up.addEventListener('click', () => {
+          if (index < 1) return;
+          feeds.splice(index - 1, 0, feeds.splice(index, 1)[0]);
+          renderFeedRows();
+        });
+        down.addEventListener('click', () => {
+          if (index >= feeds.length - 1) return;
+          feeds.splice(index + 1, 0, feeds.splice(index, 1)[0]);
+          renderFeedRows();
+        });
+        remove.addEventListener('click', () => {
+          feeds.splice(index, 1);
+          renderFeedRows();
+        });
+        inputs.append(name, url);
+        actions.append(up, down, remove);
+        row.append(inputs, actions);
+        list.appendChild(row);
+      });
+      addButton.disabled = feeds.length >= RSS_MAX_FEEDS;
+      if (!feeds.length) {
+        const empty = document.createElement('div');
+        empty.className = 'settings-muted rss-settings-empty';
+        empty.textContent = 'No feeds configured yet.';
+        list.appendChild(empty);
+      }
+    };
+    addButton.addEventListener('click', () => {
+      if (feeds.length >= RSS_MAX_FEEDS) return;
+      feeds.push({ id: _rssNewFeedId(), name: '', url: '' });
+      renderFeedRows();
+      list.querySelector('.rss-settings-feed-row:last-of-type input')?.focus();
+    });
+    renderFeedRows();
+  }
+};
+
+// ---- IP Info widget ----
+
+function _normalizeIpInfoRefreshMinutes(value) {
+  const parsed = Number.parseInt(value, 10);
+  return [0, 5, 15, 30, 60, 180].includes(parsed) ? parsed : 15;
+}
+
+function _ipInfoCacheKey(widgetId) {
+  return `${IP_INFO_CACHE_PREFIX}${widgetId}`;
+}
+
+function _readIpInfoCache(widgetId) {
+  if (_ipInfoMemoryCache.has(widgetId)) return _ipInfoMemoryCache.get(widgetId);
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(_ipInfoCacheKey(widgetId)) || 'null'); } catch { cache = null; }
+  if (!cache || !cache.data || !Number.isFinite(Number(cache.fetchedAt))) cache = null;
+  _ipInfoMemoryCache.set(widgetId, cache);
+  return cache;
+}
+
+function _writeIpInfoCache(widgetId, data) {
+  const cache = { fetchedAt: Date.now(), data };
+  _ipInfoMemoryCache.set(widgetId, cache);
+  try { localStorage.setItem(_ipInfoCacheKey(widgetId), JSON.stringify(cache)); } catch {}
+  return cache;
+}
+
+function _ipInfoSpeedCacheKey(widgetId) {
+  return `${IP_INFO_SPEED_CACHE_PREFIX}${widgetId}`;
+}
+
+function _readIpInfoSpeedCache(widgetId) {
+  if (_ipInfoSpeedMemoryCache.has(widgetId)) return _ipInfoSpeedMemoryCache.get(widgetId);
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(_ipInfoSpeedCacheKey(widgetId)) || 'null'); } catch { cache = null; }
+  if (
+    !cache
+    || !Number.isFinite(Number(cache.fetchedAt))
+    || !String(cache.ip || '')
+    || !Number.isFinite(Number(cache.downloadMbps))
+    || !Number.isFinite(Number(cache.uploadMbps))
+  ) cache = null;
+  _ipInfoSpeedMemoryCache.set(widgetId, cache);
+  return cache;
+}
+
+function _writeIpInfoSpeedCache(widgetId, result) {
+  const cache = { fetchedAt: Date.now(), ...result };
+  _ipInfoSpeedMemoryCache.set(widgetId, cache);
+  try { localStorage.setItem(_ipInfoSpeedCacheKey(widgetId), JSON.stringify(cache)); } catch {}
+  return cache;
+}
+
+function _getIpInfoRuntime(widgetId) {
+  let runtime = _ipInfoRuntime.get(widgetId);
+  if (!runtime) {
+    runtime = {
+      status: 'idle',
+      error: '',
+      nextRetryAt: 0,
+      sessionRefreshClaimed: false,
+      changed: false,
+      speedStatus: 'idle',
+      speedStage: '',
+      speedError: '',
+      speedOnNextLookup: false
+    };
+    _ipInfoRuntime.set(widgetId, runtime);
+  }
+  return runtime;
+}
+
+function _claimIpInfoSessionRefresh(runtime) {
+  if (runtime.sessionRefreshClaimed) return false;
+  runtime.sessionRefreshClaimed = true;
+  return true;
+}
+
+function _isIpInfoCacheFresh(widget, cache) {
+  if (!cache?.fetchedAt) return false;
+  const minutes = _normalizeIpInfoRefreshMinutes(widget.config?.refreshMinutes);
+  return minutes === 0 || Date.now() - Number(cache.fetchedAt) < minutes * 60 * 1000;
+}
+
+function _ipInfoCountryFlag(countryCode) {
+  const code = String(countryCode || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return '🌐';
+  return String.fromCodePoint(...[...code].map(letter => 127397 + letter.charCodeAt(0)));
+}
+
+async function _fetchIpInfoJson(url) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), IP_INFO_REQUEST_TIMEOUT_MS) : null;
+  try {
+    const response = await fetch(url, {
+      credentials: 'omit',
+      redirect: 'follow',
+      cache: 'no-store',
+      signal: controller?.signal,
+      headers: { Accept: 'application/json' }
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (!response.ok) throw new Error(payload?.message || `IP service returned ${response.status}`);
+    if (!payload || typeof payload !== 'object') throw new Error('IP service returned an invalid response.');
+    return payload;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('IP lookup timed out.');
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function _normalizeIpInfoPayload(payload, source = 'ipwho.is') {
+  const ip = String(payload?.ip || '').trim();
+  if (!ip || ip.length > 64 || !/^[0-9a-f:.]+$/i.test(ip)) throw new Error('IP service did not return a valid public address.');
+  const countryCode = String(payload?.country_code || '').trim().toUpperCase();
+  return {
+    ip,
+    type: String(payload?.type || (ip.includes(':') ? 'IPv6' : 'IPv4')),
+    country: String(payload?.country || ''),
+    countryCode,
+    flag: String(payload?.flag?.emoji || _ipInfoCountryFlag(countryCode)),
+    city: String(payload?.city || ''),
+    region: String(payload?.region || ''),
+    isp: String(payload?.connection?.isp || payload?.connection?.org || ''),
+    asn: payload?.connection?.asn ? `AS${String(payload.connection.asn).replace(/^AS/i, '')}` : '',
+    source,
+    partial: source !== 'ipwho.is'
+  };
+}
+
+async function _fetchIpInfoPayload() {
+  try {
+    const payload = await _fetchIpInfoJson('https://ipwho.is/');
+    if (payload.success === false) throw new Error(payload.message || 'IP geolocation lookup failed.');
+    return _normalizeIpInfoPayload(payload, 'ipwho.is');
+  } catch (primaryError) {
+    try {
+      const payload = await _fetchIpInfoJson('https://api64.ipify.org?format=json');
+      return _normalizeIpInfoPayload(payload, 'ipify');
+    } catch {
+      throw primaryError;
+    }
+  }
+}
+
+function _normalizeIpInfoSpeedResult(summary, ip) {
+  const downloadMbps = Number(summary?.download) / 1e6;
+  const uploadMbps = Number(summary?.upload) / 1e6;
+  const latencyMs = Number(summary?.latency);
+  const jitterMs = Number(summary?.jitter);
+  if (!Number.isFinite(downloadMbps) || downloadMbps <= 0 || !Number.isFinite(uploadMbps) || uploadMbps <= 0) {
+    throw new Error('Cloudflare did not return a complete speed measurement.');
+  }
+  return {
+    ip: String(ip || ''),
+    downloadMbps,
+    uploadMbps,
+    latencyMs: Number.isFinite(latencyMs) && latencyMs >= 0 ? latencyMs : null,
+    jitterMs: Number.isFinite(jitterMs) && jitterMs >= 0 ? jitterMs : null
+  };
+}
+
+function _refreshIpInfoSurfaces(widgetId) {
+  _refreshWidget(widgetId, 'column');
+  _refreshWidget(widgetId, 'navpane');
+}
+
+function _runIpInfoSpeedTest(widget, ip) {
+  if (widget.config?.speedTest === false) return null;
+  const runtime = _getIpInfoRuntime(widget.id);
+  const fetchKey = `ip-speed:${widget.id}`;
+  if (_widgetFetches.has(fetchKey)) return _widgetFetches.get(fetchKey);
+  if (typeof CloudflareSpeedTest !== 'function') {
+    runtime.speedStatus = 'error';
+    runtime.speedError = 'The Cloudflare speed-test engine is unavailable.';
+    _refreshIpInfoSurfaces(widget.id);
+    return null;
+  }
+
+  runtime.speedStatus = 'loading';
+  runtime.speedStage = 'Starting connection test…';
+  runtime.speedError = '';
+  _refreshIpInfoSurfaces(widget.id);
+
+  const request = new Promise(resolve => {
+    let test = null;
+    let settled = false;
+    let timeout = null;
+    const settle = (result = null, error = '') => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      if (error) {
+        try { test?.pause?.(); } catch {}
+        runtime.speedStatus = 'error';
+        runtime.speedStage = '';
+        runtime.speedError = String(error || 'Unable to measure the connection speed.');
+        resolve(null);
+        return;
+      }
+      const cache = _writeIpInfoSpeedCache(widget.id, result);
+      runtime.speedStatus = 'ready';
+      runtime.speedStage = '';
+      runtime.speedError = '';
+      resolve(cache);
+    };
+
+    try {
+      test = new CloudflareSpeedTest({
+        autoStart: false,
+        measurements: IP_INFO_SPEED_MEASUREMENTS,
+        measureDownloadLoadedLatency: false,
+        measureUploadLoadedLatency: false,
+        logAimApiUrl: null,
+        bandwidthFinishRequestDuration: 750
+      });
+      test.onResultsChange = ({ type } = {}) => {
+        const stage = type === 'latency'
+          ? 'Measuring latency…'
+          : type === 'download'
+            ? 'Measuring download speed…'
+            : type === 'upload'
+              ? 'Measuring upload speed…'
+              : runtime.speedStage;
+        if (stage !== runtime.speedStage) {
+          runtime.speedStage = stage;
+          _refreshIpInfoSurfaces(widget.id);
+        }
+      };
+      test.onFinish = results => {
+        try {
+          settle(_normalizeIpInfoSpeedResult(results.getSummary(), ip));
+        } catch (error) {
+          settle(null, error?.message);
+        }
+      };
+      test.onError = error => settle(null, error || 'Cloudflare speed test failed.');
+      timeout = setTimeout(() => settle(null, 'Cloudflare speed test timed out.'), IP_INFO_SPEED_TIMEOUT_MS);
+      test.play();
+    } catch (error) {
+      settle(null, error?.message || 'Unable to start the Cloudflare speed test.');
+    }
+  }).finally(() => {
+    _widgetFetches.delete(fetchKey);
+    _refreshIpInfoSurfaces(widget.id);
+  });
+  _widgetFetches.set(fetchKey, request);
+  return request;
+}
+
+function _ensureIpInfoData(widget, options = {}) {
+  const force = options.force === true;
+  const cache = _readIpInfoCache(widget.id);
+  const runtime = _getIpInfoRuntime(widget.id);
+  if (options.runSpeed === true) runtime.speedOnNextLookup = true;
+  if (!force && _isIpInfoCacheFresh(widget, cache)) return null;
+  if (!force && runtime.nextRetryAt > Date.now()) return null;
+  const fetchKey = `ip-info:${widget.id}`;
+  if (_widgetFetches.has(fetchKey)) return _widgetFetches.get(fetchKey);
+  runtime.status = 'loading';
+  runtime.error = '';
+  const request = _fetchIpInfoPayload()
+    .then(data => {
+      const ipChanged = !!cache?.data?.ip && cache.data.ip !== data.ip;
+      runtime.changed = ipChanged;
+      _writeIpInfoCache(widget.id, data);
+      runtime.status = 'ready';
+      runtime.error = '';
+      runtime.nextRetryAt = 0;
+      const shouldRunSpeed = runtime.speedOnNextLookup || ipChanged;
+      runtime.speedOnNextLookup = false;
+      if (shouldRunSpeed) _runIpInfoSpeedTest(widget, data.ip);
+      return data;
+    })
+    .catch(error => {
+      runtime.status = 'error';
+      runtime.error = error?.message || 'Unable to check the public IP address.';
+      runtime.nextRetryAt = Date.now() + IP_INFO_RETRY_MS;
+      runtime.speedOnNextLookup = false;
+      return null;
+    })
+    .finally(() => {
+      _widgetFetches.delete(fetchKey);
+      _refreshIpInfoSurfaces(widget.id);
+    });
+  _widgetFetches.set(fetchKey, request);
+  return request;
+}
+
+function _ipInfoCheckedLabel(fetchedAt) {
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - Number(fetchedAt || 0)) / 60000));
+  if (elapsedMinutes < 1) return 'Checked just now';
+  if (elapsedMinutes === 1) return 'Checked 1 minute ago';
+  if (elapsedMinutes < 60) return `Checked ${elapsedMinutes} minutes ago`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  return `Checked ${elapsedHours} hour${elapsedHours === 1 ? '' : 's'} ago`;
+}
+
+function _ipInfoCompactAge(fetchedAt) {
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - Number(fetchedAt || 0)) / 60000));
+  if (elapsedMinutes < 1) return 'now';
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h`;
+  return `${Math.floor(elapsedHours / 24)}d`;
+}
+
+function _formatIpInfoSpeedMetric(value, unit) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '—';
+  const digits = numeric >= 100 ? 0 : 1;
+  return `${numeric.toFixed(digits)} ${unit}`;
+}
+
+WIDGET_REGISTRY['ipInfo'] = {
+  name: 'IP Info',
+  description: 'Current public IP address and approximate country for checking VPN connections',
+  allowedIn: ['column', 'navpane'],
+  defaultConfig: {
+    refreshMinutes: 15,
+    showCity: true,
+    showProvider: true,
+    showIpType: true,
+    speedTest: true
+  },
+  defaultData: {},
+  reloadLabel: 'Check public IP and connection speed now',
+
+  reload(widget) {
+    return _ensureIpInfoData(widget, { force: true, runSpeed: true });
+  },
+
+  render(widget, el, context) {
+    const runtime = _getIpInfoRuntime(widget.id);
+    let cache = _readIpInfoCache(widget.id);
+
+    _setWidgetRefresher(widget.id, context, () => {
+      if (!el.isConnected) {
+        _widgetRefreshers.delete(`${widget.id}:${context}`);
+        return;
+      }
+      el.innerHTML = '';
+      WIDGET_REGISTRY.ipInfo.render(widget, el, context);
+    });
+
+    el.className = 'widget-ip-info';
+    if (widget.title) {
+      const heading = document.createElement('div');
+      heading.className = 'widget-ip-info-heading';
+      heading.textContent = widget.title;
+      el.appendChild(heading);
+    }
+
+    if (_claimIpInfoSessionRefresh(runtime)) {
+      _ensureIpInfoData(widget, { force: true, runSpeed: true });
+    } else if (!_isIpInfoCacheFresh(widget, cache)) {
+      _ensureIpInfoData(widget);
+    }
+    _setWidgetTimer(widget.id, context, () => {
+      if (!_isIpInfoCacheFresh(widget, _readIpInfoCache(widget.id))) _ensureIpInfoData(widget);
+    }, 60 * 1000);
+    cache = _readIpInfoCache(widget.id);
+
+    if (!cache?.data) {
+      const placeholder = document.createElement('div');
+      placeholder.className = `widget-ip-info-placeholder${runtime.status === 'error' ? ' is-error' : ''}`;
+      placeholder.textContent = runtime.status === 'error' ? runtime.error : 'Checking your public IP address…';
+      el.appendChild(placeholder);
+      return;
+    }
+
+    const data = cache.data;
+    const main = document.createElement('div');
+    main.className = 'widget-ip-info-main';
+    const flag = document.createElement('span');
+    flag.className = 'widget-ip-info-flag';
+    flag.textContent = data.flag || _ipInfoCountryFlag(data.countryCode);
+    flag.setAttribute('aria-label', data.country ? `${data.country} flag` : 'Country unavailable');
+    const identity = document.createElement('div');
+    identity.className = 'widget-ip-info-identity';
+    const country = document.createElement('div');
+    country.className = 'widget-ip-info-country';
+    country.textContent = data.country || 'Country unavailable';
+    if (runtime.changed) {
+      const changed = document.createElement('span');
+      changed.className = 'widget-ip-info-changed';
+      changed.textContent = 'IP changed';
+      country.appendChild(changed);
+    }
+    const address = document.createElement('div');
+    address.className = 'widget-ip-info-address widget-interactive-surface';
+    const addressValue = document.createElement('span');
+    addressValue.textContent = data.ip;
+    address.appendChild(addressValue);
+    if (widget.config?.showIpType !== false && data.type) {
+      const addressType = document.createElement('span');
+      addressType.className = 'widget-ip-info-type';
+      addressType.textContent = `(${data.type})`;
+      address.appendChild(addressType);
+    }
+    address.title = 'Current public IP address';
+    identity.append(country, address);
+    main.append(flag, identity);
+    el.appendChild(main);
+
+    const details = [];
+    if (widget.config?.showCity !== false) {
+      const location = [data.city, data.region].filter(Boolean).join(', ');
+      if (location) details.push(location);
+    }
+    if (details.length) {
+      const locationLine = document.createElement('div');
+      locationLine.className = 'widget-ip-info-details';
+      locationLine.textContent = details.join(' · ');
+      el.appendChild(locationLine);
+    }
+    if (widget.config?.showProvider !== false && (data.isp || data.asn)) {
+      const provider = document.createElement('div');
+      provider.className = 'widget-ip-info-provider';
+      provider.textContent = [data.isp, data.asn].filter(Boolean).join(' · ');
+      el.appendChild(provider);
+    }
+    if (data.partial) {
+      const partial = document.createElement('div');
+      partial.className = 'widget-ip-info-status is-warning';
+      partial.textContent = 'Country lookup unavailable; showing the public IP only.';
+      el.appendChild(partial);
+    } else if (runtime.status === 'loading') {
+      const loading = document.createElement('div');
+      loading.className = 'widget-ip-info-status';
+      loading.textContent = 'Checking for an IP change…';
+      el.appendChild(loading);
+    } else if (runtime.status === 'error') {
+      const error = document.createElement('div');
+      error.className = 'widget-ip-info-status is-error';
+      error.textContent = `Showing the last result. ${runtime.error}`;
+      el.appendChild(error);
+    }
+
+    const speedCache = _readIpInfoSpeedCache(widget.id);
+    const currentSpeed = speedCache?.ip === data.ip ? speedCache : null;
+    if (widget.config?.speedTest !== false) {
+      const speed = document.createElement('div');
+      speed.className = 'widget-ip-info-speed';
+      speed.setAttribute('aria-live', 'polite');
+
+      if (runtime.speedStatus === 'loading') {
+        const progress = document.createElement('div');
+        progress.className = 'widget-ip-info-speed-status';
+        progress.textContent = runtime.speedStage || 'Testing connection speed…';
+        speed.appendChild(progress);
+      } else if (currentSpeed) {
+        const metrics = document.createElement('div');
+        metrics.className = 'widget-ip-info-speed-metrics';
+        const values = [
+          ['Download', _formatIpInfoSpeedMetric(currentSpeed.downloadMbps, 'Mbps')],
+          ['Upload', _formatIpInfoSpeedMetric(currentSpeed.uploadMbps, 'Mbps')],
+          ['Ping', _formatIpInfoSpeedMetric(currentSpeed.latencyMs, 'ms')]
+        ];
+        values.forEach(([label, value]) => {
+          const metric = document.createElement('div');
+          metric.className = 'widget-ip-info-speed-metric';
+          const metricLabel = document.createElement('span');
+          metricLabel.textContent = label;
+          const metricValue = document.createElement('strong');
+          metricValue.textContent = value;
+          metric.append(metricLabel, metricValue);
+          metrics.appendChild(metric);
+        });
+        speed.appendChild(metrics);
+      } else {
+        const pending = document.createElement('div');
+        pending.className = `widget-ip-info-speed-status${runtime.speedStatus === 'error' ? ' is-error' : ''}`;
+        pending.textContent = runtime.speedStatus === 'error'
+          ? runtime.speedError
+          : 'Connection speed will be measured with the next IP check.';
+        speed.appendChild(pending);
+      }
+      el.appendChild(speed);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'widget-ip-info-footer';
+    const status = document.createElement('span');
+    status.className = 'widget-ip-info-footer-status';
+    const sameCheck = currentSpeed && Math.abs(Number(cache.fetchedAt) - Number(currentSpeed.fetchedAt)) < 60 * 1000;
+    status.textContent = sameCheck
+      ? `IP + speed ${_ipInfoCompactAge(Math.max(cache.fetchedAt, currentSpeed.fetchedAt))}`
+      : `IP ${_ipInfoCompactAge(cache.fetchedAt)}${currentSpeed ? ` · Speed ${_ipInfoCompactAge(currentSpeed.fetchedAt)}` : ''}`;
+    if (currentSpeed && Number.isFinite(Number(currentSpeed.jitterMs))) {
+      status.textContent += ` · Jitter ${_formatIpInfoSpeedMetric(currentSpeed.jitterMs, 'ms')}`;
+    }
+    status.title = `${_ipInfoCheckedLabel(cache.fetchedAt)}${currentSpeed ? ` · Speed tested ${_ipInfoCompactAge(currentSpeed.fetchedAt)}` : ''}`;
+    const sources = document.createElement('span');
+    sources.className = 'widget-ip-info-footer-sources widget-interactive-surface';
+    const source = document.createElement('a');
+    source.href = data.source === 'ipify' ? 'https://www.ipify.org/' : 'https://ipwhois.io/';
+    source.target = '_blank';
+    source.rel = 'noreferrer noopener';
+    source.textContent = data.source === 'ipify' ? 'ipify' : 'ipwho.is';
+    source.addEventListener('mousedown', event => event.stopPropagation());
+    sources.appendChild(source);
+    if (widget.config?.speedTest !== false) {
+      const separator = document.createElement('span');
+      separator.textContent = '·';
+      const cloudflare = document.createElement('a');
+      cloudflare.href = 'https://speed.cloudflare.com/';
+      cloudflare.target = '_blank';
+      cloudflare.rel = 'noreferrer noopener';
+      cloudflare.textContent = 'CF';
+      cloudflare.title = 'Cloudflare Speed Test';
+      cloudflare.addEventListener('mousedown', event => event.stopPropagation());
+      sources.append(separator, cloudflare);
+    }
+    footer.append(status, sources);
+    el.appendChild(footer);
+  },
+
+  renderSettings(widget, container) {
+    const c = widget.config || {};
+    container.innerHTML = `
+      <div class="settings-row">
+        <span>Automatic refresh</span>
+        <select class="settings-select" data-cfg="refreshMinutes">
+          ${[[5, 'Every 5 minutes'], [15, 'Every 15 minutes'], [30, 'Every 30 minutes'], [60, 'Hourly'], [180, 'Every 3 hours'], [0, 'Manual only']].map(([minutes, label]) => `<option value="${minutes}" ${_normalizeIpInfoRefreshMinutes(c.refreshMinutes) === minutes ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="settings-row"><span>Approximate city</span><label class="settings-toggle"><input type="checkbox" data-cfg="showCity" ${c.showCity !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-row"><span>Network provider</span><label class="settings-toggle"><input type="checkbox" data-cfg="showProvider" ${c.showProvider !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-row"><span>IPv4 / IPv6 type</span><label class="settings-toggle"><input type="checkbox" data-cfg="showIpType" ${c.showIpType !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-row"><span>Cloudflare connection speed test</span><label class="settings-toggle"><input type="checkbox" data-cfg="speedTest" ${c.speedTest !== false ? 'checked' : ''}/><span class="toggle-track"></span></label></div>
+      <div class="settings-help">The widget checks the browser's public exit address on Hub load and at the selected interval. IP geolocation is approximate. Data is requested from ipwho.is and cached only in this browser.</div>
+      <div class="settings-help">The bounded Cloudflare test runs on Hub load, after a detected IP change, or when this widget is manually reloaded—not on the IP refresh interval when the address is unchanged. Each run transfers up to about 32 MB. Completed results stay in this browser and Cloudflare result reporting is disabled.</div>`;
   }
 };

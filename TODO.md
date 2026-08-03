@@ -14,6 +14,11 @@ This file tracks outstanding work only. Completed changes and their validation b
 
 ## Improvements
 
+### Bottom-aligned sidebar widget reordering
+
+- Revisit upward drag-and-drop placement within the bottom-aligned widget group. The flicker-free full-widget preview is stable, but a widget currently cannot be moved above the group's existing top entry.
+- Preserve the standard Hub destination-preview appearance without reintroducing the bottom-anchored geometry feedback loop fixed in 0.11.119.
+
 ### Background image performance
 
 - Review loading and rendering with databases containing many tabs and background images.

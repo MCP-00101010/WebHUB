@@ -28,6 +28,8 @@ const PAGE_DATABASE_READ_CHUNK_BYTES = 256 * 1024;
 const ASSET_WRITE_CHUNK_CHARS = 512 * 1024;
 const MAX_BACKGROUND_ASSET_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_NATIVE_FAVICON_BYTES = 1024 * 1024;
+const MAX_FEED_RESPONSE_BYTES = 2 * 1024 * 1024;
+const FEED_FETCH_TIMEOUT_MS = 15000;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 const NATIVE_REQUEST_TIMEOUT_MS = 15000;
 const NATIVE_RETRY_COOLDOWN_MS = 5000;
@@ -732,6 +734,44 @@ async function fetchFavicon(options = {}) {
   });
 }
 
+async function fetchFeedText(options = {}) {
+  const url = typeof options.url === 'string' ? options.url.trim() : '';
+  if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Only http and https feed URLs are supported' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'omit',
+      redirect: 'follow',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/atom+xml, application/rss+xml, application/xml, text/xml, */*;q=0.2'
+      }
+    });
+    if (!response.ok) return { ok: false, error: `Feed returned ${response.status}` };
+    const declaredLength = Number(response.headers?.get?.('content-length') || 0);
+    if (declaredLength > MAX_FEED_RESPONSE_BYTES) return { ok: false, error: 'Feed exceeds the 2 MiB response limit' };
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_FEED_RESPONSE_BYTES) return { ok: false, error: 'Feed exceeds the 2 MiB response limit' };
+    return {
+      ok: true,
+      text: new TextDecoder('utf-8').decode(buffer),
+      finalUrl: response.url || url,
+      contentType: response.headers?.get?.('content-type') || '',
+      bytes: buffer.byteLength
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.name === 'AbortError' ? 'Feed request timed out' : (error?.message || 'Feed request failed')
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function secretStatus() {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: true, available: false, provider: '', error: nativeError || 'Native host not available' };
@@ -1049,6 +1089,16 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'MW_FETCH_FAVICON':
       fetchFavicon(msg)
         .then(res => sendResponse(res || { ok: false, error: 'No favicon found' }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_FETCH_FEED':
+      if (msg.morpheusPage !== true || !sender.tab || !isPotentialHubUrl(msg.pageUrl || sender.tab.url || '')) {
+        sendResponse({ ok: false, error: 'Feed fetch is only available to the open Hub page' });
+        break;
+      }
+      fetchFeedText(msg)
+        .then(res => sendResponse(res || { ok: false, error: 'Feed request failed' }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 

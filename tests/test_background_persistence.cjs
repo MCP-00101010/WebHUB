@@ -132,6 +132,8 @@ async function loadBackground(options = {}) {
     browser,
     console,
     URL,
+    fetch: options.fetchImpl || globalThis.fetch,
+    AbortController,
     TextDecoder,
     Uint8Array,
     atob: value => Buffer.from(value, 'base64').toString('binary'),
@@ -292,4 +294,43 @@ test('native disconnect clears availability and a later probe reconnects', async
   await harness.context.ensureNativeStorageReady();
   assert.equal(harness.context.getStorageInfo().nativeAvailable, true);
   assert.equal(harness.nativeConnections.length, 2);
+});
+
+test('extension feed relay fetches bounded text only for the Hub page', async () => {
+  const requests = [];
+  const feedText = '<rss><channel><title>Test</title></channel></rss>';
+  const harness = await loadBackground({
+    fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), options });
+      return {
+        ok: true,
+        status: 200,
+        url: String(url),
+        headers: { get: name => name === 'content-length' ? String(Buffer.byteLength(feedText)) : 'application/rss+xml' },
+        arrayBuffer: async () => Buffer.from(feedText)
+      };
+    }
+  });
+  const response = await new Promise(resolve => {
+    harness.listeners.message(
+      { type: 'MW_FETCH_FEED', morpheusPage: true, pageUrl: 'file:///hub/index.html', url: 'https://example.com/feed.xml' },
+      { tab: { id: 7, url: 'file:///hub/index.html' } },
+      resolve
+    );
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.text, feedText);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].options.credentials, 'omit');
+  assert.match(requests[0].options.headers.Accept, /rss\+xml/);
+
+  const denied = await new Promise(resolve => {
+    harness.listeners.message(
+      { type: 'MW_FETCH_FEED', morpheusPage: false, pageUrl: 'https://example.com/', url: 'https://example.com/feed.xml' },
+      { tab: { id: 8, url: 'https://example.com/' } },
+      resolve
+    );
+  });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /only available to the open Hub/i);
 });

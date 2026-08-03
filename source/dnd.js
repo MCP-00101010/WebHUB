@@ -244,11 +244,19 @@ function _moveNavPreview(parentEl, beforeEl) {
     parentEl.insertBefore(existing, beforeEl || null);
   } else {
     if (existing) existing.remove();
-    _insertDragPreview(createDragPlaceholder('nav'), parentEl, beforeEl);
+    _insertDragPreview(createDragPlaceholder('nav'), parentEl, beforeEl, {
+      animate: !parentEl.classList.contains('nav-bottom-widget-group')
+    });
   }
 }
 
-function _insertDragPreview(clone, parent, beforeEl) {
+function _insertDragPreview(clone, parent, beforeEl, options = {}) {
+  if (options.animate === false) {
+    if (beforeEl != null) parent.insertBefore(clone, beforeEl);
+    else parent.appendChild(clone);
+    clone.style.opacity = '0.5';
+    return;
+  }
   const isH = clone.dataset.previewAxis === 'h';
   if (isH) {
     clone.style.maxWidth = '0';
@@ -1155,6 +1163,35 @@ function handleSpeedDialSlotDrop(event, target, slot) {
 
 // --- Nav drag & drop ---
 
+function _navDraggedItemIsBottomAligned() {
+  if (dragPayload?.area === 'nav') {
+    const path = findNavItemPath(dragPayload.itemId);
+    const item = path?.list.find(candidate => candidate.id === dragPayload.itemId);
+    return _isBottomAlignedNavWidget(item);
+  }
+  if (dragPayload?.area === 'board' && _canDropAsNavWidget()) {
+    const board = getActiveBoard();
+    const path = findBoardItemInColumns(board, dragPayload.itemId);
+    const item = path?.list.find(candidate => candidate.id === dragPayload.itemId);
+    return _isBottomAlignedNavWidget(item);
+  }
+  return false;
+}
+
+function _navPlacementGroupsMatch(targetItem) {
+  return _navDraggedItemIsBottomAligned() === _isBottomAlignedNavWidget(targetItem);
+}
+
+function _navInsertionSplitRatio(targetItem) {
+  if (dragPayload?.area !== 'nav' || !_isBottomAlignedNavWidget(targetItem)) return 0.5;
+  const targetPath = findNavItemPath(targetItem.id);
+  const draggedPath = findNavItemPath(dragPayload.itemId);
+  if (!targetPath || !draggedPath || targetPath.list !== draggedPath.list) return 0.5;
+  const targetIndex = targetPath.list.findIndex(item => item.id === targetItem.id);
+  const draggedIndex = draggedPath.list.findIndex(item => item.id === dragPayload.itemId);
+  return draggedIndex > targetIndex ? 0.68 : 0.5;
+}
+
 function handleNavItemDragOver(event, item, parent) {
   // Board item as inbox target — any bookmark/folder from any source
   if (item.type === 'board' && _canSendToInbox()) {
@@ -1168,6 +1205,14 @@ function handleNavItemDragOver(event, item, parent) {
         event.currentTarget.classList.add('drop-target');
       }
     }
+    return;
+  }
+  const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
+  const isPlacementDrag = dragPayload?.area === 'nav' || dragPayload?.area === 'folder-tab' || isBoardWidget;
+  if (isPlacementDrag && !_navPlacementGroupsMatch(item)) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'none';
     return;
   }
   // Accept folder-tab drags (removing a board from a folder back to nav)
@@ -1184,7 +1229,6 @@ function handleNavItemDragOver(event, item, parent) {
     _moveNavPreview(element.parentElement, position === 'before' ? element : element.nextSibling);
     return;
   }
-  const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
   if (!dragPayload || (dragPayload.area !== 'nav' && !isBoardWidget)) return;
   event.preventDefault();
   event.stopPropagation();
@@ -1192,7 +1236,8 @@ function handleNavItemDragOver(event, item, parent) {
 
   const element = event.currentTarget;
   const rect = element.getBoundingClientRect();
-  const position = event.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
+  const splitRatio = _navInsertionSplitRatio(item);
+  const position = event.clientY - rect.top < rect.height * splitRatio ? 'before' : 'after';
 
   if (_dropTarget === element && _dropPos === position) return;
   _dropTarget = element; _dropPos = position;
@@ -1306,13 +1351,18 @@ function handleNavListDragOver(event) {
   // If an item-level preview is already positioned, cursor is over the clone's
   // transparent space — don't override preview position unless the cursor has
   // moved into the blank space below the final nav item.
-  const navItems = Array.from(elements.navList.querySelectorAll(':scope > .nav-item:not(.drag-preview)'));
+  const navItems = Array.from(elements.navList.querySelectorAll(':scope > .nav-item:not(.drag-preview), :scope > .nav-bottom-widget-group > .nav-item:not(.drag-preview)'));
   const lastItem = navItems[navItems.length - 1] || null;
   const afterLastItem = !lastItem || event.clientY > lastItem.getBoundingClientRect().bottom;
   if (_dropTarget !== null && _dropTarget !== elements.navList && !afterLastItem) return;
   if (_dropTarget === elements.navList) return;
   _dropTarget = elements.navList; _dropPos = 'end';
-  _moveNavPreview(elements.navList, null);
+  const bottomGroup = elements.navList.querySelector(':scope > .nav-bottom-widget-group');
+  if (_navDraggedItemIsBottomAligned() && bottomGroup) {
+    _moveNavPreview(bottomGroup, null);
+  } else {
+    _moveNavPreview(elements.navList, bottomGroup || null);
+  }
 }
 
 function handleNavListDrop(event) {

@@ -1,0 +1,3 @@
+@cloudflare/speedtest 1.13.0
+Source: https://github.com/cloudflare/speedtest
+Package integrity: sha512-Nu3Hc9JlUvuEj/sc47gcRWIUiXRNpuXuNQFSeERhx+87sX214gndmZ7TEWl4TZoAKJyBiEk1jtafUwoWtHkgzg==

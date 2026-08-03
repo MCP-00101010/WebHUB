@@ -18,6 +18,7 @@ const bridge = (() => {
   const SHARED_READ_CHUNK_BYTES = 256 * 1024;
   const ASSET_WRITE_TIMEOUT_MS = 60000;
   const FAVICON_FETCH_TIMEOUT_MS = 30000;
+  const FEED_FETCH_TIMEOUT_MS = 30000;
 
   function _send(type, payload = {}, options = {}) {
     return new Promise((resolve, reject) => {
@@ -392,6 +393,25 @@ const bridge = (() => {
         } : null;
       } catch (error) {
         console.warn('Morpheus: native favicon fetch failed', error);
+        return null;
+      }
+    },
+
+    async fetchFeed(url) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) return null;
+      const feedUrl = typeof url === 'string' ? url.trim() : '';
+      if (!/^https?:\/\//i.test(feedUrl)) return null;
+      try {
+        const res = await _send('MW_FETCH_FEED', { url: feedUrl }, { timeoutMs: FEED_FETCH_TIMEOUT_MS });
+        return res.ok && typeof res.text === 'string' ? {
+          text: res.text,
+          finalUrl: res.finalUrl || feedUrl,
+          contentType: res.contentType || '',
+          bytes: Number(res.bytes || 0)
+        } : null;
+      } catch (error) {
+        console.warn('Morpheus: extension feed fetch failed', error);
         return null;
       }
     },

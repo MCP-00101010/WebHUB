@@ -1,0 +1,2 @@
+Astronomy Engine 2.1.19
+https://github.com/cosinekitty/astronomy/releases/tag/v2.1.19

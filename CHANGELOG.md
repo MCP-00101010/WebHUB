@@ -5,6 +5,343 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.123] — 2026-08-03
+
+### Added
+
+- **Sidebar widget controls** — sidebar widgets now expose the same hover/focus settings button as column widgets and show a reload button whenever their widget definition supports manual refresh. Sidebar settings retain placement controls, and action clicks remain excluded from widget dragging.
+
+### Changed
+
+- **Compact IP Info status** — combined the separate IP-check and speed-test metadata footers into one single-line status row. Checks performed together collapse to `IP + speed`, elapsed times use compact units, jitter remains visible, and source links are grouped at the right.
+- **Shared widget actions** — column and sidebar widgets now use one settings/reload implementation so control labels, loading animation, and refresh behavior stay consistent.
+
+### Tests
+
+- Expanded IP Info and sidebar-widget regression coverage for the consolidated status line and shared settings/reload controls.
+- Passed all 98 JavaScript regression tests.
+
+---
+
+## [0.11.122] — 2026-08-03
+
+### Fixed
+
+- **Cloudflare speed tests in file-based Hubs** — the vendored speed-test adapter now resolves absolute API URLs without passing Firefox's literal `"null"` `file://` origin to the URL constructor. Relative URLs fall back to the full page URL, allowing the same adapter to remain safe in both file and hosted Hubs.
+
+### Tests
+
+- Added a regression test reproducing Firefox's `file://` null-origin environment and verifying that the Cloudflare endpoint resolves successfully.
+- Passed all 98 JavaScript regression tests.
+
+---
+
+## [0.11.121] — 2026-08-03
+
+### Added
+
+- **IP Info connection-speed measurements** — the IP widget can now show Cloudflare-measured download speed, upload speed, latency, and jitter. Measurements run unobtrusively on Hub load, after a detected public-IP change, or through the widget's manual reload action.
+- **Local Cloudflare engine** — pinned `@cloudflare/speedtest` 1.13.0 and its MIT licence inside the Hub so the widget remains dependency-free at runtime.
+
+### Changed
+
+- **Bounded, local-only speed results** — automatic tests use a custom sequence capped at approximately 32 MB, omit the packet-loss phase, and never run merely because an unchanged IP reaches its normal refresh interval. Completed results are cached only in browser storage, outside the Hub database, and Cloudflare's final-results reporting endpoint is disabled.
+- **Speed-test control** — IP Info settings can disable connection testing while leaving public-IP monitoring active.
+
+### Tests
+
+- Added regression coverage for Hub-load/manual speed requests, public-IP-change triggering, unchanged-IP suppression, bounded transfer size, disabled result reporting, local cache isolation, and the pinned browser asset.
+- Passed all 97 JavaScript regression tests.
+
+---
+
+## [0.11.120] — 2026-08-03
+
+### Changed
+
+- **Consistent IP Info footer** — removed the IP widget's unique divider above its source and last-checked footer so it matches the footer treatment used by other widgets.
+
+### Tests
+
+- Added regression coverage ensuring the IP Info footer remains divider-free.
+- Passed all 5 focused IP Info widget tests.
+
+---
+
+## [0.11.119] — 2026-08-03
+
+### Fixed
+
+- **Consistent bottom-widget drag preview** — reordering bottom-aligned sidebar widgets once again uses the same full-widget destination preview as drag-and-drop elsewhere in the Hub. Only the preview's height expansion animation is skipped in the bottom-anchored group, preventing its upward growth from moving the drop target back and forth through the cursor.
+
+### Tests
+
+- Updated sidebar drag regression coverage for full-height bottom-group previews without layout animation.
+- Passed all 95 JavaScript regression tests.
+
+---
+
+## [0.11.118] — 2026-08-03
+
+### Fixed
+
+- **Flicker-free bottom reordering** — bottom-aligned sidebar widgets no longer insert a full-height destination clone while being reordered. The dragged widget remains visible in the cursor ghost, while a non-layout-changing accent line marks the destination above or below the target. This removes the target-geometry feedback loop that caused rapid preview oscillation.
+
+### Tests
+
+- Added regression coverage for clone-free bottom-widget destinations, stable group-end indicators, and absolutely positioned insertion feedback that does not alter widget geometry.
+- Passed all 95 JavaScript regression tests.
+
+---
+
+## [0.11.117] — 2026-08-03
+
+### Changed
+
+- **Upward bottom-widget tolerance** — when a lower bottom-aligned widget is dragged upward, the target widget now uses a larger upper insertion zone. This makes placing the dragged widget above the current top item substantially easier without changing the existing downward-drop behaviour.
+
+### Tests
+
+- Added regression coverage for direction-aware bottom-widget insertion thresholds.
+- Passed all 95 JavaScript regression tests.
+
+---
+
+## [0.11.116] — 2026-08-03
+
+### Fixed
+
+- **Bottom-widget reordering** — the rendered normal/bottom partition is now also applied to the in-memory navigation order before drag indices are calculated. Bottom-aligned widgets can therefore be reordered reliably instead of snapping back to their previous positions.
+- **Stable bottom drag previews** — the flexible bottom spacing now belongs to a dedicated non-draggable group container rather than the first widget. Insertion previews remain inside the correct group, eliminating the layout feedback loop that caused flicker and jumps into the upper sidebar.
+- **Placement-aware drops** — item-level drops stay within the dragged widget's normal or bottom placement group. Dragging through blank sidebar space also places the preview at the correct end of that group.
+
+### Tests
+
+- Expanded sidebar drag regression coverage for state-order normalisation, isolated bottom-group layout, placement matching, and group-aware end previews.
+- Passed all 95 JavaScript regression tests.
+
+---
+
+## [0.11.115] — 2026-08-03
+
+### Added
+
+- **Bottom-aligned sidebar widgets** — top-level sidebar widgets now offer an `Align at sidebar bottom` setting. Enabled widgets form a group at the bottom of the available sidebar space, which is particularly useful for persistent information such as IP Info.
+
+### Changed
+
+- **Reorderable bottom group** — bottom placement does not fix widgets to absolute coordinates. The group preserves the underlying sidebar order, so multiple bottom-aligned widgets can still be rearranged with the existing drag-and-drop controls. When the sidebar contents overflow, the group participates in normal scrolling.
+
+### Tests
+
+- Added regression coverage for the sidebar-only placement option, stable normal/bottom partitioning, relative ordering within the bottom group, and automatic bottom spacing.
+- Passed all 95 JavaScript regression tests.
+
+---
+
+## [0.11.114] — 2026-08-03
+
+### Changed
+
+- **IP address-family placement** — when enabled, the IP Info widget now shows `(IPv4)` or `(IPv6)` immediately after the public address instead of placing it in the location details line.
+
+### Tests
+
+- Added regression coverage for the inline address-family label and its secondary typography.
+
+---
+
+## [0.11.113] — 2026-08-03
+
+### Added
+
+- **Sidebar IP Info** — IP Info can now be added to the navigation sidebar and refreshes its browser-local result correctly in either widget location.
+
+### Changed
+
+- **Consistent small-widget presentation** — Clock and Countdown now use the same complete markup, typography, date/label content, and timing behaviour in the sidebar as they do in a board column. The sidebar widget host now gives these regular widget layouts the full available width.
+- **Sidebar widget interaction** — interactive widget surfaces no longer accidentally begin a sidebar drag, matching their behaviour in board columns.
+
+### Tests
+
+- Added regression coverage for IP Info sidebar eligibility and refresh, full Clock and Countdown sidebar rendering, context-aware timers, full-width hosting, and interactive drag guards.
+- Passed all 94 JavaScript regression tests.
+
+---
+
+## [0.11.112] — 2026-08-03
+
+### Added
+
+- **IP Info widget** — added a compact VPN-check widget showing the browser's current public IP address, approximate country with emoji flag, and optional city, network provider, ASN, and IPv4/IPv6 type.
+- **Change indication and refresh controls** — the widget checks once on each Hub load, refreshes every 15 minutes by default, supports intervals from five minutes to manual-only, provides an immediate reload action, and highlights a detected IP-address change.
+- **Resilient free data sources** — ipwho.is supplies the no-key geolocation result; if it is unavailable, ipify provides an IP-only fallback with a clear partial-result notice.
+
+### Changed
+
+- **Local-only network state** — IP results, timestamps, and refresh status stay in browser-local storage and never alter the shared Hub database.
+
+### Tests
+
+- Added coverage for response normalization, flag generation, session refresh, local caching, VPN-relevant fields, ipify fallback, settings, and widget presentation.
+- Passed all 91 JavaScript regression tests.
+
+---
+
+## [0.11.111] — 2026-08-03
+
+### Fixed
+
+- **ISS info-line persistence** — the ISS globe now remembers whether its map attribution/info line is open or closed when the widget is moved, recreated, or the Hub is reloaded. The preference remains browser-local with the globe camera and Focus ISS state.
+
+### Tests
+
+- Added regression coverage for capturing and restoring the ISS attribution control state without changing the Hub database.
+- Passed all 86 JavaScript regression tests.
+
+---
+
+## [0.11.110] — 2026-08-03
+
+### Changed
+
+- **RSS tab spacing** — added breathing room between the feed-tab buttons and their horizontal scrollbar.
+
+### Tests
+
+- Added regression coverage for the RSS tab-strip scrollbar spacing.
+
+---
+
+## [0.11.109] — 2026-08-03
+
+### Changed
+
+- **Roomier RSS settings** — RSS Reader settings now use a wider responsive panel with full-width name and URL fields, stacked mobile rows, and an always-visible outlined remove-feed button.
+- **Visible RSS widget titles** — an RSS Reader now displays its configured widget title above the feed tabs; untitled readers retain the previous compact layout.
+
+### Tests
+
+- Added regression coverage for the RSS-specific settings width, responsive feed editor, visible remove action, and optional widget heading.
+- Passed all 85 JavaScript regression tests.
+
+---
+
+## [0.11.108] — 2026-08-03
+
+### Added
+
+- **Tabbed RSS/Atom reader** — added a configurable feed reader widget with an aggregated chronological **All** tab, a **Starred** tab, and one tab per feed. Feeds can be named, reordered, removed, searched, refreshed, and displayed in compact or expanded layouts with optional article images.
+- **Local reading state** — unread status, favourites, active tab, search text, and cached articles remain browser-local so feed traffic and article history do not enlarge or churn the shared Hub database.
+
+### Changed
+
+- **Extension 1.0.21 feed relay** — the Hub first fetches feeds directly, then uses a tightly bounded extension relay when browser CORS rules block the request. Relay requests are restricted to Hub pages, omit cookies, time out after 15 seconds, and reject responses over 2 MiB.
+- **Combined-feed cleanup** — the aggregated and starred views sort articles chronologically and collapse duplicates, including links that differ only by common tracking parameters.
+
+### Tests
+
+- Added RSS/Atom parser, tab aggregation, deduplication, favourites, local-cache, CORS fallback, permission, and relay access-control regression coverage.
+- Validated parsing against the live BBC News RSS feed, passed all 85 JavaScript regression tests, and passed extension manifest lint with no errors.
+
+---
+
+## [0.11.107] — 2026-08-03
+
+### Fixed
+
+- **Clickable north reset** — replaced MapLibre's apparently inert stock compass with an explicit Hub control that resets globe bearing, pitch, and roll. Right-button dragging can now rotate the bearing, making the reset action both usable and visibly meaningful.
+
+### Tests
+
+- Added regression coverage for the north button's pointer interaction, full orientation reset, and enabled bearing rotation.
+- Passed all 77 JavaScript regression tests.
+
+---
+
+## [0.11.106] — 2026-08-03
+
+### Added
+
+- **Focus ISS control** — added a top-left globe toggle that continuously keeps the live ISS position centred. Its on/off state is stored with the browser-local globe view and does not affect the Hub database.
+
+### Fixed
+
+- **Day/night rendering** — replaced the dateline-crossing hemispherical ring with an antimeridian-safe terminator curve and polar night polygon, preventing MapLibre from triangulating the night shade into an incorrect wedge across the globe.
+
+### Tests
+
+- Added coverage for continuous terminator/polygon coordinates, persistent local focus state, live recentering, and focus-control styling.
+- Passed all 76 JavaScript regression tests.
+
+---
+
+## [0.11.105] — 2026-08-03
+
+### Fixed
+
+- **ISS globe startup** — wait for the remote MapLibre style to finish loading before enabling globe projection and adding ISS overlays. This prevents the premature `Style is not done loading` failure that left a flat basemap with no marker, track, terminator, altitude, or speed.
+- **ISS startup diagnostics** — failures during post-style globe and overlay setup now remain visible in the widget instead of escaping from the map load callback.
+
+### Tests
+
+- Added regression coverage to prevent projection setup from moving ahead of MapLibre's style-loaded event.
+- Passed all 75 JavaScript regression tests.
+
+---
+
+## [0.11.104] — 2026-08-03
+
+### Added
+
+- **Interactive ISS Tracker widget** — added a rotatable, zoomable 3D Earth with a live ISS marker, previous and upcoming orbital ground track, current coordinates, altitude, and orbital speed.
+- **Live day/night view** — added a calculated night-side shade and moving solar terminator so the globe shows where daylight currently ends.
+- **Resilient keyless tracking** — current ISS orbital elements refresh from Where The ISS At with CelesTrak fallback, while pinned Satellite.js performs SGP4 propagation locally without an API key.
+
+### Changed
+
+- **Database isolation** — ISS orbital cache and globe camera state remain in browser-local storage and never update the Hub database.
+
+### Tests
+
+- Added deterministic coverage for TLE propagation, antimeridian-safe tracks, solar terminator geometry, local caching, data-source fallback, and widget integration.
+- Passed all 74 JavaScript regression tests across widgets, persistence, drag/drop, extension relay, and native database handling.
+
+---
+
+## [0.11.103] — 2026-08-03
+
+### Changed
+
+- **Chronological daylight events** — the Astronomy widget now orders sunset, dark-sky start, dawn, and sunrise by their actual upcoming timestamps instead of keeping a fixed label order.
+
+### Tests
+
+- Added regression coverage for daylight cards spanning the current evening and following morning.
+
+---
+
+## [0.11.102] — 2026-08-03
+
+### Added
+
+- **Astronomy & Night Sky widget** — added a local-first sky dashboard with a dynamically shaded NASA/LRO Moon image, phase name, illumination, lunar age, moonrise/set, and the next primary lunar phase.
+- **Tonight at a glance** — added local sunrise, sunset, dark-sky dusk/dawn, and naked-eye planet visibility with best viewing time, direction, altitude, and magnitude.
+- **Meteor showers and events** — added active/upcoming major showers with peak rate and Moon interference, plus calculated equinoxes, solstices, local solar eclipses, lunar eclipses, planetary elongations/oppositions, and a packaged NASA/JPL comet close-approach snapshot.
+- **Flexible sky location** — the widget can automatically inherit the first configured Weather widget location or use its own Open-Meteo location search, with 30/90/180/365-day event horizons and individual section toggles.
+- **Pinned astronomy assets** — vendored Astronomy Engine 2.1.19 with its MIT licence and bundled NASA's LRO Moon mosaic so core calculations and Moon rendering work without runtime API credentials.
+
+### Changed
+
+- **Database isolation** — hourly astronomy recalculation and manual reload use runtime memory only; generated sky data and external catalogues are not written into the shared Hub database.
+
+### Tests
+
+- Added fixed-date London coverage for Moon conditions, sunrise/sunset, visible planets, active showers, eclipses, equinoxes, and comet ordering, plus location inheritance, phase-mask, local-asset, settings, and responsive-style checks.
+- Passed 65 JavaScript regression tests covering the new widget and existing extension, persistence, drag/drop, selection, Weather, and Weather Map behavior.
+
+---
+
 ## [0.11.101] — 2026-08-03
 
 ### Fixed

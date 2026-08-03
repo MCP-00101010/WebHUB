@@ -142,7 +142,7 @@ test('basic Weather exposes a reload action beside widget settings', () => {
   const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'widgets.js'), 'utf8');
   const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'styles.css'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  assert.match(widgets, /if \(typeof def\.reload === 'function'\)/);
+  assert.match(widgets, /if \(typeof def\.reload !== 'function'\) return;/);
   assert.match(widgets, /widget-action-btn widget-action-btn--reload/);
   assert.match(widgets, /appendChild\(icon\('icon-reload'\)\)/);
   assert.match(widgets, /reload\(widget\) \{\s*return _ensureWeatherData\(widget, \{ force: true \}\);/);
