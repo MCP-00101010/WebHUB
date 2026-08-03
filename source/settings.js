@@ -1220,9 +1220,10 @@ async function getBridgeStorageInfo() {
     return { extensionReady: false, nativeReady: false, databasePath: null };
   }
   await bridge.whenReady;
-  const extensionReady = bridge.isAvailable();
-  const nativeReady = extensionReady && bridge.nativeIsAvailable();
+  let extensionReady = bridge.isAvailable();
   const info = extensionReady ? await bridge.getStorageInfo() : null;
+  extensionReady = bridge.isAvailable();
+  const nativeReady = extensionReady && info?.nativeAvailable === true;
   return {
     extensionReady,
     nativeReady,
@@ -1247,7 +1248,9 @@ async function updateDatabasePathControls() {
   applyBtn.disabled = !info.nativeReady;
 
   if (!info.extensionReady) {
-    statusEl.textContent = 'Extension not detected. Using browser storage only.';
+    statusEl.textContent = localFileExtensionPermissionMayBeBlocked()
+      ? 'Extension not detected. Firefox 153+ requires “Access local files on your computer” in the extension permissions.'
+      : 'Extension not detected. Using browser storage only.';
     return;
   }
   if (!info.nativeReady) {
@@ -1270,7 +1273,9 @@ async function updateAboutBridgeStatus() {
   if (!extensionEl || !nativeEl || !databasePathEl || !featuresEl || !storageNoteEl) return;
 
   const info = await getBridgeStorageInfo();
-  extensionEl.textContent = info.extensionReady ? 'Connected' : 'Not detected';
+  extensionEl.textContent = info.extensionReady
+    ? 'Connected'
+    : (localFileExtensionPermissionMayBeBlocked() ? 'Not detected — check local-file permission' : 'Not detected');
   nativeEl.textContent = info.nativeReady ? 'Available' : (info.extensionReady ? 'Not available' : 'Not connected');
   databasePathEl.textContent = info.databasePath || (info.nativeReady ? 'Not configured' : 'Unavailable');
 
@@ -1281,7 +1286,9 @@ async function updateAboutBridgeStatus() {
   }
   featuresEl.textContent = features.length
     ? `Available features: ${features.join(', ')}.`
-    : 'Available features: unavailable. The hub is running in browser-storage-only mode.';
+    : (localFileExtensionPermissionMayBeBlocked()
+      ? 'Available features: unavailable. In about:addons, open Morpheus WebHub → Permissions and enable “Access local files on your computer”.'
+      : 'Available features: unavailable. The hub is running in browser-storage-only mode.');
 
   storageNoteEl.textContent = info.nativeReady && info.databasePath
     ? `Primary storage is the shared file at ${info.databasePath}. Browser storage is only a local cache.`
@@ -1408,7 +1415,25 @@ async function updateSidebarExtensionStatus(info = null) {
   if (!el) return;
   const bridgeInfo = info || await getBridgeStorageInfo();
   const detected = bridgeInfo.extensionReady;
-  el.textContent = detected ? 'Extension detected' : 'Extension not detected';
+  const diagnostics = typeof bridge?.getDiagnostics === 'function' ? bridge.getDiagnostics() : null;
+  if (detected) {
+    el.textContent = 'Extension detected';
+    el.title = '';
+  } else if (diagnostics?.relayState === 'not-injected') {
+    if (localFileExtensionPermissionMayBeBlocked()) {
+      el.textContent = 'Extension needs local-file access';
+      el.title = 'In about:addons, open Morpheus WebHub → Permissions and enable “Access local files on your computer”.';
+    } else {
+      el.textContent = 'Extension relay not injected';
+      el.title = 'The extension content script did not run on this page.';
+    }
+  } else if (diagnostics?.relayState === 'background-error') {
+    el.textContent = 'Extension background unavailable';
+    el.title = diagnostics.relayError || diagnostics.bridgeError || 'The extension background did not respond.';
+  } else {
+    el.textContent = 'Extension not detected';
+    el.title = diagnostics?.bridgeError || diagnostics?.relayError || '';
+  }
   el.classList.toggle('is-detected', detected);
   el.classList.toggle('is-missing', !detected);
 }
@@ -1465,6 +1490,12 @@ function showSettingsPanel(tab = 'general') {
   loadServiceSecretsIntoSettingsUi().catch(error => {
     console.warn('Failed to load service secrets', error);
   });
+}
+
+function localFileExtensionPermissionMayBeBlocked() {
+  if (location.protocol !== 'file:') return false;
+  const match = navigator.userAgent.match(/Firefox\/(\d+)/i);
+  return !!match && Number(match[1]) >= 153;
 }
 
 function showTagManagerPanel() {

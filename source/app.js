@@ -1,6 +1,11 @@
-const APP_VERSION = '0.11.66';
+const APP_VERSION = '0.11.80';
 
 document.documentElement.classList.add('hub-booting');
+
+const sidebarVersionEl = document.getElementById('aboutBtn');
+const aboutVersionEl = document.getElementById('aboutVersionLine');
+if (sidebarVersionEl) sidebarVersionEl.textContent = `v${APP_VERSION}`;
+if (aboutVersionEl) aboutVersionEl.textContent = `Version ${APP_VERSION}`;
 
 let activeModal = null;
 let contextTarget = null;
@@ -253,6 +258,8 @@ async function reloadHubData(options = {}) {
       await bridge.whenReady;
       if (!bridge.isAvailable() || !bridge.nativeIsAvailable()) throw new Error('Shared storage unavailable');
       const loaded = await bridge.loadState();
+      if (loaded?.error) throw new Error(loaded.error);
+      if (loaded?.fromDisk !== true) throw new Error('Shared database was not read from disk');
       snapshot = loaded?.json || null;
       fileInfo = loaded?.fileInfo || null;
       databasePath = (loaded?.databasePath || state.databasePath || '').trim();
@@ -337,8 +344,178 @@ function parseIsoTime(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function snapshotsMatch(left, right) {
-  return computeSnapshotHash(left || '') === computeSnapshotHash(right || '');
+async function prepareForExternalDelivery() {
+  if (sharedDiskSyncIsBlocked()) {
+    return { ok: false, conflict: true, error: 'Shared database sync is paused in this hub tab.' };
+  }
+  if (typeof flushSharedDiskSaveQueue === 'function' && sharedDiskSaveIsPending()) {
+    void flushSharedDiskSaveQueue();
+    if (typeof waitForSharedDiskSaveIdle === 'function' && !await waitForSharedDiskSaveIdle()) {
+      return { ok: false, conflict: false, error: 'Timed out waiting for this hub tab to finish saving.' };
+    }
+  }
+  if (sharedDiskSyncIsBlocked()) {
+    return { ok: false, conflict: true, error: 'Shared database sync is paused in this hub tab.' };
+  }
+  if (hasPendingSharedDiskChanges()) {
+    return { ok: false, conflict: false, error: 'This hub tab still has unsaved changes.' };
+  }
+  if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable() || !state.databasePath) {
+    return { ok: true };
+  }
+
+  const live = await bridge.getDatabaseFileInfo();
+  const livePath = (live?.databasePath || state.databasePath || '').trim();
+  const liveVersion = live?.fileInfo?.version || null;
+  if (!livePath || liveVersion === getSharedDiskBaselineVersion()) return { ok: true };
+
+  const reloaded = await reloadHubData({ source: 'shared', notice: '' });
+  return reloaded
+    ? { ok: true }
+    : { ok: false, conflict: true, error: 'Could not refresh the latest shared database before delivery.' };
+}
+
+function resolveExternalInboxTarget(targetBoardId = '', targetTabId = '') {
+  const board = targetBoardId
+    ? state.boards.find(candidate => candidate.id === targetBoardId) || null
+    : getActiveBoard();
+  if (!board) return { error: 'No destination board is available.' };
+  const tab = targetTabId
+    ? findBoardTabById(board, targetTabId)
+    : (board.id === state.activeBoardId ? getActiveTab() : getBoardTab(board));
+  if (!tab) return { error: 'No destination tab is available.' };
+  if (board.locked || tab.locked) return { error: 'The destination board or tab is locked.' };
+  const inbox = getBoardInbox(board, tab);
+  if (!inbox) return { error: 'The destination tab has no inbox.' };
+  return { board, tab, inbox };
+}
+
+function findInboxDeliveryItem(itemId) {
+  if (!itemId) return null;
+  for (const board of state.boards || []) {
+    for (const tab of getBoardTabs(board)) {
+      const found = findBoardItemInList(getBoardInbox(board, tab)?.items || [], itemId);
+      if (found?.item) return found.item;
+    }
+  }
+  return null;
+}
+
+function awaitExternalDeliverySave(savePromise, timeoutMs = 45000) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve({ ok: false, timedOut: true }), timeoutMs);
+    Promise.resolve(savePromise)
+      .then(result => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch(error => {
+        clearTimeout(timer);
+        resolve({ ok: false, error: error?.message || String(error) });
+      });
+  });
+}
+
+async function persistExternalTabDelivery(detail = {}, allowRebase = true) {
+  const prepared = await prepareForExternalDelivery();
+  if (!prepared.ok) return prepared;
+
+  const url = typeof detail.url === 'string' ? detail.url.trim() : '';
+  if (!url || !isValidUrl(url)) return { ok: false, error: 'The received tab URL is invalid.' };
+
+  const deliveryId = detail.deliveryId || `legacy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const itemId = `bm-delivery-${deliveryId}`;
+  let target = resolveExternalInboxTarget(detail.targetBoardId || '', detail.targetTabId || '');
+  if (target.error) return { ok: false, error: target.error };
+
+  const targetBoardId = target.board.id;
+  const targetTabId = target.tab.id;
+  let item = findInboxDeliveryItem(itemId);
+  if (!item) {
+    item = {
+      id: itemId,
+      type: 'bookmark',
+      title: detail.title || url || 'Untitled',
+      url: normalizeUrl(url),
+      tags: [],
+      faviconCache: detail.faviconCache || ''
+    };
+    pushUndoSnapshot();
+    target.inbox.items.push(item);
+  }
+
+  const deliveryMutationSequence = getLocalStateMutationSequence() + 1;
+  let result = await awaitExternalDeliverySave(saveState());
+  if (result?.conflict && allowRebase && getLocalStateMutationSequence() === deliveryMutationSequence) {
+    const reloaded = await reloadHubData({ source: 'shared', notice: '' });
+    if (!reloaded) return { ok: false, conflict: true, error: 'The shared database changed during delivery.' };
+    target = resolveExternalInboxTarget(targetBoardId, targetTabId);
+    if (target.error) return { ok: false, error: target.error };
+    if (!findInboxDeliveryItem(itemId)) target.inbox.items.push(item);
+    result = await awaitExternalDeliverySave(saveState());
+  }
+
+  renderNav();
+  renderBoardTabBar(getActiveBoard(), getActiveTab());
+  updateInboxBadge();
+  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
+  if (!result?.ok || result.conflict) {
+    return {
+      ok: false,
+      conflict: result?.conflict === true,
+      error: result?.conflict
+        ? 'The shared database changed during delivery.'
+        : (result?.timedOut
+          ? 'Timed out while saving the delivered bookmark.'
+          : 'The bookmark was added locally but could not be saved yet.')
+    };
+  }
+  return { ok: true, persisted: result.persisted || (bridge.nativeIsAvailable() ? 'shared' : 'local') };
+}
+
+function summarizeHubSnapshot(snapshot) {
+  const summary = {
+    bytes: typeof snapshot === 'string' ? snapshot.length : 0,
+    boards: 0,
+    bookmarks: 0,
+    folders: 0,
+    titles: 0,
+    importItems: 0
+  };
+  try {
+    const parsed = JSON.parse(snapshot || '{}');
+    summary.boards = Array.isArray(parsed.boards) ? parsed.boards.length : 0;
+    summary.importItems = Array.isArray(parsed.importManager?.items) ? parsed.importManager.items.length : 0;
+    const walk = value => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach(walk);
+        return;
+      }
+      if (value.type === 'bookmark') summary.bookmarks++;
+      else if (value.type === 'folder') summary.folders++;
+      else if (value.type === 'title') summary.titles++;
+      Object.values(value).forEach(walk);
+    };
+    walk(parsed.boards);
+    walk(parsed.importManager?.items);
+  } catch {}
+  return summary;
+}
+
+function hubSnapshotContentCount(summary) {
+  return summary.boards + summary.bookmarks + summary.folders + summary.titles + summary.importItems;
+}
+
+function localSnapshotLooksDangerouslySmaller(localSnapshot, sharedSnapshot) {
+  const local = summarizeHubSnapshot(localSnapshot);
+  const shared = summarizeHubSnapshot(sharedSnapshot);
+  const localCount = hubSnapshotContentCount(local);
+  const sharedCount = hubSnapshotContentCount(shared);
+  if (shared.bytes < 100000 || sharedCount < 50) return false;
+  if (local.bytes >= shared.bytes * 0.25) return false;
+  if (localCount >= sharedCount * 0.5) return false;
+  return true;
 }
 
 function localCacheLooksNewerThanShared(localMeta, databasePath, localSnapshot, sharedSnapshot, sharedFileInfo = null) {
@@ -351,6 +528,10 @@ function localCacheLooksNewerThanShared(localMeta, databasePath, localSnapshot, 
   if (!samePath) return false;
   if (localMeta?.source !== 'local') return false;
   if (snapshotsMatch(localSnapshot, sharedSnapshot)) return false;
+  if (localSnapshotLooksDangerouslySmaller(localSnapshot, sharedSnapshot)) {
+    console.warn('Morpheus: refusing to treat a much smaller local cache as newer than the shared database.');
+    return false;
+  }
   const liveVersion = sharedFileInfo?.version ?? null;
   if (liveVersion !== null && localMeta?.sharedBaselineVersion !== null && localMeta.sharedBaselineVersion === liveVersion) {
     return true;
@@ -369,8 +550,18 @@ async function refreshBridgeStatusUi() {
 }
 
 async function promoteLocalCacheToShared(options = {}) {
-  const { snapshot = localStorage.getItem(STORAGE_KEY) || serializeStateSnapshot(), databasePath = state.databasePath || '', expectedVersion = null } = options;
+  const {
+    snapshot = localStorage.getItem(STORAGE_KEY) || serializeStateSnapshot(),
+    databasePath = state.databasePath || '',
+    expectedVersion = null,
+    sharedSnapshot = ''
+  } = options;
   try {
+    if (sharedSnapshot && localSnapshotLooksDangerouslySmaller(snapshot, sharedSnapshot)) {
+      blockSharedDiskSync(databasePath);
+      showNotice('The browser cache is much smaller than the shared database, so Morpheus did not overwrite the shared file.');
+      return false;
+    }
     const result = await bridge.saveState(snapshot, { expectedVersion });
     if (!result?.ok) {
       showNotice('Failed to update the shared database from this browser cache.');
@@ -447,7 +638,8 @@ async function handleRecoveredSharedStorage(info) {
         void promoteLocalCacheToShared({
           snapshot: localSnapshot,
           databasePath,
-          expectedVersion: sharedFileInfo?.version ?? null
+          expectedVersion: sharedFileInfo?.version ?? null,
+          sharedSnapshot
         });
       },
       'Update shared',
@@ -561,7 +753,10 @@ async function checkForExternalSharedDiskChanges() {
   const liveJson = loaded?.json || null;
   if (!liveJson) return;
   const currentJson = typeof serializeStateSnapshot === 'function' ? serializeStateSnapshot() : JSON.stringify(state);
-  if (liveJson && liveJson === currentJson) {
+  const snapshotsAreEquivalent = typeof snapshotsMatch === 'function'
+    ? snapshotsMatch(liveJson, currentJson)
+    : liveJson === currentJson;
+  if (liveJson && snapshotsAreEquivalent) {
     if (typeof acceptSharedDiskSnapshot === 'function') acceptSharedDiskSnapshot(loaded?.fileInfo || live?.fileInfo || null, livePath);
     else setSharedDiskBaseline(loaded?.fileInfo || live?.fileInfo || null, livePath);
     persistStateToLocalCache(currentJson, {
@@ -1049,34 +1244,37 @@ function attachEventListeners() {
 
   // Receive a tab sent by the extension popup → drop into the active board's inbox.
   window.addEventListener('morpheus:receive-tab', e => {
-    const { url, title, faviconCache } = e.detail;
-    const board = getActiveBoard();
-    if (!board || board.locked) return;
-    const inbox = getBoardInbox(board, getActiveTab());
-    if (!inbox) return;
-    pushUndoSnapshot();
-    inbox.items.push({
-      id: `bm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type: 'bookmark',
-      title: title || url || 'Untitled',
-      url,
-      tags: [],
-      faviconCache: faviconCache || ''
-    });
-    saveState();
-    renderNav();
-    updateInboxBadge();
-    if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
+    const detail = e.detail || {};
+    void persistExternalTabDelivery(detail)
+      .then(result => bridge.respondToPush(detail.pushRequestId, result))
+      .catch(error => bridge.respondToPush(detail.pushRequestId, {
+        ok: false,
+        error: error?.message || String(error)
+      }));
   });
 
   window.addEventListener('morpheus:receive-import-items', e => {
     if (typeof receiveExternalImportItems === 'function') {
-      receiveExternalImportItems(e.detail?.items || [], { source: e.detail?.source || '' });
+      const detail = e.detail || {};
+      void receiveExternalImportItems(detail.items || [], {
+        source: detail.source || '',
+        deliveryId: detail.deliveryId || ''
+      })
+        .then(result => bridge.respondToPush(detail.pushRequestId, result))
+        .catch(error => bridge.respondToPush(detail.pushRequestId, {
+          ok: false,
+          error: error?.message || String(error)
+        }));
     }
   });
 
   window.addEventListener('morpheus:shared-disk-conflict', e => {
     promptSharedDiskConflict(e.detail || {});
+  });
+
+  window.addEventListener('morpheus:bridge-ready', () => {
+    void refreshBridgeStatusUi();
+    void checkForSharedRecovery();
   });
 }
 
@@ -1093,13 +1291,22 @@ attachBookmarkImportListener();
 async function initializeHubState() {
   let loadedFromShared = false;
   let pendingStartupSharedRecovery = null;
+  let startupSharedPath = '';
+  let startupSharedLoadFailed = false;
+  let startupSharedLoadError = '';
   try {
     if (typeof bridge !== 'undefined') {
       await bridge.whenReady;
       if (bridge.isAvailable()) {
         const info = await bridge.getStorageInfo();
         if (info?.nativeAvailable && info.databasePath) {
+          startupSharedPath = info.databasePath;
           const loaded = await bridge.loadState();
+          if (loaded?.error) throw new Error(loaded.error);
+          if (loaded?.fromDisk !== true) throw new Error('Shared database was not read from disk');
+          if (!loaded?.json && loaded?.fileInfo?.exists !== false) {
+            throw new Error('The shared database returned no hub data');
+          }
           if (loaded?.json) {
             const existingLocalSnapshot = localStorage.getItem(STORAGE_KEY);
             const metaBeforeSharedLoad = getLocalCacheMeta();
@@ -1125,7 +1332,8 @@ async function initializeHubState() {
               pendingStartupSharedRecovery = {
                 snapshot: existingLocalSnapshot,
                 databasePath: info.databasePath,
-                expectedVersion: loaded.fileInfo?.version ?? null
+                expectedVersion: loaded.fileInfo?.version ?? null,
+                sharedSnapshot: loaded.json
               };
             } else {
               restoreStateSnapshot(loaded.json);
@@ -1164,7 +1372,11 @@ async function initializeHubState() {
     }
   } catch (error) {
     console.warn('Failed to initialize hub state from preferred source, falling back to browser cache.', error);
+    const localSnapshot = localStorage.getItem(STORAGE_KEY);
     state = loadState();
+    const localHasContent = hubSnapshotContentCount(summarizeHubSnapshot(localSnapshot)) > 0;
+    startupSharedLoadFailed = !!startupSharedPath && !localHasContent;
+    startupSharedLoadError = error?.message || String(error);
     resetSharedDiskBaseline(state.databasePath || '');
     ensureLocalCacheMetadata(localStorage.getItem(STORAGE_KEY), {
       source: 'local',
@@ -1184,10 +1396,17 @@ async function initializeHubState() {
   if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
   updateUndoRedoUI();
   isDirty = false;
-  document.documentElement.classList.remove('hub-booting');
-  lastBridgeNativeReady = typeof bridge !== 'undefined' && bridge.isAvailable() && bridge.nativeIsAvailable() && !!state.databasePath;
+  if (!startupSharedLoadFailed) document.documentElement.classList.remove('hub-booting');
+  lastBridgeNativeReady = !startupSharedLoadFailed && typeof bridge !== 'undefined' && bridge.isAvailable() && bridge.nativeIsAvailable() && !!state.databasePath;
   lastBridgeRecoveryPath = (state.databasePath || '').trim();
   startSharedRecoveryPolling();
+
+  if (startupSharedLoadFailed) {
+    requestAnimationFrame(() => showNotice(
+      `Morpheus could not read the shared database at ${startupSharedPath}. The empty local fallback is being kept hidden while the connection retries. ${startupSharedLoadError}`
+    ));
+    setTimeout(() => { checkForSharedRecovery().catch(() => {}); }, 0);
+  }
 
   try {
     const sharedDiskNotice = sessionStorage.getItem(SHARED_DISK_NOTICE_KEY);

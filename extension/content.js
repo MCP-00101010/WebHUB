@@ -1,42 +1,129 @@
 'use strict';
 
-// Only activate on pages that identify themselves as Morpheus WebHub.
+(() => {
+if (globalThis.__morpheusWebHubRelayLoaded) return;
+globalThis.__morpheusWebHubRelayLoaded = true;
+
+// Keep the page/extension transport deliberately small. Firefox injects this
+// once at document_idle, after Morpheus' identifying meta tag is available.
 const IS_MORPHEUS = !!document.querySelector('meta[name="morpheus-webhub"]');
+const pendingPagePushes = new Map();
+let pushSequence = 0;
+let registeredWithBackground = false;
+let registrationPromise = null;
+
+function setRelayDiagnostic(state, error = '') {
+  const root = document.documentElement;
+  if (!root) return;
+  root.dataset.morpheusExtensionRelay = state;
+  if (error) root.dataset.morpheusExtensionError = error;
+  else delete root.dataset.morpheusExtensionError;
+}
+
+function relayPushToPage(message) {
+  const pushRequestId = `mw-push-${Date.now()}-${++pushSequence}`;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      pendingPagePushes.delete(pushRequestId);
+      resolve({ ok: false, error: 'The hub did not acknowledge the delivery in time' });
+    }, 65000);
+    pendingPagePushes.set(pushRequestId, { resolve, timer });
+    window.postMessage({ _mw: true, _push: true, pushRequestId, ...message }, '*');
+  });
+}
+
+function registerHub() {
+  if (registeredWithBackground) return Promise.resolve({ ok: true });
+  if (registrationPromise) return registrationPromise;
+  registrationPromise = browser.runtime.sendMessage({
+    type: 'MW_REGISTER',
+    pageUrl: window.location.href,
+    active: !document.hidden && document.hasFocus()
+  }).then(response => {
+    if (response?.ok !== true) throw new Error(response?.error || 'The extension background rejected Hub registration');
+    registeredWithBackground = true;
+    setRelayDiagnostic('background-ready');
+    window.postMessage({ _mw: true, _relayReady: true }, '*');
+    return response;
+  }).catch(error => {
+    registeredWithBackground = false;
+    setRelayDiagnostic('background-error', error?.message || String(error));
+    return { ok: false, error: error?.message || String(error) };
+  }).finally(() => {
+    registrationPromise = null;
+  });
+  return registrationPromise;
+}
 
 if (IS_MORPHEUS) {
-  // Register with the background, sending our URL so it can derive the save path.
-  browser.runtime.sendMessage({ type: 'MW_REGISTER', pageUrl: window.location.href });
+  setRelayDiagnostic('loaded');
+  void registerHub();
 
-  // Receive tab data pushed from the popup via background.
   browser.runtime.onMessage.addListener(msg => {
+    if (msg.type === 'MW_DISCOVER') {
+      return registerHub().then(result => ({
+        ok: result?.ok === true,
+        isMorpheus: true,
+        registered: result?.ok === true,
+        pageUrl: window.location.href,
+        error: result?.ok === true ? '' : (result?.error || 'Hub registration failed')
+      }));
+    }
     if (msg.type === 'MW_RECEIVE_TAB') {
-      window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_TAB', url: msg.url, title: msg.title, faviconCache: msg.faviconCache || '' }, '*');
+      return relayPushToPage({
+        type: 'MW_RECEIVE_TAB',
+        deliveryId: msg.deliveryId || '',
+        targetBoardId: msg.targetBoardId || '',
+        targetTabId: msg.targetTabId || '',
+        url: msg.url,
+        title: msg.title,
+        faviconCache: msg.faviconCache || ''
+      });
     }
     if (msg.type === 'MW_RECEIVE_IMPORT_ITEMS') {
-      window.postMessage({ _mw: true, _push: true, type: 'MW_RECEIVE_IMPORT_ITEMS', items: msg.items || [], source: msg.source || '' }, '*');
+      return relayPushToPage({
+        type: 'MW_RECEIVE_IMPORT_ITEMS',
+        deliveryId: msg.deliveryId || '',
+        items: msg.items || [],
+        source: msg.source || ''
+      });
     }
   });
 }
 
-// ---------------------------------------------------------------------------
-// Bridge: relay postMessage requests from the page → background → page.
-// ---------------------------------------------------------------------------
-
-window.addEventListener('message', async e => {
-  if (!e.data?._mw || e.source !== window || !e.data._req) return;
-
-  const { id, type } = e.data;
-
-  function reply(data) {
-    window.postMessage({ _mw: true, _res: true, id, ...data }, '*');
+// Relay page requests to the extension background and delivery acknowledgements
+// back to the popup/background sender.
+window.addEventListener('message', async event => {
+  if (!IS_MORPHEUS) return;
+  if (event.data?._mw && event.source === window && event.data._pushResponse) {
+    const pending = pendingPagePushes.get(event.data.pushRequestId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingPagePushes.delete(event.data.pushRequestId);
+    pending.resolve({
+      ok: event.data.ok === true,
+      conflict: event.data.conflict === true,
+      persisted: event.data.persisted || '',
+      error: event.data.error || ''
+    });
+    return;
   }
+  if (!event.data?._mw || event.source !== window || !event.data._req) return;
 
+  const { id, type } = event.data;
+  const reply = data => window.postMessage({ _mw: true, _res: true, id, ...data }, '*');
   try {
-    // Route all bridge traffic through the background so the page can learn
-    // whether native messaging is actually available.
-    const res = await browser.runtime.sendMessage({ type, ...e.data });
-    reply(res);
-  } catch (err) {
-    reply({ ok: false, error: err.message });
+    const response = await browser.runtime.sendMessage({
+      type,
+      ...event.data,
+      morpheusPage: IS_MORPHEUS,
+      pageUrl: window.location.href
+    });
+    reply(response);
+  } catch (error) {
+    setRelayDiagnostic('background-error', error?.message || String(error));
+    reply({ ok: false, error: error?.message || String(error) });
   }
 });
+
+})();

@@ -94,6 +94,9 @@ async function fetchNativeFaviconForItem(item, img, options = {}) {
     nativeFaviconMisses.add(url);
     return false;
   }
+  // Hidden hub tabs must not become background writers. Their in-memory item
+  // may already be stale by the time an asynchronous favicon fetch completes.
+  if (document.hidden) return false;
   item.faviconCache = dataUrl;
   img.onerror = null;
   img.src = dataUrl;

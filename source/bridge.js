@@ -9,23 +9,26 @@ const bridge = (() => {
   const whenReady = new Promise(r => { _resolveReady = r; });
   let _readyResolved = false;
   let _connectPromise = null;
+  let _lastError = '';
 
   let _seq = 0;
   const _pending = new Map();
   const DEFAULT_TIMEOUT_MS = 5000;
   const LARGE_PAYLOAD_TIMEOUT_MS = 60000;
+  const SHARED_READ_CHUNK_BYTES = 256 * 1024;
   const ASSET_WRITE_TIMEOUT_MS = 60000;
   const FAVICON_FETCH_TIMEOUT_MS = 30000;
 
   function _send(type, payload = {}, options = {}) {
     return new Promise((resolve, reject) => {
       const id = `mw-${++_seq}`;
+      const request = { _mw: true, _req: true, id, type, ...payload };
       const timer = setTimeout(() => {
         _pending.delete(id);
         reject(new Error('timeout'));
       }, options.timeoutMs || DEFAULT_TIMEOUT_MS);
-      _pending.set(id, { resolve, reject, timer });
-      window.postMessage({ _mw: true, _req: true, id, type, ...payload }, '*');
+      _pending.set(id, { resolve, reject, timer, request });
+      window.postMessage(request, '*');
     });
   }
 
@@ -33,18 +36,77 @@ const bridge = (() => {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  async function _connect({ retries = 4, delayMs = 350 } = {}) {
+  function _decodeBase64Bytes(value) {
+    const binary = atob(value || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function _loadSharedStateChunked() {
+    let offset = 0;
+    let fileInfo = null;
+    let databasePath = null;
+    const chunks = [];
+    let byteLength = 0;
+
+    while (true) {
+      const res = await _send('MW_LOAD_SHARED_CHUNK', {
+        offset,
+        length: SHARED_READ_CHUNK_BYTES
+      }, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
+      const bytes = _decodeBase64Bytes(res.chunk || '');
+      chunks.push(bytes);
+      byteLength += bytes.length;
+      fileInfo = res.fileInfo ? { ...(fileInfo || {}), ...res.fileInfo } : fileInfo;
+      databasePath = res.databasePath || databasePath;
+      const nextOffset = Number.isFinite(res.nextOffset) ? res.nextOffset : offset + bytes.length;
+      if (res.done) break;
+      if (!bytes.length || nextOffset <= offset) throw new Error('Shared database chunk read stalled');
+      offset = nextOffset;
+    }
+
+    if (fileInfo?.exists === false) {
+      return { json: null, fileInfo, fromDisk: true, databasePath };
+    }
+    const joined = new Uint8Array(byteLength);
+    let targetOffset = 0;
+    for (const chunk of chunks) {
+      joined.set(chunk, targetOffset);
+      targetOffset += chunk.length;
+    }
+    return {
+      json: new TextDecoder('utf-8').decode(joined) || null,
+      fileInfo,
+      fromDisk: true,
+      databasePath
+    };
+  }
+
+  async function _connect({ retries = 2, delayMs = 250, pingTimeoutMs = 750 } = {}) {
     if (_connectPromise) return _connectPromise;
     _connectPromise = (async () => {
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-          const res = await _send('MW_PING');
+          const res = await _send('MW_PING', {
+            morpheusPage: true,
+            pageUrl: window.location.href,
+            active: !document.hidden && document.hasFocus()
+          }, { timeoutMs: pingTimeoutMs });
+          const recoveredAfterStartup = _readyResolved && !_available;
           _available = true;
           _nativeAvailable = res.nativeAvailable === true;
+          _lastError = '';
+          if (recoveredAfterStartup) {
+            window.dispatchEvent(new CustomEvent('morpheus:bridge-ready', {
+              detail: { nativeAvailable: _nativeAvailable }
+            }));
+          }
           return true;
-        } catch {
+        } catch (error) {
           _available = false;
           _nativeAvailable = false;
+          _lastError = error?.message || String(error);
           if (attempt < retries) await _sleep(delayMs);
         }
       }
@@ -61,16 +123,39 @@ const bridge = (() => {
   window.addEventListener('message', e => {
     if (!e.data?._mw || e.source !== window) return;
 
+    // A document_idle content relay may attach after the page's first ping.
+    // Replay pending requests immediately instead of waiting for their timeout.
+    if (e.data._relayReady) {
+      for (const pending of _pending.values()) window.postMessage(pending.request, '*');
+      if (!_available && !_connectPromise) {
+        void _connect({ retries: 1, delayMs: 200, pingTimeoutMs: 750 });
+      }
+      return;
+    }
+
     // Tab pushed from the extension popup.
     if (e.data._push && e.data.type === 'MW_RECEIVE_TAB') {
       window.dispatchEvent(new CustomEvent('morpheus:receive-tab', {
-        detail: { url: e.data.url, title: e.data.title, faviconCache: e.data.faviconCache || '' }
+        detail: {
+          pushRequestId: e.data.pushRequestId || '',
+          deliveryId: e.data.deliveryId || '',
+          targetBoardId: e.data.targetBoardId || '',
+          targetTabId: e.data.targetTabId || '',
+          url: e.data.url,
+          title: e.data.title,
+          faviconCache: e.data.faviconCache || ''
+        }
       }));
       return;
     }
     if (e.data._push && e.data.type === 'MW_RECEIVE_IMPORT_ITEMS') {
       window.dispatchEvent(new CustomEvent('morpheus:receive-import-items', {
-        detail: { items: e.data.items || [], source: e.data.source || '' }
+        detail: {
+          pushRequestId: e.data.pushRequestId || '',
+          deliveryId: e.data.deliveryId || '',
+          items: e.data.items || [],
+          source: e.data.source || ''
+        }
       }));
       return;
     }
@@ -98,9 +183,16 @@ const bridge = (() => {
     whenReady,
     isAvailable()       { return _available; },
     nativeIsAvailable() { return _nativeAvailable; },
+    getDiagnostics() {
+      return {
+        relayState: document.documentElement.dataset.morpheusExtensionRelay || 'not-injected',
+        relayError: document.documentElement.dataset.morpheusExtensionError || '',
+        bridgeError: _lastError
+      };
+    },
 
     async getStorageInfo() {
-      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) await _connect({ retries: 1, delayMs: 200, pingTimeoutMs: 750 });
       if (!_available) return { nativeAvailable: false, databasePath: null };
       try {
         const res = await _send('MW_GET_STORAGE_INFO');
@@ -113,17 +205,19 @@ const bridge = (() => {
       } catch {
         _available = false;
         _nativeAvailable = false;
+        _lastError = 'Storage information request failed';
         return { nativeAvailable: false, databasePath: null };
       }
     },
 
     async saveState(json, options = {}) {
-      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) await _connect({ retries: 1, delayMs: 200, pingTimeoutMs: 750 });
       if (!_available) return { ok: false, conflict: false, fileInfo: null, databasePath: null };
       try {
         const res = await _send('MW_SAVE', {
           json,
-          expectedVersion: options.expectedVersion ?? null
+          expectedVersion: options.expectedVersion ?? null,
+          expectedHash: options.expectedHash || ''
         }, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
         _available = true;
         return {
@@ -139,10 +233,25 @@ const bridge = (() => {
       }
     },
 
+    respondToPush(pushRequestId, result = {}) {
+      if (!pushRequestId) return;
+      window.postMessage({
+        _mw: true,
+        _pushResponse: true,
+        pushRequestId,
+        ...result
+      }, '*');
+    },
+
     async loadState() {
-      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) await _connect({ retries: 1, delayMs: 200, pingTimeoutMs: 750 });
       if (!_available) return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
       try {
+        if (_nativeAvailable) {
+          const loaded = await _loadSharedStateChunked();
+          _available = true;
+          return loaded;
+        }
         const res = await _send('MW_LOAD', {}, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
         _available = true;
         return {
@@ -151,10 +260,16 @@ const bridge = (() => {
           fromDisk: res.fromDisk === true,
           databasePath: res.databasePath || null
         };
-      } catch {
+      } catch (error) {
         _available = false;
         _nativeAvailable = false;
-        return { json: null, fileInfo: null, fromDisk: false, databasePath: null };
+        return {
+          json: null,
+          fileInfo: null,
+          fromDisk: false,
+          databasePath: null,
+          error: error?.message || String(error)
+        };
       }
     },
 

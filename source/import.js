@@ -488,25 +488,99 @@ function normalizeExternalImportItem(item) {
   return null;
 }
 
-function receiveExternalImportItems(items, options = {}) {
+function assignExternalImportDeliveryIds(item, deliveryId, path) {
+  item.id = `bm-import-delivery-${deliveryId}-${path.join('-')}`;
+  if (item.type === 'folder') {
+    item.children.forEach((child, index) => assignExternalImportDeliveryIds(child, deliveryId, [...path, index]));
+  }
+  return item;
+}
+
+function findImportManagerItemById(itemId, items = state.importManager?.items || []) {
+  for (const item of items) {
+    if (item.id === itemId) return item;
+    if (item.type === 'folder') {
+      const found = findImportManagerItemById(itemId, item.children || []);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+async function receiveExternalImportItems(items, options = {}, allowRebase = true) {
+  const prepared = typeof prepareForExternalDelivery === 'function'
+    ? await prepareForExternalDelivery()
+    : { ok: true };
+  if (!prepared.ok) return prepared;
+
+  const deliveryId = options.deliveryId || `legacy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const normalized = (Array.isArray(items) ? items : [])
     .map(normalizeExternalImportItem)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((item, index) => assignExternalImportDeliveryIds(item, deliveryId, [index]));
   if (!normalized.length) {
     showNotice('No bookmarks were received for Import Manager.');
-    return false;
+    return { ok: false, error: 'No valid bookmarks were received for Import Manager.' };
   }
-  pushUndoSnapshot();
+
   if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
-  state.importManager.items.push(...normalized);
+  let missing = normalized.filter(item => !findImportManagerItemById(item.id));
+  if (!missing.length) {
+    return {
+      ok: true,
+      duplicate: true,
+      persisted: typeof bridge !== 'undefined' && bridge.nativeIsAvailable() ? 'shared' : 'local'
+    };
+  }
+
+  pushUndoSnapshot();
+  state.importManager.items.push(...missing);
   state.importManager.lastImportedAt = new Date().toISOString();
   renderImportManagerPanel();
-  saveState();
+  const deliveryMutationSequence = typeof getLocalStateMutationSequence === 'function'
+    ? getLocalStateMutationSequence() + 1
+    : null;
+  let saveResult = typeof awaitExternalDeliverySave === 'function'
+    ? await awaitExternalDeliverySave(saveState())
+    : await saveState();
+
+  if (
+    saveResult?.conflict && allowRebase &&
+    typeof reloadHubData === 'function' &&
+    (deliveryMutationSequence === null || getLocalStateMutationSequence() === deliveryMutationSequence)
+  ) {
+    const reloaded = await reloadHubData({ source: 'shared', notice: '' });
+    if (!reloaded) return { ok: false, conflict: true, error: 'The shared database changed while importing bookmarks.' };
+    if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
+    missing = normalized.filter(item => !findImportManagerItemById(item.id));
+    if (missing.length) {
+      state.importManager.items.push(...missing);
+      state.importManager.lastImportedAt = new Date().toISOString();
+      saveResult = typeof awaitExternalDeliverySave === 'function'
+        ? await awaitExternalDeliverySave(saveState())
+        : await saveState();
+    } else {
+      saveResult = { ok: true, persisted: 'shared' };
+    }
+  }
+
   showImportManagerPanel();
   const { bookmarks, folders } = getImportManagerCounts();
   const source = options.source === 'bookmarks-menu' ? ' from Firefox bookmarks' : '';
   showNotice(`Imported ${bookmarks} bookmarks in ${folders} folders${source} into Import Manager.`);
-  return true;
+  if (!saveResult?.ok || saveResult.conflict) {
+    return {
+      ok: false,
+      conflict: saveResult?.conflict === true,
+      error: saveResult?.conflict
+        ? 'The shared database changed while importing bookmarks.'
+        : 'The imported bookmarks were added locally but could not be saved yet.'
+    };
+  }
+  return {
+    ok: true,
+    persisted: saveResult.persisted || (typeof bridge !== 'undefined' && bridge.nativeIsAvailable() ? 'shared' : 'local')
+  };
 }
 
 function attachBookmarkImportListener() {

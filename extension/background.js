@@ -1,6 +1,6 @@
 'use strict';
 
-// Tab ID of the currently open Morpheus WebHub page.
+// Tab ID of the currently registered Morpheus WebHub page.
 let morpheusTabId = null;
 
 // Shared database file path resolved via native host config.
@@ -10,49 +10,179 @@ let saveFilePath = null;
 let nativeAvailable = false;
 let nativeError = '';
 let hubPageUrl = '';
+let hubRelayError = '';
+let hubRegisteredAt = 0;
+let storageInfoReady = false;
+let fileSchemeAccess = null;
+let fileSchemeAccessRequired = false;
 
-// Debounce timer for file writes (avoid hammering disk on every save).
-let saveTimer = null;
-let pendingSaveContent = null;
-let pendingSaveExpectedVersion = null;
-let saveWaiters = [];
+// All shared-database writes are serialized here. Requests are never merged:
+// every caller receives the result for its own snapshot.
+const nativeSaveQueue = [];
+let nativeSaveQueueRunning = false;
 let assetWriteSessions = new Map();
 
 const MENU_IMPORT_BOOKMARK_ID = 'morpheus-import-bookmark';
 const DATABASE_READ_CHUNK_BYTES = 512 * 1024;
+const PAGE_DATABASE_READ_CHUNK_BYTES = 256 * 1024;
 const ASSET_WRITE_CHUNK_CHARS = 512 * 1024;
 const MAX_BACKGROUND_ASSET_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_NATIVE_FAVICON_BYTES = 1024 * 1024;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
+const NATIVE_REQUEST_TIMEOUT_MS = 15000;
+const NATIVE_RETRY_COOLDOWN_MS = 5000;
 
 
-// ---------------------------------------------------------------------------
-// Native host probe — called once on startup
-// ---------------------------------------------------------------------------
+// Keep one native-host process alive for startup and chunked reads. Firefox's
+// sendNativeMessage launches a fresh process per call; doing that for every
+// 512 KiB database chunk made a normal hub load unnecessarily slow.
+let nativePort = null;
+let nativePortActiveRequest = null;
+const nativePortRequestQueue = [];
 
-async function probeNativeHost() {
+function pumpNativePortQueue() {
+  if (nativePortActiveRequest || !nativePortRequestQueue.length) return;
+  if (!nativePort) {
+    try {
+      const port = browser.runtime.connectNative('morpheus_webhub');
+      nativePort = port;
+      port.onMessage.addListener(response => {
+        if (nativePort !== port) return;
+        const active = nativePortActiveRequest;
+        nativePortActiveRequest = null;
+        if (active) {
+          clearTimeout(active.timer);
+          active.resolve(response);
+        }
+        pumpNativePortQueue();
+      });
+      port.onDisconnect.addListener(() => {
+        if (nativePort !== port) return;
+        const active = nativePortActiveRequest;
+        nativePortActiveRequest = null;
+        nativePort = null;
+        nativeAvailable = false;
+        storageInfoReady = false;
+        const message = browser.runtime.lastError?.message || 'Native host disconnected';
+        nativeError = message;
+        if (active) {
+          clearTimeout(active.timer);
+          active.reject(new Error(message));
+        }
+        pumpNativePortQueue();
+      });
+    } catch (error) {
+      const active = nativePortRequestQueue.shift();
+      if (active) active.reject(error);
+      nativePort = null;
+      nativeAvailable = false;
+      nativeError = error?.message || String(error);
+      pumpNativePortQueue();
+      return;
+    }
+  }
+
+  nativePortActiveRequest = nativePortRequestQueue.shift();
+  const activeRequest = nativePortActiveRequest;
   try {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'PING' });
-    nativeAvailable = res?.ok === true;
-    nativeError = nativeAvailable ? '' : 'Native host did not return ok';
+    nativePort.postMessage(activeRequest.message);
+    if (nativePortActiveRequest !== activeRequest) return;
+    activeRequest.timer = setTimeout(() => {
+      const active = nativePortActiveRequest;
+      const timedOutPort = nativePort;
+      nativePortActiveRequest = null;
+      nativePort = null;
+      nativeAvailable = false;
+      storageInfoReady = false;
+      nativeError = `Native host request timed out after ${NATIVE_REQUEST_TIMEOUT_MS / 1000} seconds`;
+      if (active) active.reject(new Error(nativeError));
+      try { timedOutPort?.disconnect(); } catch {}
+      pumpNativePortQueue();
+    }, NATIVE_REQUEST_TIMEOUT_MS);
   } catch (error) {
+    const active = nativePortActiveRequest;
+    nativePortActiveRequest = null;
+    nativePort = null;
+    clearTimeout(active?.timer);
     nativeAvailable = false;
+    storageInfoReady = false;
     nativeError = error?.message || String(error);
+    active.reject(error);
+    pumpNativePortQueue();
   }
 }
 
-const nativeProbePromise = probeNativeHost();
-const hostConfigPromise = (async () => {
-  await nativeProbePromise;
-  if (!nativeAvailable) return;
-  try {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'READ_CONFIG' });
-    saveFilePath = normalizeDatabasePath(res?.config?.databasePath || '');
-  } catch (error) {
-    saveFilePath = null;
-    nativeError = error?.message || String(error);
+function sendPersistentNativeMessage(message) {
+  if (typeof browser.runtime.connectNative !== 'function') {
+    return sendNativeRequest(message);
   }
-})();
+  return new Promise((resolve, reject) => {
+    nativePortRequestQueue.push({ message, resolve, reject });
+    pumpNativePortQueue();
+  });
+}
+
+function sendNativeRequest(message, timeoutMs = NATIVE_REQUEST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      nativeAvailable = false;
+      storageInfoReady = false;
+      nativeError = `Native host request timed out after ${timeoutMs / 1000} seconds`;
+      reject(new Error(nativeError));
+    }, timeoutMs);
+    Promise.resolve(browser.runtime.sendNativeMessage('morpheus_webhub', message))
+      .then(response => {
+        clearTimeout(timer);
+        resolve(response);
+      })
+      .catch(error => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Native host probe and configuration refresh
+// ---------------------------------------------------------------------------
+
+let nativeRefreshPromise = null;
+let lastNativeRefreshAt = 0;
+
+function refreshNativeStorage() {
+  if (nativeRefreshPromise) return nativeRefreshPromise;
+  lastNativeRefreshAt = Date.now();
+  storageInfoReady = false;
+  nativeRefreshPromise = (async () => {
+    try {
+      const ping = await sendPersistentNativeMessage({ type: 'PING' });
+      nativeAvailable = ping?.ok === true;
+      if (!nativeAvailable) throw new Error('Native host did not return ok');
+      const config = await sendPersistentNativeMessage({ type: 'READ_CONFIG' });
+      saveFilePath = normalizeDatabasePath(config?.config?.databasePath || '');
+      nativeError = '';
+    } catch (error) {
+      nativeAvailable = false;
+      nativeError = error?.message || String(error);
+    } finally {
+      storageInfoReady = true;
+    }
+  })().finally(() => {
+    nativeRefreshPromise = null;
+  });
+  return nativeRefreshPromise;
+}
+
+const nativeProbePromise = refreshNativeStorage();
+const hostConfigPromise = nativeProbePromise;
+
+async function ensureNativeStorageReady() {
+  await hostConfigPromise;
+  if (!nativeAvailable && Date.now() - lastNativeRefreshAt >= NATIVE_RETRY_COOLDOWN_MS) {
+    await refreshNativeStorage();
+  }
+}
 
 
 // ---------------------------------------------------------------------------
@@ -113,6 +243,115 @@ function pathToFileUrl(path) {
   return `file://${encodeURI(normalized.startsWith('/') ? normalized : `/${normalized}`)}`;
 }
 
+function isPotentialHubUrl(url = '') {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'file:'
+      || (parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname));
+  } catch {
+    return false;
+  }
+}
+
+async function refreshFileSchemeAccess() {
+  try {
+    const info = typeof browser.runtime.getBrowserInfo === 'function'
+      ? await browser.runtime.getBrowserInfo()
+      : null;
+    const majorVersion = Number.parseInt(info?.version || '', 10);
+    fileSchemeAccessRequired = Number.isFinite(majorVersion) && majorVersion >= 153;
+    if (!fileSchemeAccessRequired || typeof browser.extension?.isAllowedFileSchemeAccess !== 'function') {
+      fileSchemeAccess = true;
+      return true;
+    }
+    fileSchemeAccess = await browser.extension.isAllowedFileSchemeAccess();
+    return fileSchemeAccess;
+  } catch {
+    // Firefox 142–152 exposed the API but always returned false even though
+    // matching file pages were allowed. Only enforce it when 153+ is known.
+    fileSchemeAccess = fileSchemeAccessRequired ? false : true;
+    return fileSchemeAccess;
+  }
+}
+
+function rememberMorpheusTab(tab, pageUrl = '') {
+  if (tab?.id === undefined) return false;
+  const url = pageUrl || tab.url || '';
+  if (!isPotentialHubUrl(url)) return false;
+  morpheusTabId = tab.id;
+  hubPageUrl = url;
+  hubRelayError = '';
+  hubRegisteredAt = Date.now();
+  return true;
+}
+
+function forgetMorpheusTab(tabId = morpheusTabId, error = '') {
+  if (tabId !== morpheusTabId) return;
+  morpheusTabId = null;
+  hubPageUrl = '';
+  hubRegisteredAt = 0;
+  hubRelayError = error || '';
+}
+
+async function discoverMorpheusTab(tab, { inject = false } = {}) {
+  if (tab?.id === undefined || !isPotentialHubUrl(tab.url || '')) return false;
+  const discover = async () => {
+    try {
+      const response = await browser.tabs.sendMessage(tab.id, { type: 'MW_DISCOVER' });
+      if (response?.isMorpheus === true && response?.registered !== false) {
+        rememberMorpheusTab(tab, response.pageUrl || tab.url || '');
+        return true;
+      }
+      if (response?.isMorpheus === true && response?.error) hubRelayError = response.error;
+    } catch (error) {
+      hubRelayError = error?.message || String(error);
+    }
+    return false;
+  };
+
+  if (await discover()) return true;
+  if (!inject) return false;
+  try {
+    await browser.tabs.executeScript(tab.id, { runAt: 'document_idle', file: '/content.js' });
+  } catch (error) {
+    hubRelayError = error?.message || String(error);
+    return false;
+  }
+  return discover();
+}
+
+async function ensureMorpheusTab() {
+  await refreshFileSchemeAccess();
+  if (fileSchemeAccess === false && hubPageUrl.startsWith('file:')) {
+    forgetMorpheusTab(morpheusTabId, 'Firefox local-file access is disabled for this extension');
+  }
+  if (morpheusTabId !== null) {
+    if (Date.now() - hubRegisteredAt < 5000) {
+      return { id: morpheusTabId, url: hubPageUrl };
+    }
+    try {
+      const tab = await browser.tabs.get(morpheusTabId);
+      if (await discoverMorpheusTab(tab)) return tab;
+    } catch (error) {
+      hubRelayError = error?.message || String(error);
+    }
+    forgetMorpheusTab(morpheusTabId, hubRelayError || 'The registered Hub relay is no longer available');
+  }
+
+  const tabs = await browser.tabs.query({});
+  const candidates = (tabs || [])
+    .filter(tab => isPotentialHubUrl(tab.url || ''))
+    .sort((left, right) => Number(right.active === true) - Number(left.active === true));
+  for (const tab of candidates) {
+    if (tab.url?.startsWith('file:') && fileSchemeAccess === false) {
+      hubRelayError = 'Firefox 153+ requires “Access local files on your computer” to be enabled for Morpheus WebHub';
+      continue;
+    }
+    if (await discoverMorpheusTab(tab, { inject: true })) return tab;
+  }
+  return null;
+}
+
 function deriveHubRootPath() {
   const pagePath = fileUrlToPath(hubPageUrl);
   if (pagePath) return dirname(pagePath);
@@ -171,17 +410,21 @@ function normalizeDatabasePath(path) {
 function getStorageInfo() {
   return {
     nativeAvailable,
+    storageInfoReady,
     databasePath: saveFilePath || null,
     nativeError: nativeAvailable ? '' : nativeError,
+    hubRelayError,
+    fileSchemeAccess,
+    fileSchemeAccessRequired,
     extensionId: browser.runtime.id || ''
   };
 }
 
 async function writeHostConfig() {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return false;
   try {
-    await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    await sendNativeRequest({
       type: 'WRITE_CONFIG',
       config: { databasePath: saveFilePath || '' }
     });
@@ -192,7 +435,7 @@ async function writeHostConfig() {
 }
 
 async function setDatabasePath(path) {
-  await hostConfigPromise;
+  await ensureNativeStorageReady();
   saveFilePath = normalizeDatabasePath(path);
   if (!nativeAvailable) return !saveFilePath;
   return writeHostConfig();
@@ -254,13 +497,31 @@ function bookmarkNodeToImportItem(node) {
   };
 }
 
-async function sendImportItemsToMorpheus(items, source = '') {
-  if (morpheusTabId === null) throw new Error('Morpheus WebHub is not open');
-  await browser.tabs.sendMessage(morpheusTabId, {
+function makeDeliveryId(prefix = 'delivery') {
+  if (globalThis.crypto?.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function sendImportItemsToMorpheus(items, source = '', deliveryId = '') {
+  return sendToMorpheus({
     type: 'MW_RECEIVE_IMPORT_ITEMS',
     items: items || [],
-    source
+    source,
+    deliveryId: deliveryId || makeDeliveryId('import')
   });
+}
+
+async function sendToMorpheus(message) {
+  let tab = await ensureMorpheusTab();
+  if (!tab) throw new Error(hubRelayError || 'Morpheus WebHub is not open');
+  try {
+    return await browser.tabs.sendMessage(tab.id, message);
+  } catch (error) {
+    forgetMorpheusTab(tab.id, error?.message || String(error));
+    tab = await ensureMorpheusTab();
+    if (!tab) throw new Error(hubRelayError || 'Morpheus WebHub relay is unavailable');
+    return browser.tabs.sendMessage(tab.id, message);
+  }
 }
 
 async function importBookmarkNode(bookmarkId) {
@@ -268,12 +529,12 @@ async function importBookmarkNode(bookmarkId) {
   const roots = await browser.bookmarks.getSubTree(bookmarkId);
   const items = roots.map(bookmarkNodeToImportItem).filter(Boolean);
   if (!items.length) throw new Error('No bookmarks found');
-  await sendImportItemsToMorpheus(items, 'bookmarks-menu');
+  const result = await sendImportItemsToMorpheus(items, 'bookmarks-menu');
+  if (!result?.ok) throw new Error(result?.error || 'The hub rejected the bookmark import');
 }
 
 async function getDatabaseFileInfo() {
-  await nativeProbePromise;
-  await hostConfigPromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable || !saveFilePath) {
     return {
       databasePath: saveFilePath || null,
@@ -281,7 +542,7 @@ async function getDatabaseFileInfo() {
     };
   }
   try {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    const res = await sendNativeRequest({
       type: 'STAT_FILE',
       path: saveFilePath
     });
@@ -321,14 +582,14 @@ async function readNativeFileChunked(path) {
   const chunks = [];
 
   while (true) {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    const res = await sendPersistentNativeMessage({
       type: 'READ_FILE_CHUNK',
       path,
       offset,
       length: DATABASE_READ_CHUNK_BYTES
     });
     if (!res?.ok) throw new Error(res?.error || 'Native chunk read failed');
-    fileInfo = res.fileInfo || fileInfo;
+    fileInfo = res.fileInfo ? { ...(fileInfo || {}), ...res.fileInfo } : fileInfo;
     if (fileInfo && fileInfo.exists === false) {
       return { content: null, fileInfo };
     }
@@ -346,12 +607,35 @@ async function readNativeFileChunked(path) {
   };
 }
 
+async function loadSharedStateChunk(offset = 0, length = PAGE_DATABASE_READ_CHUNK_BYTES) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable || !saveFilePath) {
+    throw new Error('Shared database is not available');
+  }
+  const safeOffset = Math.max(0, Number(offset) || 0);
+  const safeLength = Math.max(1, Math.min(PAGE_DATABASE_READ_CHUNK_BYTES, Number(length) || PAGE_DATABASE_READ_CHUNK_BYTES));
+  const res = await sendPersistentNativeMessage({
+    type: 'READ_FILE_CHUNK',
+    path: saveFilePath,
+    offset: safeOffset,
+    length: safeLength
+  });
+  if (!res?.ok) throw new Error(res?.error || 'Shared database chunk read failed');
+  return {
+    chunk: res.chunk || '',
+    nextOffset: res.nextOffset ?? safeOffset,
+    totalSize: res.totalSize ?? 0,
+    done: res.done === true,
+    fileInfo: res.fileInfo || null,
+    databasePath: saveFilePath
+  };
+}
+
 async function beginAssetWrite(options = {}) {
-  await nativeProbePromise;
-  await hostConfigPromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   const session = createAssetWriteSession(options);
-  const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+  const res = await sendNativeRequest({
     type: 'BEGIN_FILE_WRITE',
     tempPath: session.tempPath
   });
@@ -369,7 +653,7 @@ async function beginAssetWrite(options = {}) {
 async function appendAssetWriteChunk(sessionId, chunk) {
   const session = assetWriteSessions.get(sessionId);
   if (!session) return { ok: false, error: 'Unknown asset write session' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', {
+  return sendNativeRequest({
     type: 'APPEND_FILE_CHUNK',
     tempPath: session.tempPath,
     chunk: chunk || ''
@@ -380,7 +664,7 @@ async function finishAssetWrite(sessionId) {
   const session = assetWriteSessions.get(sessionId);
   if (!session) return { ok: false, error: 'Unknown asset write session' };
   try {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    const res = await sendNativeRequest({
       type: 'FINISH_FILE_WRITE',
       tempPath: session.tempPath,
       path: session.finalPath
@@ -401,15 +685,14 @@ async function abortAssetWrite(sessionId) {
   const session = assetWriteSessions.get(sessionId);
   if (!session) return { ok: true };
   assetWriteSessions.delete(sessionId);
-  return browser.runtime.sendNativeMessage('morpheus_webhub', {
+  return sendNativeRequest({
     type: 'DELETE_FILE',
     path: session.tempPath
   });
 }
 
 async function cacheAssetUrl(options = {}) {
-  await nativeProbePromise;
-  await hostConfigPromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   const url = typeof options.url === 'string' ? options.url.trim() : '';
   if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Only http and https URLs can be cached' };
@@ -419,7 +702,7 @@ async function cacheAssetUrl(options = {}) {
     itemName: options.itemName || '',
     extension: options.extension || assetExtensionFromUrl(url)
   });
-  const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+  const res = await sendNativeRequest({
     type: 'DOWNLOAD_URL_TO_FILE',
     url,
     path: session.finalPath,
@@ -438,11 +721,11 @@ async function cacheAssetUrl(options = {}) {
 }
 
 async function fetchFavicon(options = {}) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   const url = typeof options.url === 'string' ? options.url.trim() : '';
   if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Only http and https URLs support native favicon fetch' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', {
+  return sendNativeRequest({
     type: 'FETCH_FAVICON',
     url,
     maxBytes: options.maxBytes || MAX_NATIVE_FAVICON_BYTES
@@ -450,57 +733,54 @@ async function fetchFavicon(options = {}) {
 }
 
 async function secretStatus() {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: true, available: false, provider: '', error: nativeError || 'Native host not available' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'SECRET_STATUS' });
+  return sendNativeRequest({ type: 'SECRET_STATUS' });
 }
 
 async function secretGet(key) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available', value: '' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'SECRET_GET', key });
+  return sendNativeRequest({ type: 'SECRET_GET', key });
 }
 
 async function secretSet(key, value) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'SECRET_SET', key, value });
+  return sendNativeRequest({ type: 'SECRET_SET', key, value });
 }
 
 async function secretDelete(key) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'SECRET_DELETE', key });
+  return sendNativeRequest({ type: 'SECRET_DELETE', key });
 }
 
 async function secretList() {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: true, keys: [] };
-  return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'SECRET_LIST' });
+  return sendNativeRequest({ type: 'SECRET_LIST' });
 }
 
 
 // ---------------------------------------------------------------------------
-// Save — native file write (debounced) + storage.local mirror
+// Save — correlated native FIFO + storage.local fallback
 // ---------------------------------------------------------------------------
 
-async function flushPendingSave() {
-  const content = pendingSaveContent;
-  const expectedVersion = pendingSaveExpectedVersion;
-  pendingSaveContent = null;
-  pendingSaveExpectedVersion = null;
+async function writeNativeSnapshot(content, expectedVersion = null, expectedHash = '', databasePath = saveFilePath) {
   try {
-    const res = await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    const res = await sendNativeRequest({
       type: 'WRITE_FILE_IF_UNCHANGED',
-      path: saveFilePath,
+      path: databasePath,
       content,
-      expectedVersion
+      expectedVersion,
+      expectedHash: expectedHash || ''
     });
     return {
       ok: res?.ok !== false,
       conflict: res?.conflict === true,
       fileInfo: res?.fileInfo || null,
-      databasePath: saveFilePath || null
+      databasePath: databasePath || null
     };
   } catch (e) {
     console.warn('Morpheus: native write failed', e);
@@ -509,28 +789,39 @@ async function flushPendingSave() {
       error: e.message,
       conflict: false,
       fileInfo: null,
-      databasePath: saveFilePath || null
+      databasePath: databasePath || null
     };
   }
 }
 
-function scheduleNativeSave(content, expectedVersion = null) {
-  pendingSaveContent = content;
-  pendingSaveExpectedVersion = expectedVersion ?? null;
-  clearTimeout(saveTimer);
+function scheduleNativeSave(content, expectedVersion = null, expectedHash = '', databasePath = saveFilePath) {
   return new Promise(resolve => {
-    saveWaiters.push(resolve);
-    saveTimer = setTimeout(async () => {
-      const result = await flushPendingSave();
-      const waiters = saveWaiters.splice(0);
-      for (const waiter of waiters) waiter(result);
-    }, 800);
+    nativeSaveQueue.push({ content, expectedVersion, expectedHash, databasePath, resolve });
+    void drainNativeSaveQueue();
   });
 }
 
-async function saveState(json, { expectedVersion = null } = {}) {
-  await nativeProbePromise;
-  await hostConfigPromise;
+async function drainNativeSaveQueue() {
+  if (nativeSaveQueueRunning) return;
+  nativeSaveQueueRunning = true;
+  try {
+    while (nativeSaveQueue.length) {
+      const request = nativeSaveQueue.shift();
+      const result = await writeNativeSnapshot(
+        request.content,
+        request.expectedVersion,
+        request.expectedHash,
+        request.databasePath
+      );
+      request.resolve(result);
+    }
+  } finally {
+    nativeSaveQueueRunning = false;
+  }
+}
+
+async function saveState(json, { expectedVersion = null, expectedHash = '' } = {}) {
+  await ensureNativeStorageReady();
   const jsonPath = extractDatabasePath(json);
   if (jsonPath && jsonPath !== saveFilePath) await setDatabasePath(jsonPath);
   let mirrored = false;
@@ -556,9 +847,10 @@ async function saveState(json, { expectedVersion = null } = {}) {
     }
   }
 
-  // Write to disk via native host (debounced).
+  // Write to disk via the extension-wide FIFO. Page-side state already
+  // debounces rapid edits, so coalescing again here would break cross-tab CAS.
   if (canWriteDisk) {
-    const diskResult = await scheduleNativeSave(json, expectedVersion);
+    const diskResult = await scheduleNativeSave(json, expectedVersion, expectedHash, saveFilePath);
     if (diskResult.ok || diskResult.conflict) return diskResult;
   }
 
@@ -572,8 +864,7 @@ async function saveState(json, { expectedVersion = null } = {}) {
 // ---------------------------------------------------------------------------
 
 async function loadState() {
-  await nativeProbePromise;
-  await hostConfigPromise;
+  await ensureNativeStorageReady();
   if (nativeAvailable && saveFilePath) {
     try {
       const res = await readNativeFileChunked(saveFilePath);
@@ -585,9 +876,13 @@ async function loadState() {
       };
     } catch (e) {
       console.warn('Morpheus: native read failed', e);
+      // A configured shared file is authoritative. Returning extension-local
+      // storage here can make a transient read failure look like an empty
+      // shared database to the page.
+      throw new Error(`Shared database read failed: ${e.message || e}`);
     }
   }
-  // Fall back to extension storage.
+  // Extension storage is only authoritative when shared storage is not active.
   const stored = await browser.storage.local.get('morpheusState');
   return {
     json: stored.morpheusState || null,
@@ -603,10 +898,10 @@ async function loadState() {
 // ---------------------------------------------------------------------------
 
 async function openFilePicker(accept, title) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   try {
-    return await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    return await sendNativeRequest({
       type: 'OPEN_FILE_PICKER',
       accept,
       title
@@ -617,10 +912,10 @@ async function openFilePicker(accept, title) {
 }
 
 async function pickDatabasePath(title, defaultName) {
-  await nativeProbePromise;
+  await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
   try {
-    return await browser.runtime.sendNativeMessage('morpheus_webhub', {
+    return await sendNativeRequest({
       type: 'SAVE_FILE_PICKER',
       accept: 'json',
       title,
@@ -640,31 +935,36 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
 
     case 'MW_PING':
-      nativeProbePromise
-        .then(() => hostConfigPromise)
-        .then(() => sendResponse({ ok: true, version: '1.0', ...getStorageInfo() }))
-        .catch(() => sendResponse({ ok: true, version: '1.0', nativeAvailable: false, databasePath: null }));
-      return true;
+      // Extension presence must not wait for native-host startup. The page asks
+      // for authoritative storage info immediately after this handshake.
+      if (msg.morpheusPage === true && sender.tab) {
+        rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab.url || '');
+      }
+      sendResponse({ ok: true, version: browser.runtime.getManifest?.()?.version || '', ...getStorageInfo() });
+      break;
 
     case 'MW_REGISTER':
-      morpheusTabId = sender.tab.id;
-      hubPageUrl = msg.pageUrl || sender.tab.url || hubPageUrl || '';
-      nativeProbePromise
-        .then(() => hostConfigPromise)
-        .then(() => sendResponse({ ok: true, ...getStorageInfo() }))
-        .catch(() => sendResponse({ ok: true, nativeAvailable: false, databasePath: null }));
-      return true;
+      if (!rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab?.url || '')) {
+        sendResponse({ ok: false, error: 'Hub registration came from an unsupported page' });
+        break;
+      }
+      sendResponse({ ok: true, ...getStorageInfo() });
+      break;
 
     case 'MW_GET_STATUS':
-      nativeProbePromise
-        .then(() => hostConfigPromise)
-        .then(() => sendResponse({ ok: true, morpheusOpen: morpheusTabId !== null, ...getStorageInfo() }))
-        .catch(() => sendResponse({ ok: true, morpheusOpen: morpheusTabId !== null, nativeAvailable: false, databasePath: null }));
+      if (!nativeAvailable) void ensureNativeStorageReady();
+      ensureMorpheusTab()
+        .then(tab => sendResponse({ ok: true, morpheusOpen: !!tab, ...getStorageInfo() }))
+        .catch(error => sendResponse({
+          ok: true,
+          morpheusOpen: false,
+          ...getStorageInfo(),
+          hubRelayError: error?.message || String(error)
+        }));
       return true;
 
     case 'MW_GET_STORAGE_INFO':
-      nativeProbePromise
-        .then(() => hostConfigPromise)
+      ensureNativeStorageReady()
         .then(() => sendResponse({ ok: true, ...getStorageInfo() }))
         .catch(() => sendResponse({ ok: true, nativeAvailable: false, databasePath: null }));
       return true;
@@ -684,13 +984,22 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_SAVE':
-      saveState(msg.json, { expectedVersion: msg.expectedVersion ?? null })
+      saveState(msg.json, {
+        expectedVersion: msg.expectedVersion ?? null,
+        expectedHash: msg.expectedHash || ''
+      })
         .then(result => sendResponse(result || { ok: true }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case 'MW_LOAD':
       loadState()
+        .then(result => sendResponse({ ok: true, ...result }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_LOAD_SHARED_CHUNK':
+      loadSharedStateChunk(msg.offset, msg.length)
         .then(result => sendResponse({ ok: true, ...result }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
@@ -774,16 +1083,14 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_LIST_THEMES': {
-      nativeProbePromise
-        .then(() => hostConfigPromise)
+      ensureNativeStorageReady()
         .then(() => {
           const dir = deriveThemesDir();
           if (!dir || !nativeAvailable) return sendResponse({ ok: true, themes: [] });
-          return browser.runtime.sendNativeMessage('morpheus_webhub', { type: 'LIST_DIR', path: dir, ext: '.json' })
+          return sendNativeRequest({ type: 'LIST_DIR', path: dir, ext: '.json' })
             .then(res => Promise.all((res?.files || []).map(async f => {
               try {
-                const r = await browser.runtime.sendNativeMessage('morpheus_webhub',
-                  { type: 'READ_FILE', path: joinThemePath(f) });
+                const r = await sendNativeRequest({ type: 'READ_FILE', path: joinThemePath(f) });
                 return (r?.ok && r.content) ? JSON.parse(r.content) : null;
               } catch { return null; }
             })))
@@ -794,34 +1101,35 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     case 'MW_WRITE_THEME': {
-      nativeProbePromise
-        .then(() => hostConfigPromise)
+      ensureNativeStorageReady()
         .then(() => {
           const theme = msg.theme;
           const path = joinThemePath((theme?.id || 'custom') + '.json');
           if (!path || !nativeAvailable) return sendResponse({ ok: false, error: 'Not available' });
-          return browser.runtime.sendNativeMessage('morpheus_webhub',
-            { type: 'WRITE_FILE', path, content: JSON.stringify(theme, null, 2) })
+          return sendNativeRequest({ type: 'WRITE_FILE', path, content: JSON.stringify(theme, null, 2) })
             .then(res => sendResponse(res || { ok: true }));
         })
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
 
-    case 'MW_SEND_TAB':
-      if (morpheusTabId === null) {
-        sendResponse({ ok: false, error: 'Morpheus WebHub is not open' });
-        break;
-      }
-      browser.tabs.sendMessage(morpheusTabId, {
-        type: 'MW_RECEIVE_TAB',
-        url:   msg.url,
-        title: msg.title,
-        faviconCache: msg.faviconCache || ''
-      })
-        .then(() => sendResponse({ ok: true }))
+    case 'MW_SEND_TAB': {
+      const deliveryId = msg.deliveryId || makeDeliveryId('tab');
+      sendToMorpheus({
+            type: 'MW_RECEIVE_TAB',
+            deliveryId,
+            targetBoardId: msg.targetBoardId || '',
+            targetTabId: msg.targetTabId || '',
+            url:   msg.url,
+            title: msg.title,
+            faviconCache: msg.faviconCache || ''
+          })
+        .then(result => sendResponse(result?.ok
+          ? { ...result, ok: true, deliveryId }
+          : { ok: false, conflict: result?.conflict === true, error: result?.error || 'The hub rejected the delivery' }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
+      }
 
     case 'MW_SEND_TAB_TO_IMPORT_MANAGER': {
       const item = tabToImportItem(msg);
@@ -829,8 +1137,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'No tab URL to import' });
         break;
       }
-      sendImportItemsToMorpheus([item], 'popup')
-        .then(() => sendResponse({ ok: true }))
+      const deliveryId = msg.deliveryId || makeDeliveryId('import');
+      sendImportItemsToMorpheus([item], 'popup', deliveryId)
+        .then(result => sendResponse(result?.ok
+          ? { ...result, ok: true, deliveryId }
+          : { ok: false, conflict: result?.conflict === true, error: result?.error || 'The hub rejected the import' }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
@@ -864,13 +1175,28 @@ if (browser.menus?.onClicked) {
   });
 }
 
-
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
 
 browser.tabs.onRemoved.addListener(tabId => {
   if (tabId === morpheusTabId) {
-    morpheusTabId = null;
+    forgetMorpheusTab(tabId);
   }
 });
+
+if (browser.tabs.onUpdated) {
+  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (tabId === morpheusTabId && changeInfo.url && changeInfo.url !== hubPageUrl) {
+      forgetMorpheusTab(tabId, 'The Hub tab navigated away');
+    }
+    if (changeInfo.status === 'complete' && isPotentialHubUrl(tab?.url || '')) {
+      void discoverMorpheusTab(tab, { inject: true });
+    }
+  });
+}
+
+// Content scripts are not retroactively attached when a temporary/reloaded
+// extension starts while the Hub tab is already open. Rebuild the registry
+// once at background startup; normal tab updates handle later navigations.
+void ensureMorpheusTab();

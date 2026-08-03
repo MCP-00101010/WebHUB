@@ -2,12 +2,12 @@
 
 ## Load/Save Database
 
-- monitor for any remaining false "shared database changed on disk before this browser finished saving" warnings after the shared-disk save queue changes, especially around rapid board/settings edits
-- had the hub open in two tabs in same browser. seem the get a lot more false "shared database changed on disk" message in the active hub tab even tho the other hub was inactive and I didn't change anything in there.
+- monitor the 0.11.68 persistence changes and 0.11.69–0.11.80 extension-startup follow-ups for any remaining false "shared database changed on disk before this browser finished saving" warnings, delayed popup actions, relay injection failures, cache-recovery prompts, or shared-load transport errors, especially around rapid extension inbox sends and extension reloads
+- verify the multi-tab regression scenario periodically even though normal usage usually has only one hub open
 
 ## Known Bugs/Issues
 
-- none currently listed.
+- no currently open code issues; Firefox 153+ now disables extension access to local files by default, so file-based hubs require “Access local files on your computer” under the extension's Permissions in `about:addons` (0.11.79 detects and explains this state)
 
 ## Improvements
 

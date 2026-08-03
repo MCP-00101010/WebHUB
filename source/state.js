@@ -190,14 +190,19 @@ const defaultState = {
 
 let state = cloneData(defaultState);
 let sharedDiskBaselineVersion = null;
+let sharedDiskBaselineHash = '';
 let sharedDiskBaselinePath = '';
 let sharedDiskWritesBlocked = false;
 let sharedDiskHasPendingChanges = false;
 let sharedDiskSaveInFlight = false;
 let sharedDiskQueuedSnapshot = null;
 let sharedDiskQueuedPath = '';
+let sharedDiskQueuedSequence = 0;
 let sharedDiskFlushTimer = null;
 let sharedDiskSaveGeneration = 0;
+let sharedDiskSaveSequence = 0;
+let sharedDiskSaveWaiters = [];
+let localStateMutationSequence = 0;
 let localCacheMeta = loadLocalCacheMeta();
 let localCacheQuotaNoticeShown = false;
 let inheritedTagContextCache = new WeakMap();
@@ -238,6 +243,46 @@ function computeSnapshotHash(text) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function jsonValuesMatch(left, right) {
+  const pending = [[left, right]];
+  while (pending.length) {
+    const [leftValue, rightValue] = pending.pop();
+    if (Object.is(leftValue, rightValue)) continue;
+    if (
+      leftValue === null || rightValue === null ||
+      typeof leftValue !== 'object' || typeof rightValue !== 'object'
+    ) return false;
+
+    const leftIsArray = Array.isArray(leftValue);
+    if (leftIsArray !== Array.isArray(rightValue)) return false;
+    if (leftIsArray) {
+      if (leftValue.length !== rightValue.length) return false;
+      for (let i = 0; i < leftValue.length; i++) pending.push([leftValue[i], rightValue[i]]);
+      continue;
+    }
+
+    const leftKeys = Object.keys(leftValue);
+    const rightKeys = Object.keys(rightValue);
+    if (leftKeys.length !== rightKeys.length) return false;
+    for (const key of leftKeys) {
+      if (!Object.prototype.hasOwnProperty.call(rightValue, key)) return false;
+      pending.push([leftValue[key], rightValue[key]]);
+    }
+  }
+  return true;
+}
+
+function snapshotsMatch(left, right) {
+  const leftSnapshot = String(left || '');
+  const rightSnapshot = String(right || '');
+  if (computeSnapshotHash(leftSnapshot) === computeSnapshotHash(rightSnapshot)) return true;
+  try {
+    return jsonValuesMatch(JSON.parse(leftSnapshot), JSON.parse(rightSnapshot));
+  } catch {
+    return false;
+  }
 }
 
 function isStorageQuotaError(error) {
@@ -1125,6 +1170,7 @@ function persistStateToLocalCache(json = null, options = {}) {
 
 function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
   sharedDiskBaselineVersion = fileInfo?.version || null;
+  sharedDiskBaselineHash = fileInfo?.contentHash || '';
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
   sharedDiskHasPendingChanges = !!sharedDiskQueuedSnapshot;
@@ -1138,8 +1184,15 @@ function setSharedDiskBaseline(fileInfo, path = state?.databasePath || '') {
 
 function acceptSharedDiskSnapshot(fileInfo, path = state?.databasePath || '') {
   sharedDiskSaveGeneration += 1;
+  resolveSharedDiskSaveWaiters(Infinity, {
+    ok: false,
+    conflict: false,
+    reloaded: true,
+    databasePath: (path || '').trim()
+  });
   sharedDiskQueuedSnapshot = null;
   sharedDiskQueuedPath = '';
+  sharedDiskQueuedSequence = 0;
   clearSharedDiskFlushTimer();
   setSharedDiskBaseline(fileInfo, path);
   sharedDiskHasPendingChanges = false;
@@ -1147,6 +1200,7 @@ function acceptSharedDiskSnapshot(fileInfo, path = state?.databasePath || '') {
 
 function resetSharedDiskBaseline(path = state?.databasePath || '') {
   sharedDiskBaselineVersion = null;
+  sharedDiskBaselineHash = '';
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskWritesBlocked = false;
   sharedDiskHasPendingChanges = !!sharedDiskQueuedSnapshot;
@@ -1159,6 +1213,10 @@ function resetSharedDiskBaseline(path = state?.databasePath || '') {
 
 function getSharedDiskBaselineVersion() {
   return sharedDiskBaselineVersion;
+}
+
+function getSharedDiskBaselineHash() {
+  return sharedDiskBaselineHash;
 }
 
 function getSharedDiskBaselinePath() {
@@ -1175,6 +1233,30 @@ function sharedDiskSyncIsBlocked() {
 
 function sharedDiskSaveIsPending() {
   return sharedDiskSaveInFlight || !!sharedDiskQueuedSnapshot || !!sharedDiskFlushTimer;
+}
+
+async function waitForSharedDiskSaveIdle(timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (sharedDiskSaveIsPending() && !sharedDiskWritesBlocked) {
+    if (!sharedDiskSaveInFlight && sharedDiskQueuedSnapshot) void flushSharedDiskSaveQueue();
+    if (!sharedDiskSaveIsPending() || sharedDiskWritesBlocked) break;
+    if (Date.now() >= deadline) return false;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  return !sharedDiskSaveIsPending() && !sharedDiskWritesBlocked;
+}
+
+function getLocalStateMutationSequence() {
+  return localStateMutationSequence;
+}
+
+function resolveSharedDiskSaveWaiters(maxSequence, result) {
+  const remaining = [];
+  for (const waiter of sharedDiskSaveWaiters) {
+    if (waiter.sequence <= maxSequence) waiter.resolve(result);
+    else remaining.push(waiter);
+  }
+  sharedDiskSaveWaiters = remaining;
 }
 
 function clearSharedDiskFlushTimer() {
@@ -1198,6 +1280,7 @@ function blockSharedDiskSync(path = state?.databasePath || sharedDiskBaselinePat
   sharedDiskBaselinePath = (path || '').trim();
   sharedDiskQueuedSnapshot = null;
   sharedDiskQueuedPath = '';
+  sharedDiskQueuedSequence = 0;
   clearSharedDiskFlushTimer();
   persistLocalCacheMeta({
     databasePath: (state?.databasePath || sharedDiskBaselinePath || '').trim(),
@@ -1224,11 +1307,22 @@ function serializeStateSnapshot() {
 }
 
 function queueSharedDiskSave(snapshot, path = state?.databasePath || sharedDiskBaselinePath || '') {
-  if (sharedDiskWritesBlocked) return;
+  if (sharedDiskWritesBlocked) {
+    return Promise.resolve({
+      ok: false,
+      conflict: true,
+      databasePath: (path || '').trim()
+    });
+  }
+  const sequence = ++sharedDiskSaveSequence;
   sharedDiskQueuedSnapshot = snapshot;
   sharedDiskQueuedPath = (path || '').trim();
+  sharedDiskQueuedSequence = sequence;
   sharedDiskHasPendingChanges = true;
   scheduleSharedDiskFlush();
+  return new Promise(resolve => {
+    sharedDiskSaveWaiters.push({ sequence, resolve });
+  });
 }
 
 async function flushSharedDiskSaveQueue() {
@@ -1241,22 +1335,27 @@ async function flushSharedDiskSaveQueue() {
     const snapshot = sharedDiskQueuedSnapshot;
     const path = sharedDiskQueuedPath || (state?.databasePath || sharedDiskBaselinePath || '').trim();
     const expectedVersion = sharedDiskBaselineVersion;
+    const expectedHash = sharedDiskBaselineHash;
+    const snapshotSequence = sharedDiskQueuedSequence;
     sharedDiskQueuedSnapshot = null;
     sharedDiskQueuedPath = '';
+    sharedDiskQueuedSequence = 0;
     sharedDiskSaveInFlight = true;
 
     try {
-      const result = await bridge.saveState(snapshot, { expectedVersion });
+      const result = await bridge.saveState(snapshot, { expectedVersion, expectedHash });
       if (saveGeneration !== sharedDiskSaveGeneration) break;
       if (!result?.ok) {
         if (!sharedDiskQueuedSnapshot) {
           sharedDiskQueuedSnapshot = snapshot;
           sharedDiskQueuedPath = path;
+          sharedDiskQueuedSequence = snapshotSequence;
         }
         sharedDiskHasPendingChanges = true;
         break;
       }
       if (result.conflict) {
+        resolveSharedDiskSaveWaiters(Infinity, result);
         notifySharedDiskConflict({
           fileInfo: result.fileInfo || null,
           databasePath: result.databasePath || path || state.databasePath || ''
@@ -1274,12 +1373,14 @@ async function flushSharedDiskSaveQueue() {
         sharedBaselineVersion: result.fileInfo?.version ?? sharedDiskBaselineVersion ?? null,
         sharedBaselinePath: result.databasePath || path || state.databasePath || ''
       });
+      resolveSharedDiskSaveWaiters(snapshotSequence, result);
       if (sharedDiskQueuedSnapshot) sharedDiskHasPendingChanges = true;
     } catch {
       if (saveGeneration !== sharedDiskSaveGeneration) break;
       if (!sharedDiskQueuedSnapshot) {
         sharedDiskQueuedSnapshot = snapshot;
         sharedDiskQueuedPath = path;
+        sharedDiskQueuedSequence = snapshotSequence;
       }
       sharedDiskHasPendingChanges = true;
       break;
@@ -1293,17 +1394,19 @@ async function flushSharedDiskSaveQueue() {
 
 function saveState(options = {}) {
   const { skipDiskSync = false } = options;
+  localStateMutationSequence += 1;
   invalidateDerivedCaches();
   const json = serializeStateSnapshot();
   isDirty = true;
   let queuedSharedDiskSave = false;
+  let sharedSavePromise = null;
   if (typeof bridge !== 'undefined' && bridge.isAvailable()) {
     const shouldSyncSharedDisk = !skipDiskSync && bridge.nativeIsAvailable() && !!(state.databasePath || sharedDiskBaselinePath);
     if (shouldSyncSharedDisk && getSharedDiskBaselinePath() !== (state.databasePath || '').trim()) {
       resetSharedDiskBaseline(state.databasePath || '');
     }
     if (shouldSyncSharedDisk && !sharedDiskWritesBlocked) {
-      queueSharedDiskSave(json, state.databasePath || sharedDiskBaselinePath);
+      sharedSavePromise = queueSharedDiskSave(json, state.databasePath || sharedDiskBaselinePath);
       queuedSharedDiskSave = true;
     }
   }
@@ -1313,6 +1416,12 @@ function saveState(options = {}) {
     console.warn('Morpheus: failed to persist local browser cache', error);
     if (!queuedSharedDiskSave) throw error;
   }
+  return sharedSavePromise || Promise.resolve({
+    ok: true,
+    conflict: false,
+    persisted: 'local',
+    databasePath: state.databasePath || sharedDiskBaselinePath || ''
+  });
 }
 
 function getActiveBoard() {

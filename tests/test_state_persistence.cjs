@@ -1,0 +1,94 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+const vm = require('node:vm');
+
+function deferred() {
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  return { promise, resolve };
+}
+
+function loadStateScript() {
+  const storage = new Map();
+  const saves = [];
+  const bridge = {
+    isAvailable: () => true,
+    nativeIsAvailable: () => true,
+    saveState: (snapshot, options) => {
+      const pending = deferred();
+      saves.push({ snapshot, options, pending });
+      return pending.promise;
+    }
+  };
+  const context = vm.createContext({
+    bridge,
+    console,
+    structuredClone,
+    localStorage: {
+      getItem: key => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key)
+    },
+    window: {
+      innerWidth: 1600,
+      dispatchEvent: () => {}
+    },
+    CustomEvent: class CustomEvent {
+      constructor(type, options) { this.type = type; this.detail = options?.detail; }
+    },
+    setTimeout,
+    clearTimeout
+  });
+  const filename = path.join(__dirname, '..', 'source', 'state.js');
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+  return { context, saves };
+}
+
+test('page debounce resolves every covered save only after latest snapshot persists', async () => {
+  const harness = loadStateScript();
+  harness.context.setSharedDiskBaseline({ version: 'v1', contentHash: 'h1' }, '/hub.json');
+  vm.runInContext("state.databasePath = '/hub.json'", harness.context);
+
+  const first = vm.runInContext("state.hubName = 'First'; saveState()", harness.context);
+  const second = vm.runInContext("state.hubName = 'Second'; saveState()", harness.context);
+  await new Promise(resolve => setTimeout(resolve, 300));
+
+  assert.equal(harness.saves.length, 1);
+  assert.equal(JSON.parse(harness.saves[0].snapshot).hubName, 'Second');
+  assert.equal(harness.saves[0].options.expectedVersion, 'v1');
+  assert.equal(harness.saves[0].options.expectedHash, 'h1');
+
+  harness.saves[0].pending.resolve({
+    ok: true,
+    conflict: false,
+    databasePath: '/hub.json',
+    fileInfo: { version: 'v2', contentHash: 'h2' }
+  });
+  assert.equal((await first).fileInfo.version, 'v2');
+  assert.equal((await second).fileInfo.version, 'v2');
+
+  const third = vm.runInContext("state.hubName = 'Third'; saveState()", harness.context);
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.equal(harness.saves[1].options.expectedVersion, 'v2');
+  assert.equal(harness.saves[1].options.expectedHash, 'h2');
+  harness.saves[1].pending.resolve({
+    ok: true,
+    conflict: false,
+    databasePath: '/hub.json',
+    fileInfo: { version: 'v3', contentHash: 'h3' }
+  });
+  await third;
+});
+
+test('snapshot comparison ignores JSON formatting and object property order', () => {
+  const harness = loadStateScript();
+  const compact = '{"boards":[{"id":"one","items":[1,2]}],"settings":{"theme":"red","enabled":true}}';
+  const reformatted = JSON.stringify({ settings: { enabled: true, theme: 'red' }, boards: [{ items: [1, 2], id: 'one' }] }, null, 2);
+  const changed = JSON.stringify({ settings: { enabled: true, theme: 'red' }, boards: [{ items: [2, 1], id: 'one' }] }, null, 2);
+
+  assert.equal(harness.context.snapshotsMatch(compact, reformatted), true);
+  assert.equal(harness.context.snapshotsMatch(compact, changed), false);
+  assert.equal(harness.context.snapshotsMatch(compact, '{not-json'), false);
+});

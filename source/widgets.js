@@ -318,12 +318,14 @@ function _ensureApodData(widget) {
       if (!payload?.url) {
         throw new Error('NASA APOD response did not include media.');
       }
+      if (document.hidden) return;
       widget.data.apodCache = _normalizeApodPayload(payload);
       widget.data.apodStatus = 'ready';
       widget.data.apodError = '';
       saveState();
     })
     .catch(error => {
+      if (document.hidden) return;
       widget.data.apodStatus = 'error';
       widget.data.apodError = error?.message || 'Unable to load the NASA APOD feed.';
       saveState();

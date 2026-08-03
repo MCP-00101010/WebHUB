@@ -5,6 +5,202 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.80] — 2026-08-03
+
+### Fixed
+
+- **Immediate tab Inbox indicator** — receiving a bookmark from the extension now rerenders the active board's tab bar alongside the sidebar and Inbox badge, so the destination tab's red dot appears immediately without switching tabs or reloading the Hub.
+
+### Tests
+
+- Added a regression assertion that external Inbox delivery refreshes the board-tab indicators between the navigation and global Inbox badge updates.
+
+---
+
+## [0.11.79] — 2026-08-03
+
+### Fixed
+
+- **Firefox 153 local-file permission diagnosis** — detects Firefox's new, default-off “Access local files on your computer” permission and shows the exact `about:addons` action in both the extension popup and the file-based Hub instead of reporting a generic missing relay.
+- **Correct extension-root injection** — programmatic relay recovery now injects `/content.js` from the extension root; the former relative `content.js` path was resolved beside the Hub's `index.html` and caused the popup's “unexpected error”.
+- **Self-healing Hub registration** — page pings register their sender, discovery retries a failed initial registration, startup/status scans recover already-open Hub tabs, and stale or navigated relay tabs are cleared and rediscovered before delivery.
+- **Durable Import Manager delivery** — extension imports now prepare against the latest shared snapshot, deduplicate retries by delivery ID, and rebase once after a real shared-database conflict, matching Inbox delivery guarantees.
+- **Accurate shared-data polling and startup** — polling compares JSON semantically, while a successful shared read that returns no data is treated as a load failure instead of presenting an empty database.
+- **Recoverable native messaging** — persistent and one-shot native requests have bounded timeouts; disconnects clear stale availability and later storage checks can reconnect and reload the shared-path configuration without an extension reload.
+
+### Tests
+
+- Added relay-path, failed-registration, stale-registry, Firefox 153 permission, Import Manager idempotency/rebase, native reconnect, semantic polling, and empty-shared-read regressions.
+- Verified Firefox 153 against the exact `file:///F:/Projects/Coding/Morpheus%20WebHub/index.html` URL with the local-file opt-in gate enabled for the isolated test profile; the relay connected, the native shared database loaded eight boards, and the Hub left its protected startup state.
+
+---
+
+## [0.11.78] — 2026-08-03
+
+### Fixed
+
+- **Reverted the regressed Hub/extension discovery layer** — restored the pre-session single-Hub registration contract: the declarative `document_idle` relay registers its tab, and the background routes status and deliveries directly to that registered tab. The proactive tab registry, discovery scan, and background injection path have been removed.
+- **Restored the proven Firefox file match** — returned the manifest to the exact previously working `file://*/*` content-script declaration without the added explicit origin permissions.
+- **Active-tab recovery from the popup** — when Firefox has not attached the declarative relay to an open local Hub, opening the extension popup on that Hub injects the idempotent relay using the existing `activeTab` grant and immediately re-registers it.
+- **Database fixes preserved** — semantic shared/cache comparison, protected shared loading, chunked reads, correlated saves, and persistence acknowledgements remain in place; this rollback does not touch the database or native-host protocol.
+
+### Tests
+
+- Updated relay tests around the restored registration contract and added popup fallback-injection coverage while retaining the shared-load, FIFO, acknowledgement, and semantic-snapshot regressions.
+
+---
+
+## [0.11.77] — 2026-08-03
+
+### Fixed
+
+- **Restored the proven Firefox relay transport** — returned the page bridge to one declarative `document_idle` content script using the repository's previously working `file://*/*` match, removing the startup activation wrapper and background reinjection path that regressed live Hub detection.
+- **Non-invasive open-Hub discovery** — the background now discovers an existing relay through a normal extension message instead of executing scripts in the page.
+- **Reliable extension deliveries retained** — tab and bookmark sends still wait for an explicit Hub persistence acknowledgement, without altering the known-good page-request relay.
+
+### Tests
+
+- Added end-to-end relay coverage for registration, page ping, background discovery, pushed-tab delivery, and Hub acknowledgement.
+
+---
+
+## [0.11.76] — 2026-08-03
+
+### Fixed
+
+- **Late relay recovery updates the live Hub** — when the extension relay arrives after the initial bridge attempts have expired, its ready announcement now starts a fresh connection and immediately refreshes extension, native-host, and shared-storage state.
+- **Early relay attachment with the corrected Firefox origin match** — the content relay now starts before deferred Hub scripts, using the canonical `file:///*` match pattern and explicit local-origin permission introduced in the preceding fixes.
+
+### Tests
+
+- Added coverage for reconnecting after the initial bridge sequence has fully timed out and retained the early-page marker/first-ping regression.
+
+---
+
+## [0.11.75] — 2026-08-03
+
+### Fixed
+
+- **No false cache-update prompt after delayed relay recovery** — shared and browser-cached snapshots are now compared as JSON data rather than as raw serialized text, so harmless whitespace or object-property ordering differences no longer look like newer local edits.
+
+### Tests
+
+- Added snapshot comparison coverage for equivalent reformatted JSON, real array-order changes, and malformed input.
+
+---
+
+## [0.11.74] — 2026-08-03
+
+### Fixed
+
+- **Background-controlled relay injection** — the extension background now verifies Morpheus tabs and explicitly injects the relay whenever Firefox's declarative content-script matcher has not attached it, both during extension startup/reload and when a page finishes loading.
+- **Explicit hub origin permissions** — added file, localhost, and loopback host permissions so the fallback injector has unambiguous access to supported hub URLs.
+- **Duplicate-injection protection** — the relay is idempotent, preventing duplicate listeners if Firefox's declarative injection and the background fallback both run.
+- **Visible extension build** — the popup now displays its manifest version, making it possible to confirm which temporary extension build Firefox is running.
+
+### Tests
+
+- Extended manifest and relay coverage for explicit local-file permission and idempotent fallback injection.
+
+---
+
+## [0.11.73] — 2026-08-03
+
+### Fixed
+
+- **Reliable Firefox relay lifecycle** — restored the content script to Firefox's previously working `document_idle` injection phase after live diagnostics showed `document_start` was not attaching on the local hub page.
+- **Fast idle-phase handshake** — the relay now announces when it attaches and the page immediately replays any pending bridge request, preserving fast detection without relying on document-start injection.
+
+### Tests
+
+- Added coverage for a first bridge ping sent before relay attachment and verified that the relay-ready announcement causes the same pending request to be replayed and completed.
+
+---
+
+## [0.11.72] — 2026-08-03
+
+### Fixed
+
+- **Firefox local-file relay injection** — corrected the content-script match pattern from the hosted-URL form `file://*/*` to Firefox's hostless file-URL form `file:///*`, matching hub URLs such as `file:///F:/Projects/.../index.html`.
+- **Trustworthy displayed version** — the sidebar and About panel now receive their version from the running application script instead of retaining a stale hardcoded `0.11.67` label.
+- **Actionable relay status** — the sidebar now distinguishes a relay that was never injected from an injected relay whose extension background failed, with the underlying error available as a tooltip.
+
+### Tests
+
+- Added a manifest regression assertion for the canonical Firefox file-URL match pattern and retained document-start registration coverage.
+
+---
+
+## [0.11.71] — 2026-08-03
+
+### Fixed
+
+- **End-to-end shared database chunking** — shared JSON now remains in bounded 256 KiB chunks across native messaging, extension messaging, and the page bridge instead of being recombined into one multi-megabyte extension response before reaching the hub.
+- **Accurate desktop-sync status** — settings now calculate native readiness after the authoritative storage lookup completes rather than retaining the initial fast-handshake value.
+- **Visible startup diagnostics** — if an authoritative shared load still fails, the protected empty-fallback notice now includes the actual transport error while automatic recovery continues.
+
+### Tests
+
+- Added a 700 KB multi-chunk page-bridge regression proving that shared state is reconstructed exactly without falling back to the legacy whole-database message.
+
+---
+
+## [0.11.70] — 2026-08-03
+
+### Fixed
+
+- **Immediate page bridge startup** — the extension relay now attaches at document start, before the hub's deferred scripts can send their first ping; handshake attempts also use short bounded timeouts instead of accumulating five-second stalls.
+- **No false empty shared database** — a configured shared-file read failure is no longer replaced with extension-local storage. When that fallback is empty, the hub keeps its data area hidden and retries rather than presenting it as the real database.
+- **Faster shared database loading** — startup probing, configuration lookup, and chunked database reads now reuse one native-host connection instead of launching a new Python process for every chunk.
+
+### Tests
+
+- Added regression coverage for document-start ping delivery, shared-read failure isolation, and persistent native-host reuse during startup.
+
+---
+
+## [0.11.69] — 2026-08-03
+
+### Fixed
+
+- **Fast extension discovery** — hub registration and bridge pings now acknowledge extension presence immediately instead of waiting for the native-host probe and database-path lookup to finish.
+- **Popup delivery action recovery** — the extension popup now refreshes hub/storage status while open and enables Inbox and Import Manager delivery as soon as an open hub is discovered.
+- **Open-hub rediscovery** — status checks and send actions can rebuild the hub-tab registry directly from verified Morpheus pages, including after an extension reload or an initial registration race.
+
+### Tests
+
+- Added regression coverage for native-startup-independent handshakes, status-time hub rediscovery, and popup actions becoming enabled after a delayed hub registration.
+
+---
+
+## [0.11.68] — 2026-08-03
+
+### Changed
+
+- **Durable extension delivery** — inbox and Import Manager sends now carry a delivery ID and wait for the hub to acknowledge the corresponding save before the popup reports success.
+- **Hub tab routing** — the extension now tracks all registered hub tabs and preserves the last genuinely active hub as the delivery target instead of allowing inactive polling traffic to steal it.
+
+### Fixed
+
+- **Correlated shared-database saves** — replaced the extension-wide save debouncer with a FIFO that keeps every snapshot, expected version, and result paired with its original caller, preventing stale tabs from being told that a different tab's snapshot was saved.
+- **Inbox rollback recovery** — external inbox additions are idempotent, refresh stale shared state before mutation, and safely reapply once if the disk changes during delivery.
+- **Inactive-tab background writes** — hidden hub tabs no longer persist asynchronous favicon or APOD results produced from potentially stale state.
+- **Atomic shared-database writes** — native conditional writes now use a cross-process lock, content hashes, and atomic file replacement so two native-host processes cannot both replace the same baseline and metadata-only file changes do not create false conflicts.
+
+### Tests
+
+- Added regression coverage for extension FIFO response correlation, inactive-tab delivery targeting, page-side save coalescing, native conflict detection, metadata-only changes, identical snapshots, and concurrent writers.
+
+---
+
+## [0.11.67] — 2026-07-22
+
+### Fixed
+
+- **Shared database recovery guard** — restored hub detection after extension reloads and added browser/native safeguards so a tiny fallback browser cache cannot overwrite a large shared database after Firefox local-file permissions change.
+
+---
+
 ## [0.11.66] — 2026-05-29
 
 ### Added

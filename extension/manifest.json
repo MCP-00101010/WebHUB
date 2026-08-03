@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Morpheus WebHub",
-  "version": "1.0.7",
+  "version": "1.0.19",
   "description": "Send tabs to your Morpheus WebHub inbox and enable file save/load.",
 
   "browser_specific_settings": {
@@ -22,7 +22,10 @@
     "bookmarks",
     "menus",
     "storage",
-    "nativeMessaging"
+    "nativeMessaging",
+    "file:///*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
 
   "background": {
@@ -32,7 +35,7 @@
 
   "content_scripts": [
     {
-      "matches": ["file://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+      "matches": ["file:///*", "http://localhost/*", "http://127.0.0.1/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

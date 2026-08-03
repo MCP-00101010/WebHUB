@@ -14,6 +14,10 @@ import base64
 import mimetypes
 import urllib.request
 import urllib.parse
+import hashlib
+import tempfile
+import stat
+from contextlib import contextmanager
 from html.parser import HTMLParser
 import ctypes
 from ctypes import wintypes
@@ -537,8 +541,23 @@ def download_url_to_file(url, path, temp_path, max_bytes=MAX_DOWNLOAD_BYTES):
             pass
 
 
-def get_file_info(path):
-    normalized = (path or '').strip()
+def hash_file(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as source:
+        while True:
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_text(content):
+    return hashlib.sha256((content or '').encode('utf-8')).hexdigest()
+
+
+def get_file_info(path, include_hash=False):
+    normalized = str(path or '').strip()
     if not normalized:
         return {
             'exists': False,
@@ -547,7 +566,7 @@ def get_file_info(path):
             'size': None
         }
     try:
-        stat = os.stat(normalized)
+        file_stat = os.stat(normalized)
         if not os.path.isfile(normalized):
             return {
                 'exists': False,
@@ -555,12 +574,31 @@ def get_file_info(path):
                 'modifiedMs': None,
                 'size': None
             }
-        return {
+        info = {
             'exists': True,
-            'version': f'{stat.st_mtime_ns}:{stat.st_size}',
-            'modifiedMs': int(stat.st_mtime_ns / 1_000_000),
-            'size': stat.st_size
+            'version': f'{file_stat.st_mtime_ns}:{file_stat.st_size}',
+            'modifiedMs': int(file_stat.st_mtime_ns / 1_000_000),
+            'size': file_stat.st_size
         }
+        if include_hash:
+            for _attempt in range(3):
+                content_hash = hash_file(normalized)
+                verified_stat = os.stat(normalized)
+                if (
+                    verified_stat.st_mtime_ns == file_stat.st_mtime_ns
+                    and verified_stat.st_size == file_stat.st_size
+                ):
+                    info['contentHash'] = content_hash
+                    break
+                file_stat = verified_stat
+                info.update({
+                    'version': f'{file_stat.st_mtime_ns}:{file_stat.st_size}',
+                    'modifiedMs': int(file_stat.st_mtime_ns / 1_000_000),
+                    'size': file_stat.st_size
+                })
+            else:
+                info['contentHash'] = hash_file(normalized)
+        return info
     except FileNotFoundError:
         return {
             'exists': False,
@@ -570,8 +608,183 @@ def get_file_info(path):
         }
 
 
+@contextmanager
+def database_write_lock(path, timeout_seconds=15):
+    lock_path = f'{os.path.abspath(path)}.lock'
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    lock_file = open(lock_path, 'a+b')
+    if os.path.getsize(lock_path) == 0:
+        lock_file.write(b'\0')
+        lock_file.flush()
+    deadline = time.monotonic() + timeout_seconds
+    locked = False
+    try:
+        while not locked:
+            try:
+                lock_file.seek(0)
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except (OSError, IOError):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Timed out waiting for the shared database write lock')
+                time.sleep(0.05)
+        yield
+    finally:
+        if locked:
+            try:
+                lock_file.seek(0)
+                if os.name == 'nt':
+                    import msvcrt
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except (OSError, IOError):
+                pass
+        lock_file.close()
+
+
+def atomic_write_text(path, content):
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    existing_mode = None
+    try:
+        existing_mode = stat.S_IMODE(os.stat(path).st_mode)
+    except FileNotFoundError:
+        pass
+    fd, temp_path = tempfile.mkstemp(prefix=f'.{os.path.basename(path)}.', suffix='.tmp', dir=directory)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as target:
+            target.write(content)
+            target.flush()
+            os.fsync(target.fileno())
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def write_file_if_unchanged(path, content, expected_version=None, expected_hash=''):
+    with database_write_lock(path):
+        current_info = get_file_info(path, include_hash=True)
+        incoming_hash = hash_text(content)
+        version_matches = current_info['version'] == expected_version
+        creating_new = expected_version is None and not current_info['exists']
+        baseline_content_unchanged = bool(
+            expected_hash and current_info.get('contentHash') == expected_hash
+        )
+        if not version_matches and not creating_new and not baseline_content_unchanged:
+            if current_info.get('contentHash') == incoming_hash:
+                return {
+                    'conflict': False,
+                    'alreadyCurrent': True,
+                    'fileInfo': current_info
+                }
+            return {'conflict': True, 'fileInfo': current_info}
+
+        if current_info['exists'] and os.path.splitext(path)[1].lower() == '.json':
+            with open(path, 'r', encoding='utf-8') as source:
+                existing_content = source.read()
+            if replacement_looks_dangerously_smaller(content, existing_content):
+                raise ValueError('Refusing to overwrite a large shared database with a much smaller browser cache')
+
+        backup_path = backup_database_file(path)
+        atomic_write_text(path, content)
+        return {
+            'conflict': False,
+            'fileInfo': get_file_info(path, include_hash=True),
+            'backupPath': backup_path
+        }
+
+
+def summarize_hub_content(content):
+    summary = {
+        'valid': False,
+        'bytes': len(content or ''),
+        'boards': 0,
+        'bookmarks': 0,
+        'folders': 0,
+        'titles': 0,
+        'importItems': 0
+    }
+    try:
+        data = json.loads(content or '{}')
+    except Exception:
+        return summary
+
+    summary['valid'] = isinstance(data, dict)
+    if not isinstance(data, dict):
+        return summary
+
+    boards = data.get('boards')
+    summary['boards'] = len(boards) if isinstance(boards, list) else 0
+
+    import_manager = data.get('importManager')
+    import_items = import_manager.get('items') if isinstance(import_manager, dict) else None
+    summary['importItems'] = len(import_items) if isinstance(import_items, list) else 0
+
+    def walk(value):
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+            return
+        if not isinstance(value, dict):
+            return
+        item_type = value.get('type')
+        if item_type == 'bookmark':
+            summary['bookmarks'] += 1
+        elif item_type == 'folder':
+            summary['folders'] += 1
+        elif item_type == 'title':
+            summary['titles'] += 1
+        for child in value.values():
+            walk(child)
+
+    walk(boards)
+    walk(import_items)
+    return summary
+
+
+def hub_content_count(summary):
+    return (
+        summary.get('boards', 0)
+        + summary.get('bookmarks', 0)
+        + summary.get('folders', 0)
+        + summary.get('titles', 0)
+        + summary.get('importItems', 0)
+    )
+
+
+def replacement_looks_dangerously_smaller(new_content, existing_content):
+    existing = summarize_hub_content(existing_content)
+    incoming = summarize_hub_content(new_content)
+    existing_count = hub_content_count(existing)
+    incoming_count = hub_content_count(incoming)
+    if not existing.get('valid'):
+        return False
+    if existing.get('bytes', 0) < 100000 or existing_count < 50:
+        return False
+    if not incoming.get('valid'):
+        return True
+    if incoming.get('bytes', 0) >= existing.get('bytes', 0) * 0.25:
+        return False
+    if incoming_count >= existing_count * 0.5:
+        return False
+    return True
+
+
 def backup_database_file(path):
-    normalized = (path or '').strip()
+    normalized = str(path or '').strip()
     if not normalized or not os.path.isfile(normalized):
         return None
     if os.path.getsize(normalized) <= 0:
@@ -654,7 +867,7 @@ def handle(msg):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            reply_ok(content=content, fileInfo=get_file_info(path))
+            reply_ok(content=content, fileInfo=get_file_info(path, include_hash=True))
         except FileNotFoundError:
             reply_ok(content=None, fileInfo=get_file_info(path))   # not found is not an error — caller falls back
         except Exception as e:
@@ -665,7 +878,7 @@ def handle(msg):
         try:
             offset = max(0, int(msg.get('offset', 0) or 0))
             length = max(1, min(768 * 1024, int(msg.get('length', 512 * 1024) or 512 * 1024)))
-            file_info = get_file_info(path)
+            file_info = get_file_info(path, include_hash=offset == 0)
             if not file_info['exists']:
                 reply_ok(chunk='', offset=offset, nextOffset=offset, totalSize=0, done=True, fileInfo=file_info)
                 return
@@ -759,23 +972,21 @@ def handle(msg):
         path = msg.get('path', '')
         content = msg.get('content', '')
         expected_version = msg.get('expectedVersion') or None
+        expected_hash = msg.get('expectedHash') or ''
         try:
-            current_info = get_file_info(path)
-            if current_info['version'] != expected_version and not (expected_version is None and not current_info['exists']):
-                reply_ok(conflict=True, fileInfo=current_info)
-                return
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            backup_path = backup_database_file(path)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            reply_ok(fileInfo=get_file_info(path), backupPath=backup_path)
+            reply_ok(**write_file_if_unchanged(
+                path,
+                content,
+                expected_version=expected_version,
+                expected_hash=expected_hash
+            ))
         except Exception as e:
             reply_err(str(e))
 
     elif msg_type == 'STAT_FILE':
         path = msg.get('path', '')
         try:
-            reply_ok(fileInfo=get_file_info(path))
+            reply_ok(fileInfo=get_file_info(path, include_hash=True))
         except Exception as e:
             reply_err(str(e))
 
