@@ -1,7 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  width: 300px;
+  width: 320px;
   font-family: system-ui, sans-serif;
   font-size: 13px;
   background: #1a1b1e;
@@ -59,6 +59,23 @@ header {
   text-overflow: ellipsis;
 }
 
+.target-picker {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 2px;
+}
+.target-picker.hidden { display: none; }
+.target-picker-title { color: #c7a8ff; font-size: 12px; font-weight: 600; }
+.target-picker label { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 8px; color: #9ca3af; font-size: 12px; }
+.target-picker select {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #3b3f47;
+  border-radius: 5px;
+  background: #222328;
+  color: #e5e7eb;
+}
+
 .actions { padding: 12px 14px 8px; }
 
 .btn-primary,
@@ -80,7 +97,9 @@ header {
 .btn-secondary {
   background: #2d2f35;
   color: #d1d5db;
+  margin-bottom: 8px;
 }
+.btn-secondary:last-child { margin-bottom: 0; }
 .btn-primary:hover:not(:disabled) { background: #7c5cff; }
 .btn-secondary:hover:not(:disabled) { background: #3b3f47; }
 .btn-primary:disabled,

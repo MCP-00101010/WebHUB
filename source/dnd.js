@@ -27,6 +27,20 @@ function _currentDropEffect() {
   return dragPayload?.fromDynamicFolderView ? 'copy' : 'move';
 }
 
+function _dragItemIds() {
+  return Array.isArray(dragPayload?.itemIds) && dragPayload.itemIds.length
+    ? [...new Set(dragPayload.itemIds)]
+    : (dragPayload?.itemId ? [dragPayload.itemId] : []);
+}
+
+function _hasMultiItemDrag() {
+  return _dragItemIds().length > 1;
+}
+
+function _clearSelectionAfterMultiDrag() {
+  if (_hasMultiItemDrag() && typeof clearSelection === 'function') clearSelection();
+}
+
 // Returns true when the active drag payload contains a bookmark or folder
 // that can be sent to another board's inbox.
 function _canSendToInbox() {
@@ -53,6 +67,16 @@ function _takeImportManagerDraggedItem() {
   const item = removeImportManagerItemById(dragPayload.itemId);
   if (item?.type === 'bookmark' && !item.tags) item.tags = [];
   return item;
+}
+
+function _takeImportManagerDraggedItems() {
+  if (dragPayload?.area !== 'import-manager') return [];
+  const items = _dragItemIds().map(itemId => removeImportManagerItemById(itemId)).filter(Boolean);
+  for (const item of items) {
+    stripTransientItemLocks([item]);
+    if (item.type === 'bookmark' && !item.tags) item.tags = [];
+  }
+  return items;
 }
 
 function isExternalDrag(event) {
@@ -104,6 +128,12 @@ function _clearDropDecorations(removePreviews = true) {
 }
 
 function createDragPlaceholder(kind) {
+  if (kind === 'board' && _hasMultiItemDrag()) {
+    const preview = _createMultiDragImage(null);
+    preview.classList.add('drag-preview', 'multi-drag-insertion-preview');
+    preview.style.width = '';
+    return preview;
+  }
   if (dragPayload?.itemId) {
     // Precise per-context selectors prevent matching the wrong area's element
     const selector = kind === 'nav'
@@ -234,20 +264,24 @@ function _insertDragPreview(clone, parent, beforeEl) {
   if (beforeEl != null) parent.insertBefore(clone, beforeEl);
   else parent.appendChild(clone);
   clone.offsetHeight;
+  const expandedHeight = clone.classList.contains('multi-drag-insertion-preview')
+    ? `${clone.scrollHeight}px`
+    : '400px';
   clone.style.transition = isH
     ? 'max-width 130ms ease, opacity 80ms ease'
     : 'max-height 130ms ease, opacity 80ms ease';
   requestAnimationFrame(() => {
     if (isH) clone.style.maxWidth = '400px';
-    else clone.style.maxHeight = '400px';
+    else clone.style.maxHeight = expandedHeight;
     clone.style.opacity = '0.5';
   });
 }
 
-function applyDragImage(event, element) {
+function _prepareDragImageClone(element) {
   const clone = element.cloneNode(true);
-  const rect = element.getBoundingClientRect();
-  clone.style.cssText = `position:fixed;top:-9999px;left:-9999px;margin:0;width:${rect.width}px;height:${rect.height}px;`;
+  clone.classList.remove('selected', 'dragging', 'multi-drag-source', 'drop-target', 'drop-position-before', 'drop-position-after');
+  clone.removeAttribute('draggable');
+  clone.removeAttribute('data-drop-position');
   clone.querySelectorAll('img').forEach(img => {
     img.style.width = '100%';
     img.style.height = '100%';
@@ -256,11 +290,85 @@ function applyDragImage(event, element) {
     img.style.objectFit = 'contain';
     img.style.display = 'block';
   });
+  return clone;
+}
+
+function _findMultiDragSourceElement(itemId, primaryElement) {
+  if (itemId === dragPayload?.itemId && primaryElement) return primaryElement;
+  const candidates = Array.from(document.querySelectorAll('.board-column-item[data-item-id]'));
+  return candidates.find(candidate => {
+    if (candidate.dataset.itemId !== itemId) return false;
+    if (candidate.classList.contains('multi-drag-preview-item')) return false;
+    if (dragPayload?.area === 'import-manager') return candidate.classList.contains('import-manager-item');
+    if (dragPayload?.area !== 'board' || candidate.classList.contains('import-manager-item')) return false;
+    return !dragPayload.sourceColumnId || candidate.dataset.columnId === dragPayload.sourceColumnId;
+  }) || null;
+}
+
+function _renderMissingMultiDragSourceElement(itemId) {
+  if (dragPayload?.area === 'import-manager') {
+    const item = findImportManagerItemById(itemId)?.item;
+    return item ? _createImportManagerItem(item) : null;
+  }
+  if (dragPayload?.area === 'board') {
+    const item = findBoardItemInColumns(getActiveBoard(), itemId)?.item;
+    return item ? createBoardItemElement(item, dragPayload.sourceColumnId || '_preview') : null;
+  }
+  return null;
+}
+
+function _createMultiDragImage(element, width) {
+  const preview = document.createElement('div');
+  preview.className = 'multi-drag-preview';
+  if (Number.isFinite(width) && width > 0) preview.style.width = `${width}px`;
+  for (const itemId of _dragItemIds()) {
+    const source = _findMultiDragSourceElement(itemId, element) || _renderMissingMultiDragSourceElement(itemId);
+    if (!source) continue;
+    const clone = _prepareDragImageClone(source);
+    clone.classList.add('multi-drag-preview-item');
+    clone.style.width = '100%';
+    clone.style.height = 'auto';
+    clone.style.margin = '0';
+    preview.appendChild(clone);
+  }
+  return preview;
+}
+
+function _hideMultiDragSourceElements(primaryElement) {
+  for (const itemId of _dragItemIds()) {
+    const source = _findMultiDragSourceElement(itemId, primaryElement);
+    if (!source) continue;
+    source.classList.add('multi-drag-source', 'dragging');
+  }
+}
+
+function clearMultiDragSourceElements() {
+  document.querySelectorAll('.multi-drag-source').forEach(source => {
+    source.classList.remove('multi-drag-source', 'dragging');
+  });
+}
+
+function applyDragImage(event, element) {
+  const activePayload = dragPayload;
+  const rect = element.getBoundingClientRect();
+  const clone = _hasMultiItemDrag()
+    ? _createMultiDragImage(element, rect.width)
+    : _prepareDragImageClone(element);
+  clone.style.position = 'fixed';
+  clone.style.top = '-9999px';
+  clone.style.left = '-9999px';
+  if (!_hasMultiItemDrag()) {
+    clone.style.margin = '0';
+    clone.style.width = `${rect.width}px`;
+    clone.style.height = `${rect.height}px`;
+  }
   document.body.appendChild(clone);
   event.dataTransfer.setDragImage(clone, event.clientX - rect.left, event.clientY - rect.top);
   requestAnimationFrame(() => {
     clone.remove();
-    if (!dragPayload?.fromDynamicFolderView) element.classList.add('dragging');
+    if (dragPayload !== activePayload || activePayload?.fromDynamicFolderView) return;
+    if (_hasMultiItemDrag()) _hideMultiDragSourceElements(element);
+    else element.classList.add('dragging');
   });
 }
 
@@ -290,6 +398,15 @@ function _takeDraggedBoardItem(board) {
     return _cloneBookmarkForDragCopy(item);
   }
   return removeBoardItemById(dragPayload.itemId);
+}
+
+function _takeDraggedBoardItems(board) {
+  if (dragPayload?.area !== 'board') return [];
+  if (dragPayload.fromDynamicFolderView) {
+    const item = _takeDraggedBoardItem(board);
+    return item ? [item] : [];
+  }
+  return _dragItemIds().map(itemId => removeBoardItemById(itemId)).filter(Boolean);
 }
 
 function _takeDraggedBookmarkItem(board) {
@@ -331,6 +448,60 @@ function _extractDraggedItem(board) {
     return _takeDraggedBookmarkItem(board);
   }
   return null;
+}
+
+function _extractDraggedItems(board) {
+  if (dragPayload?.area === 'board') return _takeDraggedBoardItems(board);
+  if (dragPayload?.area === 'import-manager') return _takeImportManagerDraggedItems();
+  const item = _extractDraggedItem(board);
+  return item ? [item] : [];
+}
+
+function _takeDraggedItemsForInbox(board) {
+  let items = [];
+  if (dragPayload?.area === 'board') {
+    items = _takeDraggedBoardItems(board);
+  } else if (dragPayload?.area === 'import-manager') {
+    items = _takeImportManagerDraggedItems();
+  } else if (dragPayload?.area === 'nav') {
+    const item = removeNavItemById(dragPayload.itemId);
+    if (item) items = [item];
+  } else if (dragPayload?.area === 'speed-dial' || dragPayload?.area === 'essential') {
+    const item = _takeDraggedBookmarkItem(board);
+    if (item) items = [item];
+  }
+  stripTransientItemLocks(items);
+  return items;
+}
+
+function handleBoardTabInboxDragOver(event, board, tab) {
+  if (!board || !tab || board.locked || !_canSendToInbox()) return;
+  const targetInbox = getBoardInbox(board, tab);
+  if (!targetInbox) return;
+  if (dragPayload?.area === 'board' && dragPayload.sourceColumnId === targetInbox.id) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = _currentDropEffect();
+  event.currentTarget.classList.add('drop-target');
+}
+
+function handleBoardTabInboxDrop(event, board, tab) {
+  if (!board || !tab || board.locked || !_canSendToInbox()) return;
+  const targetInbox = getBoardInbox(board, tab);
+  if (!targetInbox) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.currentTarget.classList.remove('drop-target');
+  if (dragPayload?.area === 'board' && dragPayload.sourceColumnId === targetInbox.id) return;
+
+  pushUndoSnapshot();
+  const draggedItems = _takeDraggedItemsForInbox(getActiveBoard());
+  if (!draggedItems.length) { dragPayload = null; return; }
+  targetInbox.items.push(...draggedItems);
+  _clearSelectionAfterMultiDrag();
+  dragPayload = null;
+  renderAll();
+  saveState();
 }
 
 function _draggedFolderChildType() {
@@ -480,7 +651,7 @@ function _handleVerticalContainerDragOver(event, { markDropTarget = false, useNe
 
   const containerEl = event.currentTarget;
   if (markDropTarget) containerEl.classList.add('drop-target');
-  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview)'));
+  const itemEls = Array.from(containerEl.querySelectorAll(':scope > .board-column-item:not(.drag-preview):not(.dragging)'));
 
   if (itemEls.length === 0) {
     if (_dropTarget === containerEl && _dropPos === 'start') return;
@@ -546,6 +717,14 @@ function _insertDraggedRelativeToTarget(list, targetId, draggedId, draggedPath, 
   return true;
 }
 
+function _insertDraggedItemsRelativeToTarget(list, targetId, draggedItems, position) {
+  const targetIndex = list.findIndex(item => item.id === targetId);
+  if (targetIndex === -1 || !draggedItems.length) return false;
+  const destinationIndex = Math.max(0, Math.min(position === 'after' ? targetIndex + 1 : targetIndex, list.length));
+  list.splice(destinationIndex, 0, ...draggedItems);
+  return true;
+}
+
 function _resolveDropTargetInsertIndex(list, dropTargetEl, dropPos, draggedIndex = -1) {
   let insertIndex = list.length;
   const targetItemId = dropTargetEl?.dataset?.itemId;
@@ -559,6 +738,11 @@ function _resolveDropTargetInsertIndex(list, dropTargetEl, dropPos, draggedIndex
 
 function _insertDraggedAtDropTarget(list, dragged, dropTargetEl, dropPos, draggedIndex = -1) {
   list.splice(_resolveDropTargetInsertIndex(list, dropTargetEl, dropPos, draggedIndex), 0, dragged);
+}
+
+function _insertDraggedItemsAtDropTarget(list, draggedItems, dropTargetEl, dropPos) {
+  if (!draggedItems.length) return;
+  list.splice(_resolveDropTargetInsertIndex(list, dropTargetEl, dropPos), 0, ...draggedItems);
 }
 
 function _finalizeFolderDrop(event, folderItem, depth, takeDraggedItem, isOwnDescendant, { useSavedDropPosition = false } = {}) {
@@ -587,12 +771,14 @@ function _finalizeFolderDrop(event, folderItem, depth, takeDraggedItem, isOwnDes
   }
 
   pushUndoSnapshot();
-  const dragged = takeDraggedItem();
-  if (!dragged) { dragPayload = null; return; }
+  const taken = takeDraggedItem();
+  const draggedItems = Array.isArray(taken) ? taken : (taken ? [taken] : []);
+  if (!draggedItems.length) { dragPayload = null; return; }
 
   folderItem.children = folderItem.children || [];
-  _insertDraggedAtDropTarget(folderItem.children, dragged, dropTargetEl, dropPos);
+  _insertDraggedItemsAtDropTarget(folderItem.children, draggedItems, dropTargetEl, dropPos);
 
+  _clearSelectionAfterMultiDrag();
   dragPayload = null;
   renderAll();
   saveState();
@@ -623,7 +809,7 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   if (getActiveBoard()?.locked) return;
   const isNavColWidget = dragPayload.area === 'nav' && _canDropAsColumnWidget();
   if (!isNavColWidget && !_isBoardDropArea()) return;
-  if (dragPayload.itemId === targetItem.id) return;
+  if (_dragItemIds().includes(targetItem.id)) return;
   if (event.currentTarget.parentElement?.closest('.board-column-item.is-locked')) return;
 
   event.preventDefault();
@@ -650,38 +836,35 @@ function handleBoardItemDrop(event, targetItem, columnId, parentFolder, depth) {
   const targetPath = findBoardItemInColumns(board, targetItem.id);
 
   if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential' || dragPayload.area === 'import-manager') {
-    const extracted = dragPayload.area === 'import-manager'
-      ? _takeImportManagerDraggedItem()
-      : _takeDraggedBookmarkItem(board);
-    if (!extracted) { dragPayload = null; return; }
+    const extractedItems = dragPayload.area === 'import-manager'
+      ? _takeImportManagerDraggedItems()
+      : [_takeDraggedBookmarkItem(board)].filter(Boolean);
+    if (!extractedItems.length) { dragPayload = null; return; }
     if (!targetPath) {
-      addBoardItemToColumn(columnId, extracted);
-    } else if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, null, extracted, position)) {
+      extractedItems.forEach(extracted => addBoardItemToColumn(columnId, extracted));
+    } else if (!_insertDraggedItemsRelativeToTarget(targetPath.list, targetItem.id, extractedItems, position)) {
       dragPayload = null;
       return;
     }
+    _clearSelectionAfterMultiDrag();
     dragPayload = null; renderAll(); saveState(); return;
   }
-
-  const draggedPath = dragPayload.area === 'board'
-    ? findBoardItemInColumns(board, dragPayload.itemId)
-    : null;
 
   if (!targetPath) {
-    const dragged = dragPayload.area === 'board'
-      ? _takeDraggedBoardItem(board)
-      : null;
-    if (dragged) addBoardItemToColumn(columnId, dragged);
+    const draggedItems = dragPayload.area === 'board' ? _takeDraggedBoardItems(board) : [];
+    draggedItems.forEach(dragged => addBoardItemToColumn(columnId, dragged));
+    _clearSelectionAfterMultiDrag();
     dragPayload = null; renderAll(); saveState(); return;
   }
 
-  const dragged = _takeDraggedBoardItem(board);
-  if (!dragged) return;
-  if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, draggedPath, dragged, position)) {
+  const draggedItems = _takeDraggedBoardItems(board);
+  if (!draggedItems.length) return;
+  if (!_insertDraggedItemsRelativeToTarget(targetPath.list, targetItem.id, draggedItems, position)) {
     dragPayload = null;
     return;
   }
 
+  _clearSelectionAfterMultiDrag();
   dragPayload = null;
   renderAll();
   saveState();
@@ -728,22 +911,22 @@ function handleBoardColumnDrop(event, columnId) {
     dragPayload = null; renderAll(); saveState(); return;
   }
 
-  let draggedItem;
-  let draggedIndex = -1;
+  let draggedItems;
   if (dragPayload.area === 'board') {
-    if (!dragPayload.fromDynamicFolderView) draggedIndex = column.items.findIndex(i => i.id === dragPayload.itemId);
-    draggedItem = _takeDraggedBoardItem(board);
+    draggedItems = _takeDraggedBoardItems(board);
   } else if (dragPayload.area === 'import-manager') {
-    draggedItem = _takeImportManagerDraggedItem();
-    if (!draggedItem) { dragPayload = null; return; }
+    draggedItems = _takeImportManagerDraggedItems();
+    if (!draggedItems.length) { dragPayload = null; return; }
   } else {
-    draggedItem = _takeDraggedBookmarkItem(board);
-    if (!draggedItem) { dragPayload = null; return; }
+    const draggedItem = _takeDraggedBookmarkItem(board);
+    draggedItems = draggedItem ? [draggedItem] : [];
+    if (!draggedItems.length) { dragPayload = null; return; }
   }
-  if (!draggedItem) return;
+  if (!draggedItems.length) return;
 
-  _insertDraggedAtDropTarget(column.items, draggedItem, savedTarget, savedPos, draggedIndex);
+  _insertDraggedItemsAtDropTarget(column.items, draggedItems, savedTarget, savedPos);
 
+  _clearSelectionAfterMultiDrag();
   dragPayload = null;
   renderAll();
   saveState();
@@ -765,14 +948,14 @@ function _isDroppingFolderIntoOwnDescendant(board, targetFolder) {
 
 function handleBoardFolderHeaderDrop(event, folderItem, columnId, depth) {
   if (!_canDropIntoFolder(folderItem)) return;
-  if (dragPayload.itemId === folderItem.id) return;
+  if (_dragItemIds().includes(folderItem.id)) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   const board = getActiveBoard();
   _finalizeFolderDrop(
     event,
     folderItem,
     depth,
-    () => _extractDraggedItem(board),
+    () => _extractDraggedItems(board),
     targetFolder => _isDroppingFolderIntoOwnDescendant(board, targetFolder)
   );
 }
@@ -785,14 +968,14 @@ function handleBoardFolderContainerDragOver(event, folderCardEl, folderItem, col
 
 function handleBoardFolderContainerDrop(event, folderItem, columnId, depth) {
   if (!_canDropIntoFolder(folderItem)) return;
-  if (dragPayload.itemId === folderItem.id) return;
+  if (_dragItemIds().includes(folderItem.id)) return;
   if (folderItem.locked || event.currentTarget.closest('.board-column-item.is-locked')) { event.preventDefault(); event.stopPropagation(); return; }
   const board = getActiveBoard();
   _finalizeFolderDrop(
     event,
     folderItem,
     depth,
-    () => _extractDraggedItem(board),
+    () => _extractDraggedItems(board),
     targetFolder => _isDroppingFolderIntoOwnDescendant(board, targetFolder),
     { useSavedDropPosition: true }
   );
@@ -824,7 +1007,7 @@ function handleImportManagerItemDragOver(event, targetItem, parentFolder, depth)
 
 function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
   if (!_canDropOnImportManager()) return;
-  if (dragPayload.itemId === targetItem.id) return;
+  if (_dragItemIds().includes(targetItem.id)) return;
 
   event.preventDefault();
   event.stopPropagation();
@@ -835,14 +1018,14 @@ function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
   const targetPath = findImportManagerItemById(targetItem.id);
   if (!targetPath) { dragPayload = null; return; }
 
-  const draggedPath = findImportManagerItemById(dragPayload.itemId);
-  const dragged = _takeImportManagerDraggedItem();
-  if (!dragged) { dragPayload = null; return; }
-  if (!_insertDraggedRelativeToTarget(targetPath.list, targetItem.id, dragPayload.itemId, draggedPath, dragged, position)) {
+  const draggedItems = _takeImportManagerDraggedItems();
+  if (!draggedItems.length) { dragPayload = null; return; }
+  if (!_insertDraggedItemsRelativeToTarget(targetPath.list, targetItem.id, draggedItems, position)) {
     dragPayload = null;
     return;
   }
 
+  _clearSelectionAfterMultiDrag();
   dragPayload = null;
   renderAll();
   saveState();
@@ -864,15 +1047,11 @@ function handleImportManagerListDrop(event) {
   pushUndoSnapshot();
 
   const rootItems = state.importManager?.items || [];
-  const draggedPath = findImportManagerItemById(dragPayload.itemId);
-  const dragged = _takeImportManagerDraggedItem();
-  if (!dragged) { dragPayload = null; return; }
+  const draggedItems = _takeImportManagerDraggedItems();
+  if (!draggedItems.length) { dragPayload = null; return; }
+  _insertDraggedItemsAtDropTarget(rootItems, draggedItems, savedTarget, savedPos);
 
-  const draggedIndex = draggedPath && draggedPath.list === rootItems
-    ? draggedPath.list.findIndex(item => item.id === dragPayload.itemId)
-    : -1;
-  _insertDraggedAtDropTarget(rootItems, dragged, savedTarget, savedPos, draggedIndex);
-
+  _clearSelectionAfterMultiDrag();
   dragPayload = null;
   renderAll();
   saveState();
@@ -884,12 +1063,12 @@ function handleImportManagerFolderHeaderDragOver(event, folderCardEl, folderItem
 
 function handleImportManagerFolderHeaderDrop(event, folderItem, depth) {
   if (!_canDropOnImportManager()) return;
-  if (dragPayload.itemId === folderItem.id) return;
+  if (_dragItemIds().includes(folderItem.id)) return;
   _finalizeFolderDrop(
     event,
     folderItem,
     depth,
-    _takeImportManagerDraggedItem,
+    _takeImportManagerDraggedItems,
     _isDroppingImportManagerFolderIntoOwnDescendant
   );
 }
@@ -901,12 +1080,12 @@ function handleImportManagerFolderContainerDragOver(event, folderCardEl, folderI
 
 function handleImportManagerFolderContainerDrop(event, folderItem, depth) {
   if (!_canDropOnImportManager()) return;
-  if (dragPayload.itemId === folderItem.id) return;
+  if (_dragItemIds().includes(folderItem.id)) return;
   _finalizeFolderDrop(
     event,
     folderItem,
     depth,
-    _takeImportManagerDraggedItem,
+    _takeImportManagerDraggedItems,
     _isDroppingImportManagerFolderIntoOwnDescendant,
     { useSavedDropPosition: true }
   );
@@ -915,6 +1094,7 @@ function handleImportManagerFolderContainerDrop(event, folderItem, depth) {
 // --- Speed dial drag & drop ---
 
 function _speedDialAreaAllowed(area) {
+  if (_hasMultiItemDrag()) return false;
   return area === 'speed-dial'
     || area === 'essential'
     || (area === 'board' && dragPayload.itemType === 'bookmark')
@@ -1044,19 +1224,11 @@ function handleNavDrop(event, targetItem, parent) {
     if (!targetBoard || targetBoard.locked) { dragPayload = null; return; }
     const inbox = getBoardInbox(targetBoard);
     if (!inbox) { dragPayload = null; return; }
-    let dragged = null;
     const board = getActiveBoard();
-    if (dragPayload.area === 'board') {
-      dragged = _takeDraggedBoardItem(board);
-    } else if (dragPayload.area === 'import-manager') {
-      dragged = _takeImportManagerDraggedItem();
-    } else if (dragPayload.area === 'nav') {
-      dragged = removeNavItemById(dragPayload.itemId);
-    } else if (dragPayload.area === 'speed-dial' || dragPayload.area === 'essential') {
-      dragged = _takeDraggedBookmarkItem(board);
-    }
-    if (!dragged) { dragPayload = null; return; }
-    inbox.items.push(dragged);
+    const draggedItems = _takeDraggedItemsForInbox(board);
+    if (!draggedItems.length) { dragPayload = null; return; }
+    inbox.items.push(...draggedItems);
+    _clearSelectionAfterMultiDrag();
     dragPayload = null; renderAll(); saveState(); return;
   }
   // Folder tab dragged back to nav

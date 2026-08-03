@@ -23,8 +23,21 @@
     <div id="tabUrl"   class="tab-url"></div>
   </section>
 
+  <section id="targetPicker" class="target-picker hidden">
+    <div class="target-picker-title">Send to a specific tab</div>
+    <label>
+      <span>Board</span>
+      <select id="targetBoard"></select>
+    </label>
+    <label>
+      <span>Tab</span>
+      <select id="targetTab"></select>
+    </label>
+  </section>
+
   <div class="actions">
     <button id="sendBtn" class="btn-primary" disabled>Send to inbox</button>
+    <button id="sendToTabBtn" class="btn-secondary" disabled>Send to Tab…</button>
     <button id="importBtn" class="btn-secondary" disabled>Send to Import Manager</button>
   </div>
 

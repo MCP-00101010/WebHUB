@@ -92,3 +92,28 @@ test('snapshot comparison ignores JSON formatting and object property order', ()
   assert.equal(harness.context.snapshotsMatch(compact, changed), false);
   assert.equal(harness.context.snapshotsMatch(compact, '{not-json'), false);
 });
+
+test('transient Inbox and Import Manager items discard lock flags', () => {
+  const harness = loadStateScript();
+  const normalizedImport = harness.context.normalizeImportManagerState({
+    items: [{ id: 'folder', type: 'folder', locked: true, children: [{ id: 'bookmark', type: 'bookmark', locked: true }] }]
+  });
+  const normalizedInbox = harness.context.normalizeBoardInboxRecord({
+    items: [{ id: 'inbox-bookmark', type: 'bookmark', locked: true }]
+  }, 'tab-1');
+
+  assert.equal('locked' in normalizedImport.items[0], false);
+  assert.equal('locked' in normalizedImport.items[0].children[0], false);
+  assert.equal('locked' in normalizedInbox.items[0], false);
+});
+
+test('selected bookmark collection preserves tree order', () => {
+  const harness = loadStateScript();
+  const items = [
+    { id: 'one', type: 'bookmark' },
+    { id: 'folder', type: 'folder', children: [{ id: 'two', type: 'bookmark' }] },
+    { id: 'three', type: 'bookmark' }
+  ];
+  const selected = harness.context.collectSelectedBookmarksInTree(new Set(['three', 'one', 'two']), items);
+  assert.deepEqual(JSON.parse(JSON.stringify(selected.map(item => item.id))), ['one', 'two', 'three']);
+});

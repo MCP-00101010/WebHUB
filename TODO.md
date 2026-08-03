@@ -11,6 +11,7 @@
 
 ## Improvements
 
+- ✓ Folder titles/dividers and transient Inbox/Import Manager lock removal completed 2026-08-03. See [0.11.81] in CHANGELOG.
 - background image performance and memory pass
   - continue reviewing the wider background image loading/rendering path for databases with many tabs that have backgrounds.
   - follow up beyond the current import-time downscaling pass if there are still avoidable rerenders, duplicate decoding paths, or retained image data causing pressure.
@@ -26,12 +27,14 @@
 
 ## Drag and Drop
 
+- ✓ Multi-selected Inbox/Import Manager bookmark dragging, full-selection cursor/insertion previews, and direct tab-name Inbox drops completed 2026-08-03. See [0.11.81]–[0.11.84] in CHANGELOG.
 - Known limitation: when dragging a bookmark directly from the browser (Firefox/Zen) into the Hub, no item-specific preview can be rendered during the drag. The HTML DnD API does not allow reading `dataTransfer` payload during `dragover`; only on `drop`. A dashed-outline placeholder is shown instead. A proper preview would require browser extension integration.
 - Known limitation: dragging a bookmark folder from Firefox/Zen only imports the first bookmark, not the folder structure. The HTML DnD API only exposes `text/x-moz-url` / `text/uri-list` as a single URL for browser bookmark drags. Full folder import would require the Firefox extension to intercept the drag and relay the bookmark tree.
 
 ## Firefox Extension / Bridge
 
-- Completed extension/native-host update round is tracked in CHANGELOG [0.11.66].
+- ✓ Extension Board/Tab targeting with a remembered selection completed 2026-08-03. See [0.11.81] in CHANGELOG.
+- Extension/native-host persistence work began in [0.11.66]; the relay and shared-database reliability follow-ups are tracked through [0.11.80] in CHANGELOG.
 - Prefer generic extension/native-host capabilities for service integrations up front so future widgets do not force frequent AMO re-signing for one-off extension changes.
 - Chromium shim: same bridge interface backed by File System Access API for Chrome/Edge.
 

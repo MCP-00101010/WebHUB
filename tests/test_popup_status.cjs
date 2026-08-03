@@ -6,10 +6,12 @@ const vm = require('node:vm');
 
 function makeElement() {
   const classes = new Set(['hidden']);
-  return {
+  const element = {
     textContent: '',
     className: '',
     disabled: true,
+    value: '',
+    children: [],
     listeners: {},
     classList: {
       add: (...names) => names.forEach(name => classes.add(name)),
@@ -17,14 +19,25 @@ function makeElement() {
       toggle: (name, force) => force ? classes.add(name) : classes.delete(name),
       contains: name => classes.has(name)
     },
-    addEventListener(type, listener) { this.listeners[type] = listener; }
+    addEventListener(type, listener) { this.listeners[type] = listener; },
+    appendChild(child) {
+      this.children.push(child);
+      if (!this.value && child.value) this.value = child.value;
+      return child;
+    }
   };
+  Object.defineProperty(element, 'innerHTML', {
+    get() { return ''; },
+    set() { element.children = []; element.value = ''; }
+  });
+  return element;
 }
 
 test('popup enables delivery actions when a later status refresh finds the hub', async () => {
   const elementIds = [
     'statusMorpheus', 'statusNative', 'statusPath', 'statusDetail',
-    'tabInfo', 'tabTitle', 'tabUrl', 'sendBtn', 'importBtn', 'feedback'
+    'tabInfo', 'tabTitle', 'tabUrl', 'targetPicker', 'targetBoard', 'targetTab',
+    'sendBtn', 'sendToTabBtn', 'importBtn', 'feedback'
   ];
   const elements = Object.fromEntries(elementIds.map(id => [id, makeElement()]));
   const statuses = [
@@ -35,11 +48,12 @@ test('popup enables delivery actions when a later status refresh finds the hub',
   let statusIndex = 0;
   let intervalCallback = null;
   const injectedTabs = [];
+  const runtimeMessages = [];
   let relayReady = false;
   const context = vm.createContext({
     console,
     URL,
-    document: { getElementById: id => elements[id] },
+    document: { getElementById: id => elements[id], createElement: () => makeElement() },
     window: {
       addEventListener: () => {},
       close: () => {}
@@ -58,8 +72,25 @@ test('popup enables delivery actions when a later status refresh finds the hub',
       runtime: {
         id: 'test-extension',
         sendMessage: async message => {
+          runtimeMessages.push(message);
+          if (message.type === 'MW_GET_INBOX_TARGETS') return {
+            ok: true,
+            activeBoardId: 'board-1',
+            activeTabId: 'tab-1',
+            boards: [
+              { id: 'board-1', title: 'Board One', tabs: [{ id: 'tab-1', title: 'Tab One' }] },
+              { id: 'board-2', title: 'Board Two', tabs: [{ id: 'tab-2', title: 'Tab Two' }] }
+            ]
+          };
           if (message.type !== 'MW_GET_STATUS') return { ok: true };
           return statuses[Math.min(statusIndex++, statuses.length - 1)];
+        },
+        getManifest: () => ({ version: '1.0.20' })
+      },
+      storage: {
+        local: {
+          get: async () => ({ morpheusPopupTarget: { boardId: 'board-2', tabId: 'tab-2' } }),
+          set: async () => {}
         }
       }
     },
@@ -77,8 +108,18 @@ test('popup enables delivery actions when a later status refresh finds the hub',
   assert.equal(typeof intervalCallback, 'function');
 
   await intervalCallback();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(elements.sendBtn.disabled, false);
+  assert.equal(elements.sendToTabBtn.disabled, false);
   assert.equal(elements.importBtn.disabled, false);
+  assert.equal(elements.targetBoard.value, 'board-2');
+  assert.equal(elements.targetTab.value, 'tab-2');
+
+  await elements.sendToTabBtn.listeners.click();
+  await new Promise(resolve => setImmediate(resolve));
+  const targetedSend = runtimeMessages.findLast(message => message.type === 'MW_SEND_TAB');
+  assert.equal(targetedSend.targetBoardId, 'board-2');
+  assert.equal(targetedSend.targetTabId, 'tab-2');
 
   await intervalCallback();
   assert.match(elements.statusNative.textContent, /enabled/);

@@ -54,7 +54,8 @@ function appendTagRow(grid, labelText, tagIds) {
 function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, inheritedLock = false) {
   if (item.type === 'widget') return createWidgetElement(item, columnId) || document.createElement('div');
 
-  const effectiveLocked = inheritedLock || !!item.locked;
+  const inInbox = isInboxColumnId(columnId);
+  const effectiveLocked = !inInbox && (inheritedLock || !!item.locked);
   const board = getActiveBoard();
   const dynamicFolder = isDynamicFolder(item);
   const insideDynamicFolderView = isDynamicFolder(parentFolder);
@@ -66,6 +67,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
   itemEl.dataset.itemType = item.type;
   itemEl.draggable = !effectiveLocked;
   if (effectiveLocked) itemEl.classList.add('is-locked');
+  if (parentFolder) itemEl.classList.add('board-folder-child');
 
   if (item.type === 'folder' || item.type === 'bookmark') {
     if (item.type === 'folder') itemEl.classList.add('folder-card');
@@ -169,23 +171,24 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       header.appendChild(rulesBtn);
     }
 
-    const lockBtn = document.createElement('button');
-    lockBtn.type = 'button';
-    lockBtn.className = 'item-lock-btn';
-    if (effectiveLocked) lockBtn.classList.add('is-locked');
-    if (inheritedLock) lockBtn.classList.add('is-inherited');
-    lockBtn.title = item.locked ? 'Unlock item' : (inheritedLock ? 'Locked by parent' : 'Lock item');
-    lockBtn.appendChild(icon(effectiveLocked ? 'icon-lock-closed' : 'icon-lock-open'));
-    lockBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      e.preventDefault();
-      if (inheritedLock) return;
-      item.locked = !item.locked;
-      saveState();
-      const inInbox = isInboxColumnId(columnId);
-      if (inInbox) renderInboxPanel(); else renderBoard();
-    });
-    header.appendChild(lockBtn);
+    if (!inInbox) {
+      const lockBtn = document.createElement('button');
+      lockBtn.type = 'button';
+      lockBtn.className = 'item-lock-btn';
+      if (effectiveLocked) lockBtn.classList.add('is-locked');
+      if (inheritedLock) lockBtn.classList.add('is-inherited');
+      lockBtn.title = item.locked ? 'Unlock item' : (inheritedLock ? 'Locked by parent' : 'Lock item');
+      lockBtn.appendChild(icon(effectiveLocked ? 'icon-lock-closed' : 'icon-lock-open'));
+      lockBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (inheritedLock) return;
+        item.locked = !item.locked;
+        saveState();
+        renderBoard();
+      });
+      header.appendChild(lockBtn);
+    }
 
     itemEl.appendChild(header);
 
@@ -284,9 +287,14 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     if (effectiveLocked) { event.preventDefault(); return; }
     event.stopPropagation();
     const fromDynamicFolderView = item.type === 'bookmark' && isDynamicFolder(parentFolder);
+    const inboxItems = inInbox ? (getBoardInbox(getActiveBoard(), getActiveTab())?.items || []) : [];
+    const selectedDragItems = inInbox && item.type === 'bookmark' && selectedItemIds?.has(item.id) && selectionContext === 'board'
+      ? collectSelectedBookmarksInTree(selectedItemIds, inboxItems)
+      : [];
     dragPayload = {
       area: 'board',
       itemId: item.id,
+      itemIds: selectedDragItems.length > 1 ? selectedDragItems.map(selected => selected.id) : undefined,
       itemType: item.type,
       sourceColumnId: columnId,
       sourceParentId: parentFolder ? parentFolder.id : null,
@@ -298,7 +306,12 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     applyDragImage(event, itemEl);
   });
 
-  itemEl.addEventListener('dragend', () => { itemEl.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
+  itemEl.addEventListener('dragend', () => {
+    itemEl.classList.remove('dragging');
+    clearMultiDragSourceElements();
+    dragPayload = null;
+    removeDragPlaceholders();
+  });
 
   if (!insideDynamicFolderView) {
     itemEl.addEventListener('dragover', event => handleBoardItemDragOver(event, item, columnId, parentFolder, depth));

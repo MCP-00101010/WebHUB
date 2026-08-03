@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.80';
+const APP_VERSION = '0.11.84';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -24,6 +24,7 @@ let sharedRecoveryCheckInProgress = false;
 let sharedRecoveryPromptOpen = false;
 let lastBridgeNativeReady = false;
 let lastBridgeRecoveryPath = '';
+let hubInitializationPromise = null;
 
 // --- Undo / redo ---
 
@@ -1268,6 +1269,34 @@ function attachEventListeners() {
     }
   });
 
+  window.addEventListener('morpheus:get-inbox-targets', e => {
+    void Promise.resolve(hubInitializationPromise)
+      .then(() => {
+        if (document.documentElement.classList.contains('hub-booting')) {
+          throw new Error('The shared database is still unavailable.');
+        }
+        const boards = (state.boards || [])
+          .filter(board => !board.locked)
+          .map(board => ({
+            id: board.id,
+            title: board.title || 'Untitled Board',
+            tabs: getBoardTabs(board).map(tab => ({ id: tab.id, title: tab.title || 'Untitled Tab' }))
+          }))
+          .filter(board => board.tabs.length > 0);
+        bridge.respondToPush(e.detail?.pushRequestId, {
+          ok: true,
+          boards,
+          activeBoardId: state.activeBoardId || '',
+          activeTabId: state.activeTabId || ''
+        });
+      })
+      .catch(error => bridge.respondToPush(e.detail?.pushRequestId, {
+        ok: false,
+        boards: [],
+        error: error?.message || String(error)
+      }));
+  });
+
   window.addEventListener('morpheus:shared-disk-conflict', e => {
     promptSharedDiskConflict(e.detail || {});
   });
@@ -1440,4 +1469,4 @@ async function initializeHubState() {
   }
 }
 
-initializeHubState();
+hubInitializationPromise = initializeHubState();

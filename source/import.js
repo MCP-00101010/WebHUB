@@ -296,9 +296,13 @@ function _createImportManagerItem(item, depth = 1, parentFolder = null) {
 
   itemEl.addEventListener('dragstart', event => {
     event.stopPropagation();
+    const selectedDragItems = item.type === 'bookmark' && selectedItemIds?.has(item.id) && selectionContext === 'import-manager'
+      ? collectSelectedBookmarksInTree(selectedItemIds, state.importManager?.items || [])
+      : [];
     dragPayload = {
       area: 'import-manager',
       itemId: item.id,
+      itemIds: selectedDragItems.length > 1 ? selectedDragItems.map(selected => selected.id) : undefined,
       itemType: item.type,
       sourceColumnId: 'import-manager',
       sourceParentId: parentFolder ? parentFolder.id : null
@@ -311,6 +315,7 @@ function _createImportManagerItem(item, depth = 1, parentFolder = null) {
 
   itemEl.addEventListener('dragend', () => {
     itemEl.classList.remove('dragging');
+    clearMultiDragSourceElements();
     dragPayload = null;
     removeDragPlaceholders();
   });
@@ -393,8 +398,12 @@ function attachInboxListeners() {
     pushUndoSnapshot();
     const inbox = getBoardInbox(getActiveBoard(), getActiveTab());
     if (!inbox) return;
-    const dragged = removeBoardItemById(dragPayload.itemId);
-    if (dragged) inbox.items.push(dragged);
+    const draggedItems = typeof _takeDraggedBoardItems === 'function'
+      ? _takeDraggedBoardItems(getActiveBoard())
+      : [removeBoardItemById(dragPayload.itemId)].filter(Boolean);
+    stripTransientItemLocks(draggedItems);
+    if (draggedItems.length) inbox.items.push(...draggedItems);
+    if (draggedItems.length > 1) clearSelection();
     dragPayload = null;
     renderInboxPanel();
     renderBoard();

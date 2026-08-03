@@ -88,6 +88,9 @@ if (IS_MORPHEUS) {
         source: msg.source || ''
       });
     }
+    if (msg.type === 'MW_GET_INBOX_TARGETS') {
+      return relayPushToPage({ type: 'MW_GET_INBOX_TARGETS' });
+    }
   });
 }
 
@@ -104,6 +107,9 @@ window.addEventListener('message', async event => {
       ok: event.data.ok === true,
       conflict: event.data.conflict === true,
       persisted: event.data.persisted || '',
+      boards: Array.isArray(event.data.boards) ? event.data.boards : [],
+      activeBoardId: event.data.activeBoardId || '',
+      activeTabId: event.data.activeTabId || '',
       error: event.data.error || ''
     });
     return;

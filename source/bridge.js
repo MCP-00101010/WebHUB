@@ -159,6 +159,12 @@ const bridge = (() => {
       }));
       return;
     }
+    if (e.data._push && e.data.type === 'MW_GET_INBOX_TARGETS') {
+      window.dispatchEvent(new CustomEvent('morpheus:get-inbox-targets', {
+        detail: { pushRequestId: e.data.pushRequestId || '' }
+      }));
+      return;
+    }
 
     // Response to one of our _send() calls.
     if (!e.data._res) return;

@@ -1020,6 +1020,7 @@ function createNavItem(item, depth = 0, parent = null) {
   el.dataset.id = item.id;
   el.dataset.type = item.type;
   el.draggable = true;
+  if (parent?.type === 'folder') el.classList.add('nav-folder-child');
 
   if (item.type === 'widget') {
     const def = WIDGET_REGISTRY[item.widgetType];
@@ -1490,6 +1491,11 @@ function renderBoardTabBar(board, activeTab) {
       ];
       showContextMenu(event.clientX, event.clientY, actions);
     });
+    tabEl.addEventListener('dragover', event => handleBoardTabInboxDragOver(event, board, tab));
+    tabEl.addEventListener('dragleave', event => {
+      if (!tabEl.contains(event.relatedTarget)) tabEl.classList.remove('drop-target');
+    });
+    tabEl.addEventListener('drop', event => handleBoardTabInboxDrop(event, board, tab));
     tabEl.addEventListener('dragstart', event => {
       if (board.locked) { event.preventDefault(); return; }
       dragPayload = { area: 'board-tab', boardId: board.id, tabId: tab.id };

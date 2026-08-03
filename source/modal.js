@@ -596,6 +596,7 @@ function _submitMoveToBoardModal(ensureUndo) {
     const items = cloneData(state.importManager?.items || []);
     if (!items.length) return 'abort';
     ensureUndo();
+    stripTransientItemLocks(items);
     targetInbox.items.push(...items);
     clearImportManager();
     return 'continue';
@@ -630,6 +631,7 @@ function _submitMoveToBoardModal(ensureUndo) {
     }
   }
 
+  stripTransientItemLocks([capturedItem]);
   targetInbox.items.push(capturedItem);
   return 'continue';
 }
@@ -673,7 +675,10 @@ function _submitBulkMoveToBoardModal(ensureUndo) {
     toMove.forEach(item => {
       ensureUndo();
       const removed = removeImportManagerItemById(item.id);
-      if (removed) targetInbox.items.push(removed);
+      if (removed) {
+        stripTransientItemLocks([removed]);
+        targetInbox.items.push(removed);
+      }
     });
     clearSelection();
     return 'continue';
@@ -687,6 +692,7 @@ function _submitBulkMoveToBoardModal(ensureUndo) {
   toMove.forEach(({ item, list }) => {
     ensureUndo();
     list.splice(list.indexOf(item), 1);
+    stripTransientItemLocks([item]);
     targetInbox.items.push(item);
   });
   clearSelection();
@@ -740,6 +746,15 @@ async function handleModalSubmit(event) {
     case 'addTitle':
       ensureUndo();
       if (area === 'nav-empty') addNavSection({ type: 'title', title: value1 });
+      else if (area === 'board-folder-item' && contextTarget?.item && !isDynamicFolder(contextTarget.item)) {
+        contextTarget.item.children = contextTarget.item.children || [];
+        contextTarget.item.children.push({
+          id: `id-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: 'title',
+          title: value1
+        });
+        contextTarget.item.collapsed = false;
+      }
       else addBookmarkItem('title', value1, contextTarget?.columnId);
       break;
     case 'themeName':

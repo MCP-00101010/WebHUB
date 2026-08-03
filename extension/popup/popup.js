@@ -37,7 +37,11 @@ async function main() {
   const tabInfo    = document.getElementById('tabInfo');
   const tabTitle   = document.getElementById('tabTitle');
   const tabUrl     = document.getElementById('tabUrl');
+  const targetPicker = document.getElementById('targetPicker');
+  const targetBoard = document.getElementById('targetBoard');
+  const targetTab   = document.getElementById('targetTab');
   const sendBtn    = document.getElementById('sendBtn');
+  const sendToTabBtn = document.getElementById('sendToTabBtn');
   const importBtn  = document.getElementById('importBtn');
   const feedback   = document.getElementById('feedback');
 
@@ -79,11 +83,81 @@ async function main() {
   let sending = false;
   let refreshInFlight = null;
   let statusPollTimer = null;
+  let targetBoards = [];
+  let targetsLoaded = false;
+  let targetsInFlight = null;
+
+  function findSelectedTarget() {
+    const board = targetBoards.find(item => item.id === targetBoard.value);
+    const tab = board?.tabs?.find(item => item.id === targetTab.value);
+    return board && tab ? { board, tab } : null;
+  }
+
+  function replaceOptions(select, options, selectedValue = '') {
+    select.innerHTML = '';
+    for (const optionData of options) {
+      const option = document.createElement('option');
+      option.value = optionData.id;
+      option.textContent = optionData.title;
+      select.appendChild(option);
+    }
+    if (options.some(option => option.id === selectedValue)) select.value = selectedValue;
+  }
+
+  async function rememberTarget() {
+    const target = findSelectedTarget();
+    if (!target) return;
+    await browser.storage.local.set({
+      morpheusPopupTarget: { boardId: target.board.id, tabId: target.tab.id }
+    }).catch(() => {});
+  }
+
+  function renderTargetTabs(preferredTabId = '') {
+    const board = targetBoards.find(item => item.id === targetBoard.value) || targetBoards[0];
+    replaceOptions(targetTab, board?.tabs || [], preferredTabId);
+    if (!targetTab.value && board?.tabs?.[0]) targetTab.value = board.tabs[0].id;
+    targetPicker.classList.toggle('hidden', !morpheusOpen || !findSelectedTarget());
+    updateActionButtons();
+  }
+
+  async function loadTargets() {
+    if (!morpheusOpen) return false;
+    if (targetsInFlight) return targetsInFlight;
+    targetsInFlight = (async () => {
+      const [response, stored] = await Promise.all([
+        browser.runtime.sendMessage({ type: 'MW_GET_INBOX_TARGETS' }),
+        browser.storage.local.get('morpheusPopupTarget').catch(() => ({}))
+      ]);
+      if (response?.ok !== true) throw new Error(response?.error || 'The Hub did not return any Inbox targets');
+      targetBoards = Array.isArray(response?.boards) ? response.boards : [];
+      const remembered = stored?.morpheusPopupTarget || {};
+      const preferredBoardId = targetBoards.some(board => board.id === remembered.boardId)
+        ? remembered.boardId
+        : (targetBoards.some(board => board.id === response?.activeBoardId) ? response.activeBoardId : targetBoards[0]?.id || '');
+      replaceOptions(targetBoard, targetBoards, preferredBoardId);
+      if (!targetBoard.value && targetBoards[0]) targetBoard.value = targetBoards[0].id;
+      const selectedBoard = targetBoards.find(board => board.id === targetBoard.value);
+      const preferredTabId = selectedBoard?.tabs?.some(tab => tab.id === remembered.tabId)
+        ? remembered.tabId
+        : (selectedBoard?.tabs?.some(tab => tab.id === response?.activeTabId) ? response.activeTabId : selectedBoard?.tabs?.[0]?.id || '');
+      targetsLoaded = true;
+      renderTargetTabs(preferredTabId);
+      return targetBoards.length > 0;
+    })().catch(error => {
+      targetBoards = [];
+      targetsLoaded = true;
+      targetPicker.classList.add('hidden');
+      hubRelayError = error?.message || String(error);
+      return false;
+    }).finally(() => { targetsInFlight = null; });
+    return targetsInFlight;
+  }
 
   function updateActionButtons() {
     const disabled = sending || !morpheusOpen || !isReal;
     sendBtn.disabled = disabled;
     importBtn.disabled = disabled;
+    sendToTabBtn.disabled = disabled || !findSelectedTarget();
   }
 
   function renderStatus() {
@@ -145,6 +219,7 @@ async function main() {
         else if (res?.hubRelayError) hubRelayError = res.hubRelayError;
         extensionId     = res?.extensionId || browser.runtime.id || '';
         renderStatus();
+        if (morpheusOpen && !targetsLoaded) void loadTargets();
         return morpheusOpen && storageInfoReady;
       })
       .catch(() => {
@@ -172,7 +247,7 @@ async function main() {
     if (statusPollTimer) clearInterval(statusPollTimer);
   }, { once: true });
 
-  async function sendCurrentTab(type, okMessage) {
+  async function sendCurrentTab(type, okMessage, target = null) {
     sending = true;
     updateActionButtons();
     try {
@@ -180,6 +255,8 @@ async function main() {
       if (!morpheusOpen) throw new Error('Morpheus WebHub is not open');
       const res = await browser.runtime.sendMessage({
         type,
+        targetBoardId: target?.board?.id || '',
+        targetTabId: target?.tab?.id || '',
         url:   currentTab.url,
         title: currentTab.title || currentTab.url,
         faviconCache: currentTab.favIconUrl || ''
@@ -199,7 +276,21 @@ async function main() {
     }
   }
 
+  targetBoard.addEventListener('change', () => {
+    renderTargetTabs();
+    void rememberTarget();
+  });
+  targetTab.addEventListener('change', () => {
+    updateActionButtons();
+    void rememberTarget();
+  });
   sendBtn.addEventListener('click', () => sendCurrentTab('MW_SEND_TAB', 'Sent to inbox!'));
+  sendToTabBtn.addEventListener('click', () => {
+    const target = findSelectedTarget();
+    if (!target) return;
+    void rememberTarget();
+    sendCurrentTab('MW_SEND_TAB', `Sent to ${target.board.title} / ${target.tab.title}!`, target);
+  });
   importBtn.addEventListener('click', () => sendCurrentTab('MW_SEND_TAB_TO_IMPORT_MANAGER', 'Sent to Import Manager!'));
 }
 

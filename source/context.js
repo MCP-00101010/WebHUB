@@ -370,6 +370,7 @@ function handleContextMenuAction(action) {
       const removed = removeImportManagerItemById(contextTarget.itemId);
       if (!removed) break;
       if (!removed.tags) removed.tags = [];
+      stripTransientItemLocks([removed]);
       targetInbox.items.push(removed);
       renderAll();
       saveState();
@@ -499,6 +500,22 @@ function handleContextMenuAction(action) {
     case 'addDivider':
       pushUndoSnapshot();
       addBookmarkItem('title', '', contextTarget.columnId);
+      renderAll();
+      saveState();
+      break;
+    case 'addTitleToFolder':
+      showModal('addTitle', {
+        title: 'New Folder Title',
+        placeholder1: 'New Title',
+        contextTarget: { ...contextTarget, area: 'board-folder-item' }
+      });
+      break;
+    case 'addDividerToFolder':
+      if (isDynamicFolder(contextTarget.item)) break;
+      pushUndoSnapshot();
+      contextTarget.item.children = contextTarget.item.children || [];
+      contextTarget.item.children.push({ id: `id-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'title', title: '' });
+      contextTarget.item.collapsed = false;
       renderAll();
       saveState();
       break;
@@ -734,6 +751,7 @@ function handleContextMenuAction(action) {
           } else {
             deleteBoardTarget(contextTarget);
           }
+          stripTransientItemLocks([capturedItem]);
           targetInbox.items.push(capturedItem);
           renderAll();
           saveState();
@@ -809,6 +827,8 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     } else {
       options.push({ label: 'Edit folder', action: 'editFolder' });
       options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
+      options.push({ label: 'Add title', action: 'addTitleToFolder' });
+      options.push({ label: 'Add divider', action: 'addDividerToFolder' });
       if (canInsertIntoFolder(item, 'folder')) options.push({ label: 'Add dynamic folder', action: 'addDynamicFolder' });
       options.push({ label: 'Open all', action: 'openAll' });
       if (depth < 2 && canInsertIntoFolder(item, 'folder')) options.push({ label: 'Create subfolder', action: 'addBoardSubfolder' });
@@ -827,7 +847,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     options.push({ label: 'Delete', action: 'deleteItem' });
   }
 
-  if (item.type === 'folder' || item.type === 'bookmark') {
+  if (!isInboxColumnId(columnId) && (item.type === 'folder' || item.type === 'bookmark')) {
     options.push({ label: 'Lock item', action: 'lockItem' });
   }
 

@@ -5,6 +5,63 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.84] — 2026-08-03
+
+### Fixed
+
+- **Consistent multi-drag styling** — removed the extra accent frame and surface around grouped cursor and insertion previews so they match the established single-bookmark preview treatment.
+- **Complete source disappearance** — every bookmark participating in a multi-drag now disappears from its source while dragging and is restored together if the drag is cancelled. Hidden source nodes are excluded from insertion-position calculations.
+
+### Tests
+
+- Extended multi-drag coverage to verify that all source elements receive and clear the shared dragging state.
+
+---
+
+## [0.11.83] — 2026-08-03
+
+### Changed
+
+- **Full insertion-point preview** — multi-bookmark drags now render the complete ordered bookmark stack at the prospective insertion point as the pointer moves through columns, folders, Inboxes, and the Import Manager. The placeholder expands to the group's real height so larger selections are not clipped.
+
+### Tests
+
+- Extended multi-drag regression coverage to verify that the insertion placeholder contains every dragged bookmark in payload order.
+
+---
+
+## [0.11.82] — 2026-08-03
+
+### Changed
+
+- **Full multi-drag preview** — dragging multiple selected Inbox or Import Manager bookmarks now renders every dragged bookmark as a compact ordered stack instead of showing only the bookmark under the pointer with a numeric badge. Hidden selected items are reconstructed from state so the preview remains complete.
+
+### Tests
+
+- Added regression coverage that the multi-drag image contains every selected bookmark in payload order; reran JavaScript syntax and drag-and-drop tests.
+
+---
+
+## [0.11.81] — 2026-08-03
+
+### Added
+
+- **Folder titles and dividers** — static folder context menus can now add nested titles and dividers, expanding the folder immediately so the new structure is visible.
+- **Multi-selection drag and drop** — dragging a selected bookmark in an Inbox or the Import Manager carries the selected bookmark group in tree order and shows the group count on the drag preview.
+- **Direct tab Inbox drops** — bookmarks and supported grouped drags can be dropped on a board tab name to move them directly into that tab's Inbox, with the tab indicator refreshed immediately.
+- **Extension target picker** — extension 1.0.20 can send the current browser tab to a selected Hub Board/Tab and remembers the last valid destination for repeat sends.
+
+### Changed
+
+- **Transient areas stay unlocked** — Inbox and Import Manager items no longer expose item-lock controls; legacy lock flags are removed while loading and whenever items enter an Inbox.
+
+### Tests
+
+- Added coverage for transient lock normalization, selected-bookmark tree ordering, extension target discovery, popup target selection, and background relay routing.
+- Ran JavaScript syntax checks and every CommonJS regression file directly; all passed. The aggregate Node test runner could not spawn workers in the sandbox, so the equivalent test files were executed serially in-process.
+
+---
+
 ## [0.11.80] — 2026-08-03
 
 ### Fixed

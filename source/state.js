@@ -576,6 +576,15 @@ function migrateItems(items) {
   }
 }
 
+function stripTransientItemLocks(items) {
+  for (const item of (items || [])) {
+    if (!item) continue;
+    delete item.locked;
+    if (Array.isArray(item.children)) stripTransientItemLocks(item.children);
+  }
+  return items;
+}
+
 function stripLegacySharedTagToggleFieldsInItems(items) {
   for (const item of (items || [])) {
     if (!item) continue;
@@ -648,6 +657,7 @@ function normalizeSetRecord(set, index = 0) {
 function normalizeImportManagerState(importManager) {
   const items = cloneData(Array.isArray(importManager?.items) ? importManager.items : []);
   migrateItems(items);
+  stripTransientItemLocks(items);
   return {
     items,
     lastImportedAt: typeof importManager?.lastImportedAt === 'string' ? importManager.lastImportedAt : null
@@ -820,6 +830,7 @@ function normalizeBoardInboxRecord(inbox, tabId) {
   normalized.isInbox = true;
   if (!Array.isArray(normalized.items)) normalized.items = [];
   migrateItems(normalized.items);
+  stripTransientItemLocks(normalized.items);
   return normalized;
 }
 
@@ -1048,6 +1059,7 @@ function parseStateJson(saved) {
         }
       }
       if (legacyItems.length) {
+        stripTransientItemLocks(legacyItems);
         parsed.importManager.items.push(...legacyItems);
         if (!parsed.importManager.lastImportedAt) parsed.importManager.lastImportedAt = new Date().toISOString();
       }
@@ -2349,6 +2361,17 @@ function collectSelectedImportManagerItems(selectionIds, list = state.importMana
     }
     if (item?.type === 'folder' && Array.isArray(item.children) && item.children.length) {
       collectSelectedImportManagerItems(selectedSet, item.children, ancestorSelected || isSelected, out);
+    }
+  }
+  return out;
+}
+
+function collectSelectedBookmarksInTree(selectionIds, list, out = []) {
+  const selectedSet = selectionIds instanceof Set ? selectionIds : new Set(selectionIds || []);
+  for (const item of (list || [])) {
+    if (item?.type === 'bookmark' && selectedSet.has(item.id)) out.push(item);
+    if (item?.type === 'folder' && Array.isArray(item.children)) {
+      collectSelectedBookmarksInTree(selectedSet, item.children, out);
     }
   }
   return out;

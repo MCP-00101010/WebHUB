@@ -1131,6 +1131,14 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
       }
 
+    case 'MW_GET_INBOX_TARGETS':
+      sendToMorpheus({ type: 'MW_GET_INBOX_TARGETS' })
+        .then(result => sendResponse(result?.ok
+          ? result
+          : { ok: false, boards: [], error: result?.error || 'The hub did not return any Inbox targets' }))
+        .catch(e => sendResponse({ ok: false, boards: [], error: e.message }));
+      return true;
+
     case 'MW_SEND_TAB_TO_IMPORT_MANAGER': {
       const item = tabToImportItem(msg);
       if (!item) {

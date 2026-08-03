@@ -95,7 +95,34 @@ test('known-good idle relay registers and catches the page bridge ping', async (
     source: window,
     data: { _mw: true, _pushResponse: true, pushRequestId: pushed.pushRequestId, ok: true, persisted: 'shared' }
   });
-  assert.deepEqual(JSON.parse(JSON.stringify(await delivery)), { ok: true, conflict: false, persisted: 'shared', error: '' });
+  assert.deepEqual(JSON.parse(JSON.stringify(await delivery)), {
+    ok: true,
+    conflict: false,
+    persisted: 'shared',
+    boards: [],
+    activeBoardId: '',
+    activeTabId: '',
+    error: ''
+  });
+
+  const targetsDelivery = runtimeListeners[0]({ type: 'MW_GET_INBOX_TARGETS' });
+  const targetsPush = postedMessages.at(-1);
+  assert.equal(targetsPush.type, 'MW_GET_INBOX_TARGETS');
+  await windowListeners.get('message')[0]({
+    source: window,
+    data: {
+      _mw: true,
+      _pushResponse: true,
+      pushRequestId: targetsPush.pushRequestId,
+      ok: true,
+      boards: [{ id: 'board-1', title: 'Board', tabs: [{ id: 'tab-1', title: 'Tab' }] }],
+      activeBoardId: 'board-1',
+      activeTabId: 'tab-1'
+    }
+  });
+  const targets = await targetsDelivery;
+  assert.equal(targets.boards[0].tabs[0].id, 'tab-1');
+  assert.equal(targets.activeBoardId, 'board-1');
 
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
   assert.equal(manifest.content_scripts[0].run_at, 'document_idle');

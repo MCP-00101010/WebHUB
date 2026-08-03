@@ -77,6 +77,9 @@ async function loadBackground(options = {}) {
             ? { ok: true, isMorpheus: true, pageUrl: tab?.url || '' }
             : null;
         }
+        if (message.type === 'MW_GET_INBOX_TARGETS') {
+          return { ok: true, boards: [{ id: 'board-1', tabs: [{ id: 'tab-1' }] }] };
+        }
         return { ok: true, persisted: 'shared' };
       },
       onRemoved: { addListener: listener => { listeners.removed = listener; } },
@@ -185,6 +188,12 @@ test('the most recently registered hub receives deliveries', async () => {
   });
 
   assert.equal(harness.sentTabs.at(-1).tabId, 20);
+
+  const targets = await new Promise(resolve => {
+    harness.listeners.message({ type: 'MW_GET_INBOX_TARGETS' }, {}, resolve);
+  });
+  assert.equal(targets.boards[0].tabs[0].id, 'tab-1');
+  assert.equal(harness.sentTabs.at(-1).message.type, 'MW_GET_INBOX_TARGETS');
 });
 
 test('extension handshake responds before native host startup completes', async () => {

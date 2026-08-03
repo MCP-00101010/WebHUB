@@ -6,7 +6,6 @@ build/
 __pycache__/
 *.db
 *.sqlite
-.claude/
 .qodo
 backgrounds/
 extension/native/morpheus-webhub.json
