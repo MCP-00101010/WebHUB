@@ -1,6 +1,13 @@
 // --- Widget registry and framework ---
 
 const WIDGET_REGISTRY = {};
+const WIDGET_CATEGORY_ORDER = [
+  'Personal & Productivity',
+  'Weather & Network',
+  'Space & Astronomy',
+  'Content & Feeds',
+  'Other'
+];
 
 // Timer storage: key = "widgetId:context"
 const _widgetTimers = new Map();
@@ -1708,6 +1715,7 @@ function _updateIssTracker(instance, date = new Date(), forceGeometry = false) {
 
 WIDGET_REGISTRY['clock'] = {
   name: 'Clock',
+  category: 'Personal & Productivity',
   description: 'Live clock with optional date display',
   allowedIn: ['column', 'navpane'],
   defaultConfig: { format: '24h', showSeconds: false, showDate: true, timezone: '' },
@@ -1787,6 +1795,7 @@ WIDGET_REGISTRY['clock'] = {
 
 WIDGET_REGISTRY['countdown'] = {
   name: 'Countdown',
+  category: 'Personal & Productivity',
   description: 'Days / hours / minutes until a target date',
   allowedIn: ['column', 'navpane'],
   defaultConfig: { label: 'Event', targetDate: '' },
@@ -1834,6 +1843,7 @@ WIDGET_REGISTRY['countdown'] = {
 
 WIDGET_REGISTRY['notes'] = {
   name: 'Notes',
+  category: 'Personal & Productivity',
   description: 'Freeform text note, editable inline',
   allowedIn: ['column'],
   defaultConfig: { content: '' },
@@ -1863,6 +1873,7 @@ WIDGET_REGISTRY['notes'] = {
 
 WIDGET_REGISTRY['todo'] = {
   name: 'To-do List',
+  category: 'Personal & Productivity',
   description: 'Checklist with add and remove',
   allowedIn: ['column'],
   defaultConfig: {},
@@ -1970,6 +1981,7 @@ WIDGET_REGISTRY['todo'] = {
 
 WIDGET_REGISTRY['image'] = {
   name: 'Image',
+  category: 'Content & Feeds',
   description: 'Display an image from a URL',
   allowedIn: ['column'],
   defaultConfig: { url: '', fit: 'contain', caption: '' },
@@ -2089,6 +2101,7 @@ WIDGET_REGISTRY['image'] = {
 
 WIDGET_REGISTRY['nasaApod'] = {
   name: 'NASA APOD',
+  category: 'Space & Astronomy',
   description: 'Show NASA Astronomy Picture of the Day',
   allowedIn: ['column'],
   defaultConfig: { preferHd: false, showDate: true, showExplanation: true },
@@ -2266,6 +2279,7 @@ WIDGET_REGISTRY['nasaApod'] = {
 
 WIDGET_REGISTRY['weather'] = {
   name: 'Weather',
+  category: 'Weather & Network',
   description: 'Current conditions and a multi-day forecast from Open-Meteo',
   allowedIn: ['column'],
   defaultConfig: {
@@ -2577,6 +2591,7 @@ WIDGET_REGISTRY['weather'] = {
 
 WIDGET_REGISTRY['weatherMap'] = {
   name: 'Weather Map',
+  category: 'Weather & Network',
   description: 'Regional wind, rain, temperature and cloud forecasts on an interactive map',
   allowedIn: ['column'],
   defaultConfig: {
@@ -3182,6 +3197,7 @@ WIDGET_REGISTRY['weatherMap'] = {
 
 WIDGET_REGISTRY['issTracker'] = {
   name: 'ISS Tracker',
+  category: 'Space & Astronomy',
   description: 'Live ISS position, orbital ground track and Earth day/night boundary on an interactive globe',
   allowedIn: ['column'],
   defaultConfig: { mapStyle: 'dark', showNightShade: true },
@@ -3874,6 +3890,7 @@ function _astronomySection(title) {
 
 WIDGET_REGISTRY['astronomy'] = {
   name: 'Astronomy & Night Sky',
+  category: 'Space & Astronomy',
   description: 'Moon phase, twilight, visible planets, meteor showers and upcoming sky events',
   allowedIn: ['column'],
   defaultConfig: {
@@ -4584,6 +4601,7 @@ function _rssPruneAfterSettings(widget) {
 
 WIDGET_REGISTRY['rssReader'] = {
   name: 'RSS Reader',
+  category: 'Content & Feeds',
   description: 'Tabbed RSS and Atom feeds with a combined chronological view',
   allowedIn: ['column'],
   settingsPanelWidth: 'wide',
@@ -5274,6 +5292,7 @@ function _formatIpInfoSpeedMetric(value, unit) {
 
 WIDGET_REGISTRY['ipInfo'] = {
   name: 'IP Info',
+  category: 'Weather & Network',
   description: 'Current public IP address and approximate country for checking VPN connections',
   allowedIn: ['column', 'navpane'],
   defaultConfig: {

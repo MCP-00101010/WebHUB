@@ -4,54 +4,60 @@ function _clearSubmenus() {
   document.querySelectorAll('.context-submenu').forEach(s => s.remove());
 }
 
+function _clearSubmenusFromDepth(depth) {
+  document.querySelectorAll('.context-submenu').forEach(submenu => {
+    if (Number(submenu.dataset.menuDepth || 1) >= depth) submenu.remove();
+  });
+}
+
+function _positionContextSubmenu(submenu, button) {
+  const rect = button.getBoundingClientRect();
+  let left = rect.right + 2;
+  let top = rect.top;
+  submenu.style.left = `${left}px`;
+  submenu.style.top = `${top}px`;
+  const submenuRect = submenu.getBoundingClientRect();
+  if (submenuRect.right > window.innerWidth - 4) left = rect.left - submenuRect.width - 2;
+  if (submenuRect.bottom > window.innerHeight - 4) top = window.innerHeight - submenuRect.height - 4;
+  left = Math.max(4, Math.min(left, window.innerWidth - submenuRect.width - 4));
+  top = Math.max(4, top);
+  submenu.style.left = `${left}px`;
+  submenu.style.top = `${top}px`;
+}
+
+function _appendContextMenuAction(menu, action, depth = 0) {
+  const button = document.createElement('button');
+  button.textContent = action.label;
+  if (action.submenu?.length) {
+    button.classList.add('has-submenu');
+    const arrow = document.createElement('span');
+    arrow.className = 'submenu-arrow';
+    arrow.textContent = '›';
+    button.appendChild(arrow);
+    button.addEventListener('mouseenter', () => {
+      _clearSubmenusFromDepth(depth + 1);
+      const submenu = document.createElement('div');
+      submenu.className = 'context-menu context-submenu';
+      submenu.dataset.menuDepth = String(depth + 1);
+      action.submenu.forEach(subAction => _appendContextMenuAction(submenu, subAction, depth + 1));
+      document.body.appendChild(submenu);
+      _positionContextSubmenu(submenu, button);
+    });
+  } else {
+    button.addEventListener('mouseenter', () => _clearSubmenusFromDepth(depth + 1));
+    button.addEventListener('click', () => {
+      try { handleContextMenuAction(action.action); }
+      catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
+      finally { hideContextMenu(); }
+    });
+  }
+  menu.appendChild(button);
+}
+
 function showContextMenu(x, y, actions) {
   const menu = elements.contextMenu;
   menu.innerHTML = '';
-  actions.forEach(action => {
-    const button = document.createElement('button');
-    button.textContent = action.label;
-    if (action.submenu && action.submenu.length) {
-      button.classList.add('has-submenu');
-      const arrow = document.createElement('span');
-      arrow.className = 'submenu-arrow';
-      arrow.textContent = '›';
-      button.appendChild(arrow);
-      button.addEventListener('mouseenter', () => {
-        _clearSubmenus();
-        const sub = document.createElement('div');
-        sub.className = 'context-menu context-submenu';
-        action.submenu.forEach(subAction => {
-          const subBtn = document.createElement('button');
-          subBtn.textContent = subAction.label;
-          subBtn.addEventListener('click', () => {
-            try { handleContextMenuAction(subAction.action); }
-            catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
-            finally { hideContextMenu(); }
-          });
-          sub.appendChild(subBtn);
-        });
-        document.body.appendChild(sub);
-        const rect = button.getBoundingClientRect();
-        let left = rect.right + 2;
-        let top = rect.top;
-        sub.style.left = `${left}px`;
-        sub.style.top = `${top}px`;
-        const subRect = sub.getBoundingClientRect();
-        if (subRect.right > window.innerWidth - 4) left = rect.left - subRect.width - 2;
-        if (subRect.bottom > window.innerHeight - 4) top = window.innerHeight - subRect.height - 4;
-        sub.style.left = `${left}px`;
-        sub.style.top = `${top}px`;
-      });
-    } else {
-      button.addEventListener('mouseenter', _clearSubmenus);
-      button.addEventListener('click', () => {
-        try { handleContextMenuAction(action.action); }
-        catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
-        finally { hideContextMenu(); }
-      });
-    }
-    menu.appendChild(button);
-  });
+  actions.forEach(action => _appendContextMenuAction(menu, action));
   menu.style.left = '0';
   menu.style.top = '0';
   menu.classList.remove('hidden');
@@ -93,6 +99,23 @@ function _buildAddToSetSubmenu() {
     .map(set => ({ label: set.title || 'Untitled Set', action: `addBookmarkToSet:${set.id}` }));
   sets.push({ label: 'New set from this bookmark', action: 'createSetFromBookmark' });
   return sets;
+}
+
+function _buildWidgetSubmenu(allowedIn, actionPrefix) {
+  const groups = new Map();
+  Object.entries(WIDGET_REGISTRY)
+    .filter(([, definition]) => definition.allowedIn?.includes(allowedIn))
+    .forEach(([type, definition]) => {
+      const category = WIDGET_CATEGORY_ORDER.includes(definition.category) ? definition.category : 'Other';
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push({ label: definition.name, action: `${actionPrefix}:${type}` });
+    });
+  return WIDGET_CATEGORY_ORDER
+    .filter(category => groups.has(category))
+    .map(category => ({
+      label: category,
+      submenu: groups.get(category).sort((a, b) => a.label.localeCompare(b.label))
+    }));
 }
 
 function _findNavItem(id, items) {
@@ -937,9 +960,7 @@ function handleBoardColumnContextMenu(event, columnId) {
   event.preventDefault();
   lastActiveColumnId = columnId;
   contextTarget = { area: 'board-empty', columnId };
-  const widgetSubmenu = Object.entries(WIDGET_REGISTRY)
-    .filter(([, def]) => def.allowedIn.includes('column'))
-    .map(([type, def]) => ({ label: def.name, action: `addWidget:${type}` }));
+  const widgetSubmenu = _buildWidgetSubmenu('column', 'addWidget');
   const items = [
     { label: 'Add folder', action: 'addFolder' },
     { label: 'Add dynamic folder', action: 'addDynamicFolder' },
@@ -1007,9 +1028,7 @@ function handleSearchResultContextMenu(event, item, meta) {
 function handleNavListContextMenu(event) {
   event.preventDefault();
   contextTarget = { area: 'nav-empty' };
-  const widgetSubmenu = Object.entries(WIDGET_REGISTRY)
-    .filter(([, def]) => def.allowedIn.includes('navpane'))
-    .map(([type, def]) => ({ label: def.name, action: `addNavWidget:${type}` }));
+  const widgetSubmenu = _buildWidgetSubmenu('navpane', 'addNavWidget');
   const items = [
     { label: 'Add board', action: 'addBoard' },
     { label: 'Add folder', action: 'addNavFolder' },

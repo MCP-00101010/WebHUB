@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.124] — 2026-08-05
+
+### Changed
+
+- **Categorized widget library** — board and sidebar `Add widget` context menus now group widgets under `Personal & Productivity`, `Weather & Network`, `Space & Astronomy`, and `Content & Feeds`. Each group is ordered consistently and its widgets are sorted alphabetically.
+- **Registry-driven organization** — widget definitions now own their category metadata. Future missing or unknown categories fall back to `Other`, while placement filtering continues to hide widgets that are not valid in the selected board or sidebar location.
+- **Recursive context submenus** — context menus can now render nested submenu levels without closing their parent level. Every submenu is kept within the viewport and hovering a sibling clears only the deeper levels it supersedes.
+
+### Tests
+
+- Added regression coverage for all widget category assignments, board/sidebar filtering, alphabetical ordering, action prefixes, fallback-ready grouping, and recursive submenu rendering.
+- Passed all 100 JavaScript regression tests.
+
+---
+
 ## [0.11.123] — 2026-08-03
 
 ### Added
