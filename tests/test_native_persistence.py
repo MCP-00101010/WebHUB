@@ -88,6 +88,31 @@ class NativePersistenceTests(unittest.TestCase):
             self.assertEqual(sum(result['conflict'] is True for result in results), 1)
             self.assertIn(path.read_text(encoding='utf-8'), ('{"value":1}', '{"value":2}'))
 
+    def test_chunk_read_rejects_a_different_file_version(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            path = Path(directory) / 'hub.json'
+            path.write_text('x' * 2048, encoding='utf-8')
+            first = HOST.read_file_chunk(path, 0, 256)
+            HOST.atomic_write_text(path, 'y' * 2048)
+            with self.assertRaisesRegex(RuntimeError, 'changed during chunked read'):
+                HOST.read_file_chunk(path, 256, 256, first['readVersion'])
+
+    def test_theme_paths_are_confined_to_the_theme_directory(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            target = HOST.resolve_theme_path(directory, 'safe-theme')
+            self.assertEqual(Path(target).name, 'safe-theme.json')
+            with self.assertRaises(ValueError):
+                HOST.resolve_theme_path(directory, '../escape')
+
+    def test_database_backups_are_coalesced_within_one_minute(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            path = Path(directory) / 'hub.json'
+            path.write_text('{"value":1}', encoding='utf-8')
+            first = HOST.backup_database_file(path)
+            second = HOST.backup_database_file(path)
+            self.assertEqual(first, second)
+            self.assertEqual(len(list((Path(directory) / 'backups').glob('*.json'))), 1)
+
 
 def tearDownModule():
     try:

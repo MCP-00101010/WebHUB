@@ -9,7 +9,11 @@ function loadWidgets(fetchImpl = async () => ({ ok: true, json: async () => ({})
   const context = vm.createContext({
     console,
     URL,
+    AbortController,
+    DOMException,
     fetch: fetchImpl,
+    setTimeout,
+    clearTimeout,
     setInterval,
     clearInterval,
     localStorage: {
@@ -19,6 +23,8 @@ function loadWidgets(fetchImpl = async () => ({ ok: true, json: async () => ({})
     },
     saveState: () => { throw new Error('Weather refresh must not save shared Hub state'); }
   });
+  const networkFilename = path.join(__dirname, '..', 'source', 'widget-network.js');
+  vm.runInContext(fs.readFileSync(networkFilename, 'utf8'), context, { filename: networkFilename });
   const filename = path.join(__dirname, '..', 'source', 'widgets.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   return { context, storage };
@@ -633,10 +639,11 @@ test('weather map forecast refreshes update the existing canvas in place', () =>
   assert.doesNotMatch(inPlaceRefresh, /WIDGET_REGISTRY\.weatherMap\.render\(/);
 });
 
-test('weather map assets are pinned locally and map instances are torn down before column rerenders', () => {
+test('weather map assets are pinned locally and unchanged instances survive column rerenders', () => {
   const root = path.join(__dirname, '..');
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const widgets = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
+  const render = fs.readFileSync(path.join(root, 'source', 'render.js'), 'utf8');
   const mapJs = fs.statSync(path.join(root, 'vendor', 'maplibre-gl', 'maplibre-gl.js'));
   const mapCss = fs.statSync(path.join(root, 'vendor', 'maplibre-gl', 'maplibre-gl.css'));
   const licence = fs.readFileSync(path.join(root, 'vendor', 'maplibre-gl', 'LICENSE.txt'), 'utf8');
@@ -645,7 +652,8 @@ test('weather map assets are pinned locally and map instances are torn down befo
   assert.match(licence, /Copyright \(c\) 2023, MapLibre contributors/);
   assert.match(index, /vendor\/maplibre-gl\/maplibre-gl\.css/);
   assert.match(index, /vendor\/maplibre-gl\/maplibre-gl\.js/);
-  assert.match(widgets, /function clearColumnWidgetTimers\(\)[\s\S]*?_destroyAllWeatherMaps\(\);/);
+  assert.match(render, /function renderColumns[\s\S]*?reusableWidgets[\s\S]*?canReuse/);
+  assert.match(widgets, /function clearWidgetContextRuntime[\s\S]*?_destroyWeatherMap\(widgetId\)/);
   assert.match(widgets, /if \(instance\.playTimer\) clearInterval\(instance\.playTimer\)/);
   assert.match(widgets, /cancelAnimationFrame\(instance\.rainAnimationFrame\)/);
   assert.match(widgets, /https:\/\/tiles\.openfreemap\.org\/styles\//);

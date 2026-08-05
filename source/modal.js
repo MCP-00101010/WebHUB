@@ -644,7 +644,7 @@ function _submitBulkAddTagsModal(value3, ensureUndo) {
   }
   if (selectionContext === 'import-manager') {
     for (const itemId of selectedItemIds) {
-      const found = findImportManagerItemById(itemId);
+      const found = findImportManagerItemPath(itemId);
       if (found?.item) {
         ensureUndo();
         found.item.tags = [...new Set([...(found.item.tags || []), ...newTags])];

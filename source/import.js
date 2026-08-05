@@ -365,15 +365,6 @@ function renderImportManagerPanel() {
   _renderImportItems(listEl, items);
 }
 
-function _parseInboxTargetOptions(boards) {
-  return [...boards]
-    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
-    .flatMap(board => (board.tabs || []).map(tab => ({
-      value: `${board.id}::${tab.id}`,
-      label: `${board.title || 'Untitled Board'} / ${tab.title || 'Untitled Tab'}`
-    })));
-}
-
 function attachInboxListeners() {
   document.getElementById('inboxBtn').addEventListener('click', () => {
     if (inboxPanelOpen) hideInboxPanel(); else showInboxPanel();
@@ -505,11 +496,11 @@ function assignExternalImportDeliveryIds(item, deliveryId, path) {
   return item;
 }
 
-function findImportManagerItemById(itemId, items = state.importManager?.items || []) {
+function getImportManagerItemById(itemId, items = state.importManager?.items || []) {
   for (const item of items) {
     if (item.id === itemId) return item;
     if (item.type === 'folder') {
-      const found = findImportManagerItemById(itemId, item.children || []);
+      const found = getImportManagerItemById(itemId, item.children || []);
       if (found) return found;
     }
   }
@@ -533,7 +524,7 @@ async function receiveExternalImportItems(items, options = {}, allowRebase = tru
   }
 
   if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
-  let missing = normalized.filter(item => !findImportManagerItemById(item.id));
+  let missing = normalized.filter(item => !getImportManagerItemById(item.id));
   if (!missing.length) {
     return {
       ok: true,
@@ -561,7 +552,7 @@ async function receiveExternalImportItems(items, options = {}, allowRebase = tru
     const reloaded = await reloadHubData({ source: 'shared', notice: '' });
     if (!reloaded) return { ok: false, conflict: true, error: 'The shared database changed while importing bookmarks.' };
     if (!state.importManager) state.importManager = { items: [], lastImportedAt: null };
-    missing = normalized.filter(item => !findImportManagerItemById(item.id));
+    missing = normalized.filter(item => !getImportManagerItemById(item.id));
     if (missing.length) {
       state.importManager.items.push(...missing);
       state.importManager.lastImportedAt = new Date().toISOString();

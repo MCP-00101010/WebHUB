@@ -5,11 +5,11 @@ function resolveTag(tagId) {
   return found || { id: tagId, name: tagId, groupId: null, color: null };
 }
 
-function applyTagColor(chip, tagId) {
+function applyTagColor(chip, tagId, boardContext = false) {
   const tag = resolveTag(tagId);
   const color = tag.color || (state.settings.tagGroups || []).find(g => g.id === tag.groupId)?.color || null;
   if (color) {
-    chip.style.background = hexToRgba(color, chip.closest('.board-column-item') ? 0.22 : 0.15);
+    chip.style.background = hexToRgba(color, boardContext || chip.closest('.board-column-item') ? 0.22 : 0.15);
     chip.style.color = color;
   }
 }
@@ -24,29 +24,18 @@ function applyChipTooltip(chip, tagId) {
   else delete chip.dataset.tooltipColor;
 }
 
-function makeTagChip(tagId) {
+function makeTagChip(tagId, boardContext = false) {
   const chip = document.createElement('span');
   chip.className = 'tag-chip';
   const tag = resolveTag(tagId);
   chip.textContent = tag.name;
   applyChipTooltip(chip, tagId);
-  applyTagColor(chip, tagId);
+  applyTagColor(chip, tagId, boardContext);
   return chip;
 }
 
-function renderTagsInto(container, tagIds) {
-  (tagIds || []).forEach(id => container.appendChild(makeTagChip(id)));
-}
-
-function appendTagRow(grid, labelText, tagIds) {
-  const lbl = document.createElement('span');
-  lbl.className = 'item-tag-label';
-  lbl.textContent = labelText;
-  const chips = document.createElement('div');
-  chips.className = 'item-tag-chips';
-  renderTagsInto(chips, tagIds);
-  grid.appendChild(lbl);
-  grid.appendChild(chips);
+function renderTagsInto(container, tagIds, boardContext = false) {
+  (tagIds || []).forEach(id => container.appendChild(makeTagChip(id, boardContext)));
 }
 
 // --- Board item element ---
@@ -205,7 +194,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     if (allTags.length && showTagChips) {
       const tagsEl = document.createElement('div');
       tagsEl.className = 'item-tag-chips';
-      renderTagsInto(tagsEl, allTags);
+      renderTagsInto(tagsEl, allTags, true);
       itemEl.appendChild(tagsEl);
     }
 
@@ -213,7 +202,7 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     if (item.type === 'bookmark') {
       itemEl.dataset.tooltip = buildTooltip(item, getActiveBoard());
       itemEl.dataset.tooltipKind = 'bookmark';
-      itemEl.addEventListener('click', () => window.open(item.url, '_blank'));
+      itemEl.addEventListener('click', () => window.open(item.url, '_blank', 'noreferrer noopener'));
     }
 
     // --- Folder-specific: drag on header, tag grid, and children container ---

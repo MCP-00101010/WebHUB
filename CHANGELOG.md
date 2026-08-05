@@ -5,6 +5,41 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.125] — 2026-08-05
+
+### Added
+
+- **Explicit persisted-state schema** — moved version-1 serialization and normalization into a dedicated schema module. Saved snapshots now omit redundant active-tab compatibility aliases, while loading repairs orphaned boards by restoring navigation entries instead of deleting their data.
+- **Shared widget networking** — added bounded-fetch and Open-Meteo geocoding helpers with stale-response protection for weather, astronomy, and ISS requests.
+
+### Changed
+
+- **Transactional widget settings** — settings now edit a full title/config/data draft. Live previews remain visible while editing, Cancel restores every field, and Done creates one undoable persisted change without saving intermediate keystrokes.
+- **Current project guide** — rewrote `PROJECT.md` around the actual state schema, rendering pipeline, extension bridge, native host, widget runtime, and validation workflow.
+
+### Fixed
+
+- **Search completeness** — persistent search indexing now covers every tab Inbox and the Import Manager, avoids duplicate dynamic-folder results, and preserves the correct context-menu behavior for Import Manager matches.
+- **Interaction correctness** — Ctrl+Z/Ctrl+Y no longer intercept text-field editing; alpha tag chips receive their board context explicitly; external links use isolated window features; and duplicate classic-script helper declarations can no longer silently override one another.
+- **Chunked-read consistency** — large database reads carry an expected file version through every chunk, reject mid-transfer changes or incomplete byte counts, and retry once from a fresh snapshot.
+- **Widget lifecycle cleanup** — deleting widgets now clears their timers, runtime instances, pending requests, and browser-local caches. Unchanged MapLibre, ISS, column, and sidebar widget nodes survive unrelated Hub rerenders.
+- **Path and theme handling** — extension path conversion preserves POSIX file paths, while native theme writes validate identifiers and remain contained within the configured theme directory.
+
+### Security
+
+- **Authenticated Hub relay sessions** — extension services now require the exact registered Hub tab, URL, and per-registration session token. Active-Hub routing is stable across multiple open Hub tabs, reloads renew the session, and inactive registrations no longer steal extension deliveries.
+
+### Performance
+
+- **Lighter persistence monitoring** — file polling no longer hashes unchanged databases, duplicate five-second timers are merged, and rapid saves coalesce backup creation within a short safety window.
+- **Incremental rendering and search** — unchanged widgets reuse their DOM and live runtimes, while search data is rebuilt only after Hub mutations instead of on every query.
+- **Bounded favicon work** — favicon discovery deduplicates by origin, limits fallback providers, prefers native/direct sources, and batches cache persistence.
+
+### Tests
+
+- Added regression coverage for global classic-script symbols, complete widget-setting rollback, Hub relay sessions, chunk-version enforcement, path conversion, theme containment, state-schema repair, render reuse, and lifecycle cleanup.
+- Passed all 107 JavaScript regression tests, 7 native-host persistence tests, JavaScript syntax checks, and `web-ext lint` with no errors. The existing native Python-file notice and installer-shell-file warning remain.
+
 ## [0.11.124] — 2026-08-05
 
 ### Changed

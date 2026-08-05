@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.124';
+const APP_VERSION = '0.11.125';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -16,10 +16,9 @@ let confirmCancelCallback = null;
 let confirmPreferenceSettingKey = null;
 const SHARED_DISK_POLL_MS = 5000;
 const SHARED_DISK_NOTICE_KEY = 'morpheus-shared-disk-notice';
-let sharedDiskPollTimer = null;
+let sharedStoragePollTimer = null;
 let sharedDiskReloadPromptOpen = false;
 let sharedDiskDataReloadInProgress = false;
-let sharedRecoveryPollTimer = null;
 let sharedRecoveryCheckInProgress = false;
 let sharedRecoveryPromptOpen = false;
 let lastBridgeNativeReady = false;
@@ -660,10 +659,15 @@ async function handleRecoveredSharedStorage(info) {
 }
 
 function startSharedRecoveryPolling() {
-  if (sharedRecoveryPollTimer) clearInterval(sharedRecoveryPollTimer);
+  if (sharedStoragePollTimer) return;
   if (typeof bridge === 'undefined') return;
-  sharedRecoveryPollTimer = setInterval(() => {
-    checkForSharedRecovery().catch(() => {});
+  sharedStoragePollTimer = setInterval(async () => {
+    try {
+      await checkForSharedRecovery();
+      if (bridge.isAvailable() && bridge.nativeIsAvailable() && state.databasePath) {
+        await checkForExternalSharedDiskChanges();
+      }
+    } catch {}
   }, SHARED_DISK_POLL_MS);
 }
 
@@ -677,11 +681,6 @@ async function checkForSharedRecovery() {
     const extensionReady = bridge.isAvailable();
     const nativeReady = extensionReady && info?.nativeAvailable === true && !!info.databasePath;
     const databasePath = (info?.databasePath || '').trim();
-
-    if (!nativeReady && sharedDiskPollTimer) {
-      clearInterval(sharedDiskPollTimer);
-      sharedDiskPollTimer = null;
-    }
 
     const recovered = nativeReady && (!lastBridgeNativeReady || lastBridgeRecoveryPath !== databasePath);
     const statusChanged = lastBridgeNativeReady !== nativeReady || lastBridgeRecoveryPath !== databasePath;
@@ -719,11 +718,7 @@ function promptSharedDiskConflict(detail = {}) {
 }
 
 function startSharedDiskPolling() {
-  if (sharedDiskPollTimer) clearInterval(sharedDiskPollTimer);
-  if (typeof bridge === 'undefined' || !bridge.isAvailable() || !bridge.nativeIsAvailable() || !state.databasePath) return;
-  sharedDiskPollTimer = setInterval(() => {
-    checkForExternalSharedDiskChanges().catch(() => {});
-  }, SHARED_DISK_POLL_MS);
+  startSharedRecoveryPolling();
 }
 
 async function checkForExternalSharedDiskChanges() {
@@ -735,7 +730,7 @@ async function checkForExternalSharedDiskChanges() {
   if (livePath !== (state.databasePath || '').trim()) {
     state.databasePath = livePath;
     resetSharedDiskBaseline(livePath);
-    persistStateToLocalCache(JSON.stringify(state), {
+    persistStateToLocalCache(serializeStateSnapshot(), {
       source: 'local',
       databasePath: livePath,
       sharedBaselineVersion: null,
@@ -1179,13 +1174,13 @@ function attachEventListeners() {
   document.addEventListener('keydown', event => {
     const inInput = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
 
-    if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+    if (!inInput && event.ctrlKey && event.key === 'z' && !event.shiftKey) {
       event.preventDefault();
       undo();
       return;
     }
 
-    if (event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+    if (!inInput && event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
       event.preventDefault();
       redo();
       return;

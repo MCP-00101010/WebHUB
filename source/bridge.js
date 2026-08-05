@@ -44,27 +44,40 @@ const bridge = (() => {
     return bytes;
   }
 
-  async function _loadSharedStateChunked() {
+  async function _loadSharedStateChunkedOnce() {
     let offset = 0;
+    let readVersion = null;
     let fileInfo = null;
     let databasePath = null;
+    let totalSize = 0;
     const chunks = [];
     let byteLength = 0;
 
     while (true) {
       const res = await _send('MW_LOAD_SHARED_CHUNK', {
         offset,
-        length: SHARED_READ_CHUNK_BYTES
+        length: SHARED_READ_CHUNK_BYTES,
+        expectedVersion: readVersion
       }, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
       const bytes = _decodeBase64Bytes(res.chunk || '');
       chunks.push(bytes);
       byteLength += bytes.length;
       fileInfo = res.fileInfo ? { ...(fileInfo || {}), ...res.fileInfo } : fileInfo;
+      readVersion = readVersion || res.readVersion || res.fileInfo?.version || null;
+      if (res.readVersion && readVersion !== res.readVersion) {
+        throw new Error('Shared database changed during chunked read; retry required');
+      }
       databasePath = res.databasePath || databasePath;
+      totalSize = Number.isFinite(res.totalSize) ? res.totalSize : totalSize;
       const nextOffset = Number.isFinite(res.nextOffset) ? res.nextOffset : offset + bytes.length;
       if (res.done) break;
       if (!bytes.length || nextOffset <= offset) throw new Error('Shared database chunk read stalled');
       offset = nextOffset;
+    }
+
+    const expectedSize = Number(totalSize || fileInfo?.size || 0);
+    if (expectedSize && byteLength !== expectedSize) {
+      throw new Error(`Shared database chunk read was incomplete (${byteLength} of ${expectedSize} bytes)`);
     }
 
     if (fileInfo?.exists === false) {
@@ -82,6 +95,19 @@ const bridge = (() => {
       fromDisk: true,
       databasePath
     };
+  }
+
+  async function _loadSharedStateChunked() {
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await _loadSharedStateChunkedOnce();
+      } catch (error) {
+        lastError = error;
+        if (!/changed during chunked read/i.test(error?.message || '')) throw error;
+      }
+    }
+    throw lastError || new Error('Shared database could not be read consistently');
   }
 
   async function _connect({ retries = 2, delayMs = 250, pingTimeoutMs = 750 } = {}) {

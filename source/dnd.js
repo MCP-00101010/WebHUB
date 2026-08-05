@@ -59,7 +59,7 @@ function _canSendToInbox() {
 
 function _findDraggedImportManagerItem() {
   if (dragPayload?.area !== 'import-manager') return null;
-  return findImportManagerItemById(dragPayload.itemId)?.item || null;
+  return findImportManagerItemPath(dragPayload.itemId)?.item || null;
 }
 
 function _takeImportManagerDraggedItem() {
@@ -315,7 +315,7 @@ function _findMultiDragSourceElement(itemId, primaryElement) {
 
 function _renderMissingMultiDragSourceElement(itemId) {
   if (dragPayload?.area === 'import-manager') {
-    const item = findImportManagerItemById(itemId)?.item;
+    const item = findImportManagerItemPath(itemId)?.item;
     return item ? _createImportManagerItem(item) : null;
   }
   if (dragPayload?.area === 'board') {
@@ -712,19 +712,6 @@ function _handleVerticalContainerDragOver(event, { markDropTarget = false, useNe
   nearestEl.classList.toggle('drop-position-after', nearestPos === 'after');
 }
 
-function _insertDraggedRelativeToTarget(list, targetId, draggedId, draggedPath, dragged, position) {
-  const targetIndex = list.findIndex(item => item.id === targetId);
-  if (targetIndex === -1) return false;
-  const draggedIndex = draggedPath && draggedPath.list === list
-    ? draggedPath.list.findIndex(item => item.id === draggedId)
-    : -1;
-  let destinationIndex = position === 'after' ? targetIndex + 1 : targetIndex;
-  if (draggedIndex !== -1 && draggedIndex < targetIndex) destinationIndex -= 1;
-  destinationIndex = Math.max(0, Math.min(destinationIndex, list.length));
-  list.splice(destinationIndex, 0, dragged);
-  return true;
-}
-
 function _insertDraggedItemsRelativeToTarget(list, targetId, draggedItems, position) {
   const targetIndex = list.findIndex(item => item.id === targetId);
   if (targetIndex === -1 || !draggedItems.length) return false;
@@ -1023,7 +1010,7 @@ function handleImportManagerItemDrop(event, targetItem, parentFolder, depth) {
   removeDragPlaceholders();
   pushUndoSnapshot();
 
-  const targetPath = findImportManagerItemById(targetItem.id);
+  const targetPath = findImportManagerItemPath(targetItem.id);
   if (!targetPath) { dragPayload = null; return; }
 
   const draggedItems = _takeImportManagerDraggedItems();

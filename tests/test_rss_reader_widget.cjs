@@ -200,5 +200,5 @@ test('RSS UI exposes combined, starred and feed tabs with local read state', () 
   assert.match(background, /MAX_FEED_RESPONSE_BYTES = 2 \* 1024 \* 1024/);
   assert.equal(manifest.permissions.includes('https://*/*'), true);
   assert.equal(manifest.permissions.includes('http://*/*'), true);
-  assert.equal(manifest.version, '1.0.21');
+  assert.equal(manifest.version, '1.0.22');
 });

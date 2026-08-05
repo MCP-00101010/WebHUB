@@ -1089,7 +1089,6 @@ const FONT_OPTIONS = [
   { value: 'Consolas, monospace', label: 'Consolas' },
 ];
 
-const STYLE_SECTIONS = ['hubName', 'boardTitle', 'board', 'bookmark', 'folder', 'title'];
 const STYLE_THEME_COLOR_KEYS = Object.freeze({
   hubNameColor: 'hubNameColorFromTheme',
   boardTitleColor: 'boardTitleColorFromTheme',
@@ -1577,18 +1576,6 @@ function ensureTagManagerDeleteDelegation() {
   list.dataset.deleteDelegationAttached = '1';
   if ('PointerEvent' in window) list.addEventListener('pointerdown', handleTagManagerRemovePointer, true);
   else list.addEventListener('mousedown', handleTagManagerRemovePointer, true);
-}
-
-function deleteUnsortedTagById(tagId) {
-  const tag = getTagById(tagId);
-  if (!tag || tag.groupId) return;
-  confirmDelete('confirmDeleteTag', tagUsageMessage(tag.id, tag.name), () => {
-    pushUndoSnapshot();
-    deleteTag(tag.id);
-    saveState();
-    updateUndoRedoUI();
-    renderTagGroups();
-  });
 }
 
 function confirmDeleteTags(tagIds, onConfirm) {

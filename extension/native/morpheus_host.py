@@ -17,6 +17,7 @@ import urllib.parse
 import hashlib
 import tempfile
 import stat
+import re
 from contextlib import contextmanager
 from html.parser import HTMLParser
 import ctypes
@@ -28,7 +29,9 @@ MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 MAX_FAVICON_BYTES = 1024 * 1024
 MAX_FAVICON_HTML_BYTES = 1024 * 1024
 MAX_DATABASE_BACKUPS = 30
+DATABASE_BACKUP_MIN_INTERVAL_SECONDS = 60
 SECRET_TARGET_PREFIX = 'Morpheus WebHub/'
+THEME_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{0,79}$', re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -608,6 +611,48 @@ def get_file_info(path, include_hash=False):
         }
 
 
+def resolve_theme_path(themes_dir, theme_id):
+    directory = os.path.abspath(str(themes_dir or '').strip())
+    identifier = str(theme_id or '').strip()
+    if not directory or not THEME_ID_PATTERN.fullmatch(identifier):
+        raise ValueError('Theme ID must contain only letters, numbers, hyphens, or underscores')
+    target = os.path.abspath(os.path.join(directory, f'{identifier}.json'))
+    if os.path.commonpath([directory, target]) != directory:
+        raise ValueError('Theme path escapes the configured themes directory')
+    return target
+
+
+def read_file_chunk(path, offset=0, length=512 * 1024, expected_version=None):
+    offset = max(0, int(offset or 0))
+    length = max(1, min(768 * 1024, int(length or 512 * 1024)))
+    before = get_file_info(path, include_hash=offset == 0)
+    if not before['exists']:
+        return {
+            'chunk': '', 'offset': offset, 'nextOffset': offset,
+            'totalSize': 0, 'done': True, 'fileInfo': before,
+            'readVersion': None
+        }
+    if expected_version and before.get('version') != expected_version:
+        raise RuntimeError('Shared database changed during chunked read; retry required')
+    with open(path, 'rb') as source:
+        source.seek(offset)
+        data = source.read(length)
+    after = get_file_info(path)
+    if before.get('version') != after.get('version'):
+        raise RuntimeError('Shared database changed during chunked read; retry required')
+    next_offset = offset + len(data)
+    total_size = before.get('size') or 0
+    return {
+        'chunk': base64.b64encode(data).decode('ascii'),
+        'offset': offset,
+        'nextOffset': next_offset,
+        'totalSize': total_size,
+        'done': next_offset >= total_size,
+        'fileInfo': before,
+        'readVersion': before.get('version')
+    }
+
+
 @contextmanager
 def database_write_lock(path, timeout_seconds=15):
     lock_path = f'{os.path.abspath(path)}.lock'
@@ -795,15 +840,7 @@ def backup_database_file(path):
     backup_dir = os.path.join(os.path.dirname(os.path.abspath(normalized)), 'backups')
     os.makedirs(backup_dir, exist_ok=True)
     stem = os.path.splitext(os.path.basename(normalized))[0]
-    timestamp = time.strftime('%Y%m%d-%H%M%S')
-    backup_path = os.path.join(backup_dir, f'{stem}.before-write.{timestamp}.json')
-    suffix = 1
-    while os.path.exists(backup_path):
-        backup_path = os.path.join(backup_dir, f'{stem}.before-write.{timestamp}-{suffix}.json')
-        suffix += 1
-    shutil.copy2(normalized, backup_path)
-
-    backups = sorted(
+    existing_backups = sorted(
         (
             os.path.join(backup_dir, name)
             for name in os.listdir(backup_dir)
@@ -812,6 +849,17 @@ def backup_database_file(path):
         key=lambda item: os.path.getmtime(item),
         reverse=True
     )
+    if existing_backups and time.time() - os.path.getmtime(existing_backups[0]) < DATABASE_BACKUP_MIN_INTERVAL_SECONDS:
+        return existing_backups[0]
+    timestamp = time.strftime('%Y%m%d-%H%M%S')
+    backup_path = os.path.join(backup_dir, f'{stem}.before-write.{timestamp}.json')
+    suffix = 1
+    while os.path.exists(backup_path):
+        backup_path = os.path.join(backup_dir, f'{stem}.before-write.{timestamp}-{suffix}.json')
+        suffix += 1
+    shutil.copy2(normalized, backup_path)
+
+    backups = [backup_path, *existing_backups]
     for old_path in backups[MAX_DATABASE_BACKUPS:]:
         try:
             os.remove(old_path)
@@ -876,25 +924,12 @@ def handle(msg):
     elif msg_type == 'READ_FILE_CHUNK':
         path = msg.get('path', '')
         try:
-            offset = max(0, int(msg.get('offset', 0) or 0))
-            length = max(1, min(768 * 1024, int(msg.get('length', 512 * 1024) or 512 * 1024)))
-            file_info = get_file_info(path, include_hash=offset == 0)
-            if not file_info['exists']:
-                reply_ok(chunk='', offset=offset, nextOffset=offset, totalSize=0, done=True, fileInfo=file_info)
-                return
-            with open(path, 'rb') as f:
-                f.seek(offset)
-                data = f.read(length)
-            next_offset = offset + len(data)
-            total_size = file_info['size'] or 0
-            reply_ok(
-                chunk=base64.b64encode(data).decode('ascii'),
-                offset=offset,
-                nextOffset=next_offset,
-                totalSize=total_size,
-                done=next_offset >= total_size,
-                fileInfo=file_info
-            )
+            reply_ok(**read_file_chunk(
+                path,
+                msg.get('offset', 0),
+                msg.get('length', 512 * 1024),
+                msg.get('expectedVersion') or None
+            ))
         except Exception as e:
             reply_err(str(e))
 
@@ -905,6 +940,16 @@ def handle(msg):
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
+            reply_ok(fileInfo=get_file_info(path))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'WRITE_THEME_FILE':
+        try:
+            path = resolve_theme_path(msg.get('themesDir', ''), msg.get('themeId', ''))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as theme_file:
+                theme_file.write(msg.get('content', ''))
             reply_ok(fileInfo=get_file_info(path))
         except Exception as e:
             reply_err(str(e))
@@ -986,7 +1031,7 @@ def handle(msg):
     elif msg_type == 'STAT_FILE':
         path = msg.get('path', '')
         try:
-            reply_ok(fileInfo=get_file_info(path, include_hash=True))
+            reply_ok(fileInfo=get_file_info(path, include_hash=msg.get('includeHash') is True))
         except Exception as e:
             reply_err(str(e))
 

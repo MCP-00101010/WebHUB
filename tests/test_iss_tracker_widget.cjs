@@ -18,7 +18,11 @@ function loadIssWidgets(fetchImpl = async () => { throw new Error('Unexpected fe
     URL,
     Date,
     Intl,
+    AbortController,
+    DOMException,
     fetch: fetchImpl,
+    setTimeout,
+    clearTimeout,
     setInterval,
     clearInterval,
     localStorage: {
@@ -28,7 +32,7 @@ function loadIssWidgets(fetchImpl = async () => { throw new Error('Unexpected fe
     },
     saveState: () => { throw new Error('ISS tracking must not save shared Hub state'); }
   });
-  for (const filename of ['vendor/satellite-js/satellite.min.js', 'source/widgets.js']) {
+  for (const filename of ['vendor/satellite-js/satellite.min.js', 'source/widget-network.js', 'source/widgets.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), context, { filename });
   }
   return { context, storage };

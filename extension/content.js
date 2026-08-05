@@ -11,6 +11,7 @@ const pendingPagePushes = new Map();
 let pushSequence = 0;
 let registeredWithBackground = false;
 let registrationPromise = null;
+let hubSessionToken = '';
 
 function setRelayDiagnostic(state, error = '') {
   const root = document.documentElement;
@@ -32,8 +33,10 @@ function relayPushToPage(message) {
   });
 }
 
-function registerHub() {
-  if (registeredWithBackground) return Promise.resolve({ ok: true });
+function registerHub({ force = false } = {}) {
+  if (registeredWithBackground && hubSessionToken && !force) {
+    return Promise.resolve({ ok: true, hubSessionToken });
+  }
   if (registrationPromise) return registrationPromise;
   registrationPromise = browser.runtime.sendMessage({
     type: 'MW_REGISTER',
@@ -41,12 +44,15 @@ function registerHub() {
     active: !document.hidden && document.hasFocus()
   }).then(response => {
     if (response?.ok !== true) throw new Error(response?.error || 'The extension background rejected Hub registration');
+    if (!response.hubSessionToken) throw new Error('The extension background did not establish a Hub session');
     registeredWithBackground = true;
+    hubSessionToken = response.hubSessionToken;
     setRelayDiagnostic('background-ready');
     window.postMessage({ _mw: true, _relayReady: true }, '*');
     return response;
   }).catch(error => {
     registeredWithBackground = false;
+    hubSessionToken = '';
     setRelayDiagnostic('background-error', error?.message || String(error));
     return { ok: false, error: error?.message || String(error) };
   }).finally(() => {
@@ -61,11 +67,12 @@ if (IS_MORPHEUS) {
 
   browser.runtime.onMessage.addListener(msg => {
     if (msg.type === 'MW_DISCOVER') {
-      return registerHub().then(result => ({
+      return registerHub({ force: true }).then(result => ({
         ok: result?.ok === true,
         isMorpheus: true,
         registered: result?.ok === true,
         pageUrl: window.location.href,
+        hubSessionToken: result?.hubSessionToken || '',
         error: result?.ok === true ? '' : (result?.error || 'Hub registration failed')
       }));
     }
@@ -119,11 +126,16 @@ window.addEventListener('message', async event => {
   const { id, type } = event.data;
   const reply = data => window.postMessage({ _mw: true, _res: true, id, ...data }, '*');
   try {
+    const registration = await registerHub();
+    if (registration?.ok !== true || !hubSessionToken) {
+      throw new Error(registration?.error || 'The Hub relay is not registered');
+    }
     const response = await browser.runtime.sendMessage({
       type,
       ...event.data,
       morpheusPage: IS_MORPHEUS,
-      pageUrl: window.location.href
+      pageUrl: window.location.href,
+      hubSessionToken
     });
     reply(response);
   } catch (error) {

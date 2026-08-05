@@ -166,7 +166,7 @@ test('native save FIFO keeps requests and responses correlated', async () => {
   assert.equal((await second).conflict, true);
 });
 
-test('the most recently registered hub receives deliveries', async () => {
+test('the active registered hub receives deliveries over a later inactive registration', async () => {
   const harness = await loadBackground();
   const register = (tabId, active) => new Promise(resolve => {
     harness.listeners.message(
@@ -189,7 +189,7 @@ test('the most recently registered hub receives deliveries', async () => {
     );
   });
 
-  assert.equal(harness.sentTabs.at(-1).tabId, 20);
+  assert.equal(harness.sentTabs.at(-1).tabId, 10);
 
   const targets = await new Promise(resolve => {
     harness.listeners.message({ type: 'MW_GET_INBOX_TARGETS' }, {}, resolve);
@@ -202,8 +202,13 @@ test('extension handshake responds before native host startup completes', async 
   const nativePing = deferred();
   const harness = await loadBackground({ nativePing });
   let response = null;
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
   harness.listeners.message(
-    { type: 'MW_PING', morpheusPage: true, pageUrl: 'file:///hub.html' },
+    { type: 'MW_PING', morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
     { tab: { id: 10, url: 'file:///hub.html' } },
     result => { response = result; }
   );
@@ -311,9 +316,16 @@ test('extension feed relay fetches bounded text only for the Hub page', async ()
       };
     }
   });
+  const registration = await new Promise(resolve => {
+    harness.listeners.message(
+      { type: 'MW_REGISTER', pageUrl: 'file:///hub/index.html', active: true },
+      { tab: { id: 7, url: 'file:///hub/index.html' } },
+      resolve
+    );
+  });
   const response = await new Promise(resolve => {
     harness.listeners.message(
-      { type: 'MW_FETCH_FEED', morpheusPage: true, pageUrl: 'file:///hub/index.html', url: 'https://example.com/feed.xml' },
+      { type: 'MW_FETCH_FEED', morpheusPage: true, pageUrl: 'file:///hub/index.html', hubSessionToken: registration.hubSessionToken, url: 'https://example.com/feed.xml' },
       { tab: { id: 7, url: 'file:///hub/index.html' } },
       resolve
     );
@@ -332,5 +344,31 @@ test('extension feed relay fetches bounded text only for the Hub page', async ()
     );
   });
   assert.equal(denied.ok, false);
-  assert.match(denied.error, /only available to the open Hub/i);
+  assert.match(denied.error, /not authorized/i);
+});
+
+test('native services require the exact registered Hub session', async () => {
+  const harness = await loadBackground();
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub/index.html', active: true },
+    { tab: { id: 71, url: 'file:///hub/index.html' } },
+    resolve
+  ));
+  assert.ok(registration.hubSessionToken);
+
+  const denied = await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_SECRET_GET', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: 'wrong-session', key: 'nasa'
+    },
+    { tab: { id: 71, url: 'file:///hub/index.html' } },
+    resolve
+  ));
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /not authorized/i);
+
+  assert.equal(harness.context.joinThemePath('../escape.json'), null);
+  assert.match(harness.context.joinThemePath('safe-theme.json'), /safe-theme\.json$/);
+  assert.equal(harness.context.fileUrlToPath('file:///home/user/WebHub/index.html'), '/home/user/WebHub/index.html');
+  assert.equal(harness.context.fileUrlToPath('file:///F:/WebHub/index.html'), 'F:\\WebHub\\index.html');
 });

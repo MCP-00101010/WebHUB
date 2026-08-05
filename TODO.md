@@ -4,13 +4,13 @@ This file tracks outstanding work only. Completed changes and their validation b
 
 ## Reliability and Regression Monitoring
 
-- Continue monitoring the persistence and extension-startup work from 0.11.68–0.11.80 for:
+- Continue monitoring the persistence and extension-startup work from 0.11.68–0.11.80 and the hardened 0.11.125 / extension 1.0.22 bridge for:
   - false “shared database changed on disk before this browser finished saving” warnings
   - delayed extension popup actions or relay injection failures
   - incorrect cache-recovery prompts
   - shared-database loading or transport errors
   - regressions during rapid extension Inbox sends or extension reloads
-- Periodically verify the multiple-Hub-tab scenario, even though normal usage usually has only one Hub open.
+- Periodically verify the multiple-Hub-tab scenario, including active-tab routing and session-token renewal after extension or Hub reloads.
 
 ## Improvements
 
@@ -49,7 +49,7 @@ This file tracks outstanding work only. Completed changes and their validation b
 
 Post-feature-freeze work, best done once the user-facing string surface is stable:
 
-1. **Code structure** — reorganise source files for readability and add JSDoc-style comments to major functions and data types.
+1. **Code structure** — continue decomposing the remaining large rendering and widget modules, and add JSDoc-style comments to major functions and data types. State-schema and widget-network responsibilities were split out in 0.11.125.
 2. **Localisation** — extract user-facing strings into a locale file such as `en.json` and support additional drop-in language files.
 3. **Documentation** — add a user-facing `README.md` covering installation, usage, file structure, and extension setup, plus a brief developer guide for the state schema, rendering pipeline, and bridge API.
 

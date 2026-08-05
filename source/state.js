@@ -126,6 +126,7 @@ const defaultSettings = {
 };
 
 const defaultState = {
+  schemaVersion: CURRENT_STATE_SCHEMA_VERSION,
   activeBoardId: 'board-1',
   activeTabId: 'board-1-tab-1',
   databasePath: '',
@@ -734,19 +735,6 @@ function removeSetItemById(set, itemId) {
   return removed;
 }
 
-function moveSetItem(set, itemId, targetIndex) {
-  if (isDynamicSet(set)) return false;
-  if (!set?.items) return false;
-  const currentIndex = set.items.findIndex(item => item.id === itemId);
-  if (currentIndex === -1) return false;
-  const boundedIndex = Math.max(0, Math.min(targetIndex, set.items.length - 1));
-  if (currentIndex === boundedIndex) return false;
-  const [item] = set.items.splice(currentIndex, 1);
-  set.items.splice(boundedIndex, 0, item);
-  touchSet(set);
-  return true;
-}
-
 function deleteSetById(setId) {
   if (!Array.isArray(state.sets)) return false;
   const index = state.sets.findIndex(set => set.id === setId);
@@ -1027,19 +1015,11 @@ function migrateToIdTags(parsed) {
   if (parsed.settings) delete parsed.settings.tagColors;
 }
 
-function collectReferencedBoardIds(items) {
-  const ids = new Set();
-  for (const item of (items || [])) {
-    if (item.type === 'board' && item.boardId) ids.add(item.boardId);
-    if (item.children) for (const id of collectReferencedBoardIds(item.children)) ids.add(id);
-  }
-  return ids;
-}
-
 function parseStateJson(saved) {
   if (!saved) return cloneData(defaultState);
   try {
     const parsed = JSON.parse(saved);
+    migrateStateSchema(parsed);
     if (typeof parsed.databasePath !== 'string') parsed.databasePath = '';
     else parsed.databasePath = parsed.databasePath.trim();
     parsed.activeTabId = typeof parsed.activeTabId === 'string' ? parsed.activeTabId : null;
@@ -1084,9 +1064,8 @@ function parseStateJson(saved) {
       if (!e.tags) e.tags = [];
       if (e.faviconCache === undefined) e.faviconCache = '';
     }
-    // Remove boards with no nav item referencing them
-    const referencedIds = collectReferencedBoardIds(parsed.navItems);
-    parsed.boards = (parsed.boards || []).filter(b => referencedIds.has(b.id));
+    // Navigation damage must not destroy otherwise valid board data.
+    repairOrphanedBoardNavItems(parsed);
     if (!parsed.boards.some(b => b.id === parsed.activeBoardId)) {
       const first = parsed.boards[0] || null;
       parsed.activeBoardId = first ? first.id : null;
@@ -1227,10 +1206,6 @@ function getSharedDiskBaselineVersion() {
   return sharedDiskBaselineVersion;
 }
 
-function getSharedDiskBaselineHash() {
-  return sharedDiskBaselineHash;
-}
-
 function getSharedDiskBaselinePath() {
   return sharedDiskBaselinePath || state?.databasePath || '';
 }
@@ -1315,7 +1290,16 @@ function serializeStateSnapshot() {
   trimFaviconCache();
   stripLegacySharedTagToggleFields(state);
   if (canScrubStoredServiceApiKeys()) clearStoredServiceApiKeys(state);
-  return JSON.stringify(state);
+  const snapshot = cloneData(state);
+  for (const board of (snapshot.boards || [])) {
+    delete board.columnCount;
+    delete board.backgroundImage;
+    delete board.backgroundFit;
+    delete board.containerOpacity;
+    delete board.columns;
+    delete board.inbox;
+  }
+  return JSON.stringify(snapshot);
 }
 
 function queueSharedDiskSave(snapshot, path = state?.databasePath || sharedDiskBaselinePath || '') {
@@ -1949,21 +1933,6 @@ function editBookmarkContext(title, url, tags = [], contextTarget) {
   return false;
 }
 
-function findBoardFolder(boardId) {
-  function search(items) {
-    for (const item of (items || [])) {
-      if (item.type === 'folder' && item.children) {
-        for (const child of item.children) {
-          if (child.type === 'board' && child.boardId === boardId) return item;
-        }
-        const r = search(item.children);
-        if (r) return r;
-      }
-    }
-    return null;
-  }
-  return search(state.navItems);
-}
 
 function createBoardInFolder(folder, title) {
   const id = `board-${Date.now()}`;
@@ -2335,7 +2304,7 @@ function findImportManagerItemInList(list, itemId, parent = null) {
   return null;
 }
 
-function findImportManagerItemById(itemId) {
+function findImportManagerItemPath(itemId) {
   return findImportManagerItemInList(state.importManager?.items || [], itemId);
 }
 

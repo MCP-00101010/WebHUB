@@ -37,6 +37,7 @@ test('known-good idle relay registers and catches the page bridge ping', async (
     runtime: {
       sendMessage: async message => {
         runtimeMessages.push(message);
+        if (message.type === 'MW_REGISTER') return { ok: true, hubSessionToken: 'session-1' };
         return message.type === 'MW_PING'
           ? { ok: true, nativeAvailable: true, databasePath: 'C:\\hub.json' }
           : { ok: true };
@@ -66,6 +67,7 @@ test('known-good idle relay registers and catches the page bridge ping', async (
     isMorpheus: true,
     registered: true,
     pageUrl: 'file:///hub/index.html',
+    hubSessionToken: 'session-1',
     error: ''
   });
 
@@ -78,7 +80,7 @@ test('known-good idle relay registers and catches the page bridge ping', async (
   };
   await windowListeners.get('message')[0]({ data: request, source: window });
 
-  assert.deepEqual(runtimeMessages.map(message => message.type), ['MW_REGISTER', 'MW_PING']);
+  assert.deepEqual(runtimeMessages.map(message => message.type), ['MW_REGISTER', 'MW_REGISTER', 'MW_PING']);
   assert.equal(postedMessages.at(-1).id, 'startup-ping');
   assert.equal(postedMessages.at(-1).nativeAvailable, true);
 
@@ -152,7 +154,7 @@ test('discovery retries registration after the initial background handshake fail
         if (message.type === 'MW_REGISTER' && ++registrationAttempts === 1) {
           throw new Error('background was still starting');
         }
-        return { ok: true };
+        return { ok: true, hubSessionToken: 'session-2' };
       },
       onMessage: { addListener: listener => runtimeListeners.push(listener) }
     }

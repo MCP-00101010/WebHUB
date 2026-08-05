@@ -26,6 +26,7 @@ function loadStateScript() {
     bridge,
     console,
     structuredClone,
+    getResolvedThemeId: value => value || 'default-dark',
     localStorage: {
       getItem: key => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, String(value)),
@@ -41,6 +42,8 @@ function loadStateScript() {
     setTimeout,
     clearTimeout
   });
+  const schemaFilename = path.join(__dirname, '..', 'source', 'state-schema.js');
+  vm.runInContext(fs.readFileSync(schemaFilename, 'utf8'), context, { filename: schemaFilename });
   const filename = path.join(__dirname, '..', 'source', 'state.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   return { context, saves };
@@ -116,4 +119,30 @@ test('selected bookmark collection preserves tree order', () => {
   ];
   const selected = harness.context.collectSelectedBookmarksInTree(new Set(['three', 'one', 'two']), items);
   assert.deepEqual(JSON.parse(JSON.stringify(selected.map(item => item.id))), ['one', 'two', 'three']);
+});
+
+test('state loading repairs orphaned boards instead of deleting them', () => {
+  const harness = loadStateScript();
+  const saved = JSON.stringify({
+    hubName: 'Recovered hub',
+    boards: [{ id: 'orphan', title: 'Important Board', tabs: [] }],
+    navItems: [],
+    settings: {},
+    essentials: []
+  });
+  const parsed = harness.context.parseStateJson(saved);
+  assert.equal(parsed.boards.length, 1);
+  assert.equal(parsed.boards[0].id, 'orphan');
+  assert.equal(parsed.navItems.some(item => item.boardId === 'orphan'), true);
+  assert.equal(parsed.schemaVersion, 1);
+});
+
+test('persisted snapshots omit active-tab board compatibility aliases', () => {
+  const harness = loadStateScript();
+  const snapshot = JSON.parse(harness.context.serializeStateSnapshot());
+  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(Array.isArray(snapshot.boards[0].tabs[0].columns), true);
+  assert.equal('columns' in snapshot.boards[0], false);
+  assert.equal('inbox' in snapshot.boards[0], false);
+  assert.equal('backgroundImage' in snapshot.boards[0], false);
 });

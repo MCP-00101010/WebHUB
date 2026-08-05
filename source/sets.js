@@ -357,11 +357,6 @@ function _getBookmarkFromSetDragPayload() {
   return null;
 }
 
-function _resolveSetDropPosition(event, element) {
-  const rect = element.getBoundingClientRect();
-  return event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-}
-
 function _reorderSetItem(set, draggedItemId, targetItemId, position) {
   const fromIndex = (set.items || []).findIndex(item => item.id === draggedItemId);
   const targetIndex = (set.items || []).findIndex(item => item.id === targetItemId);

@@ -73,12 +73,6 @@ function hideContextMenu() {
   elements.contextMenu.innerHTML = '';
 }
 
-function _sortedBoardOptions(boards) {
-  return [...boards]
-    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
-    .map(board => ({ value: board.id, label: board.title || 'Untitled Board' }));
-}
-
 function _sortedInboxTargetOptions(boards, options = {}) {
   const excludeBoardId = options.excludeBoardId || null;
   const excludeTabId = options.excludeTabId || null;
@@ -308,6 +302,7 @@ function handleContextMenuAction(action) {
       const capturedBoardId = getActiveBoard()?.id;
       confirmDelete(key, label, () => {
         pushUndoSnapshot();
+        disposeWidgetsInValue(capturedItem);
         pushToTrash(capturedItem, { area: 'board-item', boardId: capturedBoardId, columnId: captured.columnId, parentId: captured.parentId });
         deleteBoardTarget(captured);
         renderAll();
@@ -333,9 +328,11 @@ function handleContextMenuAction(action) {
         pushUndoSnapshot();
         if (isNavBoard) {
           const fullBoard = state.boards.find(b => b.id === capturedNavBoardId);
+          disposeWidgetsInValue(fullBoard);
           pushToTrash({ navItem: capturedNavItem, board: fullBoard ? cloneData(fullBoard) : null }, { area: 'nav-board', parentId: capturedNavParentId });
           deleteBoardAndNavItem(capturedNavItemId, capturedNavBoardId);
         } else {
+          disposeWidgetsInValue(capturedNavItem);
           pushToTrash(capturedNavItem, { area: 'nav-item', parentId: capturedNavParentId });
           removeNavItemById(capturedNavItemId);
         }
@@ -400,7 +397,7 @@ function handleContextMenuAction(action) {
       break;
     }
     case 'deleteImportItem': {
-      const item = findImportManagerItemById(contextTarget.itemId)?.item || contextTarget.item;
+      const item = findImportManagerItemPath(contextTarget.itemId)?.item || contextTarget.item;
       if (!item) break;
       const label = item.type === 'folder'
         ? `Delete folder "${item.title}" and all imported contents?`
@@ -690,7 +687,10 @@ function handleContextMenuAction(action) {
       showFolderModal('edit', contextTarget);
       break;
     case 'editWidget':
-      openWidgetSettings(contextTarget.item, () => { renderAll(); saveState(); }, {
+      openWidgetSettings(contextTarget.item, () => {
+        const context = contextTarget.area === 'nav-item' ? 'navpane' : 'column';
+        if (!refreshRenderedWidget(contextTarget.item, context)) renderAll();
+      }, {
         widgetContext: contextTarget.area === 'nav-item' ? 'navpane' : 'column',
         sidebarBottomAvailable: contextTarget.area === 'nav-item' && !contextTarget.parentId
       });
@@ -993,6 +993,17 @@ function handleSearchResultContextMenu(event, item, meta) {
         { label: 'Delete set', action: 'deleteSet' }
       ]);
       return;
+  }
+  if (meta.area === 'import-manager-item') {
+    contextTarget = { area: 'import-manager-item', itemId: item.id, item, parentId: null };
+    const activeTabOption = _canSendImportToActiveTab()
+      ? [{ label: 'Send to Active Tab', action: 'sendImportToActiveTab' }]
+      : [];
+    const options = item.type === 'folder'
+      ? [...activeTabOption, { label: 'Send to tab inbox…', action: 'sendImportToInbox' }, { label: 'Open all', action: 'openAllImports' }, { label: 'Delete folder', action: 'deleteImportItem' }]
+      : [{ label: 'Open in new tab', action: 'openNewTab' }, ...activeTabOption, { label: 'Send to tab inbox…', action: 'sendImportToInbox' }, { label: 'Delete bookmark', action: 'deleteImportItem' }];
+    showContextMenu(event.clientX, event.clientY, options);
+    return;
   }
   if (item.type === 'board') {
     handleNavContextMenu(event, item, null, 0);

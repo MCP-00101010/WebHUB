@@ -12,6 +12,7 @@ let nativeError = '';
 let hubPageUrl = '';
 let hubRelayError = '';
 let hubRegisteredAt = 0;
+const hubRegistrations = new Map();
 let storageInfoReady = false;
 let fileSchemeAccess = null;
 let fileSchemeAccessRequired = false;
@@ -33,6 +34,15 @@ const FEED_FETCH_TIMEOUT_MS = 15000;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 const NATIVE_REQUEST_TIMEOUT_MS = 15000;
 const NATIVE_RETRY_COOLDOWN_MS = 5000;
+const HUB_PAGE_REQUEST_TYPES = new Set([
+  'MW_PING', 'MW_GET_STORAGE_INFO', 'MW_SET_DATABASE_PATH', 'MW_PICK_DATABASE_PATH',
+  'MW_SAVE', 'MW_LOAD', 'MW_LOAD_SHARED_CHUNK', 'MW_GET_DATABASE_FILE_INFO',
+  'MW_OPEN_FILE_PICKER', 'MW_BEGIN_ASSET_WRITE', 'MW_APPEND_ASSET_WRITE',
+  'MW_FINISH_ASSET_WRITE', 'MW_ABORT_ASSET_WRITE', 'MW_CACHE_ASSET_URL',
+  'MW_FETCH_FAVICON', 'MW_FETCH_FEED', 'MW_SECRET_STATUS', 'MW_SECRET_GET',
+  'MW_SECRET_SET', 'MW_SECRET_DELETE', 'MW_SECRET_LIST', 'MW_LIST_THEMES',
+  'MW_WRITE_THEME'
+]);
 
 
 // Keep one native-host process alive for startup and chunked reads. Firefox's
@@ -200,6 +210,7 @@ function deriveThemesDir() {
 function joinThemePath(filename) {
   const dir = deriveThemesDir();
   if (!dir) return null;
+  if (!/^[a-z0-9][a-z0-9_-]{0,79}\.json$/i.test(String(filename || ''))) return null;
   const sep = dir.includes('\\') ? '\\' : '/';
   return dir + sep + filename;
 }
@@ -230,9 +241,10 @@ function fileUrlToPath(url) {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'file:') return '';
-    let path = decodeURIComponent(parsed.pathname || '');
-    if (/^\/[a-zA-Z]:/.test(path)) path = path.slice(1);
-    return path.replace(/\//g, '\\');
+    const pathname = decodeURIComponent(parsed.pathname || '');
+    if (/^\/[a-zA-Z]:/.test(pathname)) return pathname.slice(1).replace(/\//g, '\\');
+    if (parsed.hostname) return `//${parsed.hostname}${pathname}`;
+    return pathname;
   } catch {
     return '';
   }
@@ -276,23 +288,60 @@ async function refreshFileSchemeAccess() {
   }
 }
 
-function rememberMorpheusTab(tab, pageUrl = '') {
+function createHubSessionToken() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function selectRegisteredHub() {
+  const candidates = [...hubRegistrations.entries()]
+    .sort((left, right) => {
+      const activeDifference = Number(right[1].active === true) - Number(left[1].active === true);
+      if (activeDifference) return activeDifference;
+      return (right[1].lastActiveAt || right[1].registeredAt) - (left[1].lastActiveAt || left[1].registeredAt);
+    });
+  const selected = candidates[0] || null;
+  morpheusTabId = selected?.[0] ?? null;
+  hubPageUrl = selected?.[1]?.url || '';
+  hubRegisteredAt = selected?.[1]?.registeredAt || 0;
+  return selected;
+}
+
+function rememberMorpheusTab(tab, pageUrl = '', options = {}) {
   if (tab?.id === undefined) return false;
   const url = pageUrl || tab.url || '';
   if (!isPotentialHubUrl(url)) return false;
-  morpheusTabId = tab.id;
-  hubPageUrl = url;
+  const existing = hubRegistrations.get(tab.id);
+  const now = Date.now();
+  const active = options.active === true || tab.active === true;
+  const registration = {
+    url,
+    active,
+    registeredAt: now,
+    lastActiveAt: active ? now : (existing?.lastActiveAt || 0),
+    sessionToken: options.sessionToken || existing?.sessionToken || createHubSessionToken()
+  };
+  hubRegistrations.set(tab.id, registration);
+  selectRegisteredHub();
   hubRelayError = '';
-  hubRegisteredAt = Date.now();
-  return true;
+  return registration;
 }
 
 function forgetMorpheusTab(tabId = morpheusTabId, error = '') {
-  if (tabId !== morpheusTabId) return;
-  morpheusTabId = null;
-  hubPageUrl = '';
-  hubRegisteredAt = 0;
+  hubRegistrations.delete(tabId);
+  selectRegisteredHub();
   hubRelayError = error || '';
+}
+
+function authorizeHubPageRequest(msg, sender) {
+  const tabId = sender?.tab?.id;
+  const registration = tabId === undefined ? null : hubRegistrations.get(tabId);
+  const pageUrl = msg?.pageUrl || sender?.tab?.url || '';
+  return !!registration
+    && msg?.morpheusPage === true
+    && msg?.hubSessionToken === registration.sessionToken
+    && pageUrl === registration.url
+    && (!sender.tab.url || sender.tab.url === registration.url);
 }
 
 async function discoverMorpheusTab(tab, { inject = false } = {}) {
@@ -301,7 +350,10 @@ async function discoverMorpheusTab(tab, { inject = false } = {}) {
     try {
       const response = await browser.tabs.sendMessage(tab.id, { type: 'MW_DISCOVER' });
       if (response?.isMorpheus === true && response?.registered !== false) {
-        rememberMorpheusTab(tab, response.pageUrl || tab.url || '');
+        rememberMorpheusTab(tab, response.pageUrl || tab.url || '', {
+          active: tab.active === true,
+          sessionToken: response.hubSessionToken || ''
+        });
         return true;
       }
       if (response?.isMorpheus === true && response?.error) hubRelayError = response.error;
@@ -546,7 +598,8 @@ async function getDatabaseFileInfo() {
   try {
     const res = await sendNativeRequest({
       type: 'STAT_FILE',
-      path: saveFilePath
+      path: saveFilePath,
+      includeHash: false
     });
     return {
       databasePath: saveFilePath || null,
@@ -577,10 +630,11 @@ function decodeChunkedText(chunks, totalSize) {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
-async function readNativeFileChunked(path) {
+async function readNativeFileChunkedOnce(path) {
   let offset = 0;
   let totalSize = 0;
   let fileInfo = null;
+  let readVersion = null;
   const chunks = [];
 
   while (true) {
@@ -588,10 +642,15 @@ async function readNativeFileChunked(path) {
       type: 'READ_FILE_CHUNK',
       path,
       offset,
-      length: DATABASE_READ_CHUNK_BYTES
+      length: DATABASE_READ_CHUNK_BYTES,
+      expectedVersion: readVersion
     });
     if (!res?.ok) throw new Error(res?.error || 'Native chunk read failed');
     fileInfo = res.fileInfo ? { ...(fileInfo || {}), ...res.fileInfo } : fileInfo;
+    readVersion = readVersion || res.readVersion || res.fileInfo?.version || null;
+    if (res.readVersion && readVersion !== res.readVersion) {
+      throw new Error('Shared database changed during chunked read; retry required');
+    }
     if (fileInfo && fileInfo.exists === false) {
       return { content: null, fileInfo };
     }
@@ -603,13 +662,31 @@ async function readNativeFileChunked(path) {
     if (!bytes.length) throw new Error('Native chunk read stalled');
   }
 
+  const receivedSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  if (totalSize && receivedSize !== totalSize) {
+    throw new Error(`Shared database chunk read was incomplete (${receivedSize} of ${totalSize} bytes)`);
+  }
+
   return {
-    content: decodeChunkedText(chunks, totalSize || chunks.reduce((sum, chunk) => sum + chunk.length, 0)),
+    content: decodeChunkedText(chunks, totalSize || receivedSize),
     fileInfo
   };
 }
 
-async function loadSharedStateChunk(offset = 0, length = PAGE_DATABASE_READ_CHUNK_BYTES) {
+async function readNativeFileChunked(path) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await readNativeFileChunkedOnce(path);
+    } catch (error) {
+      lastError = error;
+      if (!/changed during chunked read/i.test(error?.message || '')) throw error;
+    }
+  }
+  throw lastError || new Error('Shared database could not be read consistently');
+}
+
+async function loadSharedStateChunk(offset = 0, length = PAGE_DATABASE_READ_CHUNK_BYTES, expectedVersion = null) {
   await ensureNativeStorageReady();
   if (!nativeAvailable || !saveFilePath) {
     throw new Error('Shared database is not available');
@@ -620,7 +697,8 @@ async function loadSharedStateChunk(offset = 0, length = PAGE_DATABASE_READ_CHUN
     type: 'READ_FILE_CHUNK',
     path: saveFilePath,
     offset: safeOffset,
-    length: safeLength
+    length: safeLength,
+    expectedVersion: expectedVersion || null
   });
   if (!res?.ok) throw new Error(res?.error || 'Shared database chunk read failed');
   return {
@@ -628,6 +706,7 @@ async function loadSharedStateChunk(offset = 0, length = PAGE_DATABASE_READ_CHUN
     nextOffset: res.nextOffset ?? safeOffset,
     totalSize: res.totalSize ?? 0,
     done: res.done === true,
+    readVersion: res.readVersion || res.fileInfo?.version || null,
     fileInfo: res.fileInfo || null,
     databasePath: saveFilePath
   };
@@ -972,24 +1051,34 @@ async function pickDatabasePath(title, defaultName) {
 // ---------------------------------------------------------------------------
 
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (HUB_PAGE_REQUEST_TYPES.has(msg?.type) && !authorizeHubPageRequest(msg, sender)) {
+    sendResponse({ ok: false, error: 'This request is not authorized for the registered Hub page' });
+    return false;
+  }
   switch (msg.type) {
 
     case 'MW_PING':
       // Extension presence must not wait for native-host startup. The page asks
       // for authoritative storage info immediately after this handshake.
-      if (msg.morpheusPage === true && sender.tab) {
-        rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab.url || '');
-      }
+      if (sender.tab) rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab.url || '', {
+        active: msg.active === true,
+        sessionToken: msg.hubSessionToken || ''
+      });
       sendResponse({ ok: true, version: browser.runtime.getManifest?.()?.version || '', ...getStorageInfo() });
       break;
 
     case 'MW_REGISTER':
-      if (!rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab?.url || '')) {
+      {
+      const registration = rememberMorpheusTab(sender.tab, msg.pageUrl || sender.tab?.url || '', {
+        active: msg.active === true
+      });
+      if (!registration) {
         sendResponse({ ok: false, error: 'Hub registration came from an unsupported page' });
         break;
       }
-      sendResponse({ ok: true, ...getStorageInfo() });
+      sendResponse({ ok: true, hubSessionToken: registration.sessionToken, ...getStorageInfo() });
       break;
+      }
 
     case 'MW_GET_STATUS':
       if (!nativeAvailable) void ensureNativeStorageReady();
@@ -1039,7 +1128,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_LOAD_SHARED_CHUNK':
-      loadSharedStateChunk(msg.offset, msg.length)
+      loadSharedStateChunk(msg.offset, msg.length, msg.expectedVersion)
         .then(result => sendResponse({ ok: true, ...result }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
@@ -1093,10 +1182,6 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case 'MW_FETCH_FEED':
-      if (msg.morpheusPage !== true || !sender.tab || !isPotentialHubUrl(msg.pageUrl || sender.tab.url || '')) {
-        sendResponse({ ok: false, error: 'Feed fetch is only available to the open Hub page' });
-        break;
-      }
       fetchFeedText(msg)
         .then(res => sendResponse(res || { ok: false, error: 'Feed request failed' }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
@@ -1154,9 +1239,16 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       ensureNativeStorageReady()
         .then(() => {
           const theme = msg.theme;
-          const path = joinThemePath((theme?.id || 'custom') + '.json');
-          if (!path || !nativeAvailable) return sendResponse({ ok: false, error: 'Not available' });
-          return sendNativeRequest({ type: 'WRITE_FILE', path, content: JSON.stringify(theme, null, 2) })
+          const themeId = theme?.id || 'custom';
+          const path = joinThemePath(themeId + '.json');
+          if (!path) return sendResponse({ ok: false, error: 'Theme ID must contain only letters, numbers, hyphens, or underscores' });
+          if (!nativeAvailable) return sendResponse({ ok: false, error: 'Not available' });
+          return sendNativeRequest({
+            type: 'WRITE_THEME_FILE',
+            themesDir: deriveThemesDir(),
+            themeId,
+            content: JSON.stringify(theme, null, 2)
+          })
             .then(res => sendResponse(res || { ok: true }));
         })
         .catch(e => sendResponse({ ok: false, error: e.message }));
@@ -1238,19 +1330,29 @@ if (browser.menus?.onClicked) {
 // ---------------------------------------------------------------------------
 
 browser.tabs.onRemoved.addListener(tabId => {
-  if (tabId === morpheusTabId) {
-    forgetMorpheusTab(tabId);
-  }
+  if (hubRegistrations.has(tabId)) forgetMorpheusTab(tabId);
 });
 
 if (browser.tabs.onUpdated) {
   browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (tabId === morpheusTabId && changeInfo.url && changeInfo.url !== hubPageUrl) {
+    const registration = hubRegistrations.get(tabId);
+    if (registration && changeInfo.url && changeInfo.url !== registration.url) {
       forgetMorpheusTab(tabId, 'The Hub tab navigated away');
     }
     if (changeInfo.status === 'complete' && isPotentialHubUrl(tab?.url || '')) {
       void discoverMorpheusTab(tab, { inject: true });
     }
+  });
+}
+
+if (browser.tabs.onActivated) {
+  browser.tabs.onActivated.addListener(({ tabId }) => {
+    const now = Date.now();
+    for (const [registeredTabId, registration] of hubRegistrations) {
+      registration.active = registeredTabId === tabId;
+      if (registration.active) registration.lastActiveAt = now;
+    }
+    selectRegisteredHub();
   });
 }
 

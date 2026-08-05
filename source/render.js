@@ -49,13 +49,14 @@ const searchFilters = {
 let activeTagFilters = new Set();
 let _tagFilterMode = 'or';
 let _tagPickerSort = 'az';
-const nativeFaviconPromises = new Map();
 const nativeFaviconMisses = new Set();
 const nativeFaviconRefreshRequests = new Set();
-
-function _faviconHostname(url) {
-  try { return new URL(url).hostname; } catch { return ''; }
-}
+const faviconResolutionPromises = new Map();
+let faviconCacheSaveTimer = null;
+let searchDataCacheSequence = -1;
+let persistentSearchDataCache = new WeakMap();
+let searchIndexSequence = -1;
+let persistentSearchIndex = [];
 
 function resolveSidebarContainerAlpha(board = getActiveBoard()) {
   const settings = state.settings || {};
@@ -75,33 +76,60 @@ function requestNativeFaviconRefresh(item) {
   nativeFaviconRefreshRequests.add(url);
 }
 
-async function fetchNativeFaviconForItem(item, img, options = {}) {
-  if (!item?.url || item.faviconCache || typeof bridge === 'undefined' || typeof bridge.fetchFavicon !== 'function') return false;
-  const url = item.url.trim();
-  if (!/^https?:\/\//i.test(url) || (!options.ignoreMiss && nativeFaviconMisses.has(url))) return false;
+function scheduleFaviconCacheSave() {
+  if (faviconCacheSaveTimer) return;
+  faviconCacheSaveTimer = setTimeout(() => {
+    faviconCacheSaveTimer = null;
+    if (!document.hidden) saveState();
+  }, 500);
+}
 
-  let promise = nativeFaviconPromises.get(url);
-  if (!promise) {
-    promise = bridge.fetchFavicon(url)
-      .then(result => result?.dataUrl || '')
-      .catch(() => '')
-      .finally(() => nativeFaviconPromises.delete(url));
-    nativeFaviconPromises.set(url, promise);
-  }
+function loadFaviconCandidate(src) {
+  return new Promise(resolve => {
+    const probe = new Image();
+    probe.onload = () => resolve(src);
+    probe.onerror = () => resolve('');
+    probe.src = src;
+  });
+}
 
-  const dataUrl = await promise;
-  if (!dataUrl) {
-    nativeFaviconMisses.add(url);
-    return false;
-  }
-  // Hidden hub tabs must not become background writers. Their in-memory item
-  // may already be stale by the time an asynchronous favicon fetch completes.
-  if (document.hidden) return false;
-  item.faviconCache = dataUrl;
-  img.onerror = null;
-  img.src = dataUrl;
-  saveState();
-  return true;
+async function resolveFaviconSource(item, options = {}) {
+  if (!item?.url) return '';
+  let parsed;
+  try { parsed = new URL(item.url); } catch { return ''; }
+  if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) return '';
+  const requestUrl = item.url.trim();
+  const cacheKey = parsed.origin;
+  const forceNative = options.forceNative === true;
+  if (!forceNative && faviconResolutionPromises.has(cacheKey)) return faviconResolutionPromises.get(cacheKey);
+
+  const request = (async () => {
+    if (
+      typeof bridge !== 'undefined' && typeof bridge.fetchFavicon === 'function'
+      && (forceNative || !nativeFaviconMisses.has(cacheKey))
+    ) {
+      const nativeResult = await bridge.fetchFavicon(requestUrl).catch(() => null);
+      if (nativeResult?.dataUrl) return nativeResult.dataUrl;
+      nativeFaviconMisses.add(cacheKey);
+    }
+
+    const candidates = [
+      `${parsed.origin}/favicon.ico`,
+      `${parsed.origin}/favicon.svg`,
+      `${parsed.origin}/apple-touch-icon.png`,
+      `${parsed.origin}/favicon-32x32.png`,
+      `https://icons.duckduckgo.com/ip3/${parsed.hostname}.ico`
+    ];
+    for (const candidate of candidates) {
+      const loaded = await loadFaviconCandidate(candidate);
+      if (loaded) return loaded;
+    }
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=64`;
+  })().finally(() => {
+    if (faviconResolutionPromises.get(cacheKey) === request) faviconResolutionPromises.delete(cacheKey);
+  });
+  if (!forceNative) faviconResolutionPromises.set(cacheKey, request);
+  return request;
 }
 
 function setFavicon(img, item, sz) {
@@ -110,61 +138,24 @@ function setFavicon(img, item, sz) {
     return;
   }
   if (!item.url) return;
-  let parsed;
-  try {
-    parsed = new URL(item.url);
-  } catch {
-    return;
+  const requestUrl = item.url.trim();
+  const forceNative = nativeFaviconRefreshRequests.delete(requestUrl);
+  if (forceNative) {
+    try {
+      const origin = new URL(requestUrl).origin;
+      nativeFaviconMisses.delete(origin);
+      faviconResolutionPromises.delete(origin);
+    } catch {}
   }
-  const hostname = parsed.hostname;
-  const origin = parsed.origin;
-  if (!hostname || !origin) return;
-  // faviconV2 returns 404 for unknown sites (unlike /s2/favicons which always returns 200+generic globe)
-  // Cap request size at 64 — larger values cause some services to return icons with white backgrounds
-  const srcs = [
-    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(item.url)}&size=64`,
-    `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(origin)}&size=64`,
-    `https://icon.horse/icon/${encodeURIComponent(item.url)}?size=64`,
-    `https://icon.horse/icon/${hostname}?size=64`,
-    `https://ico.faviconkit.net/favicon/${hostname}?sz=64`,
-    `https://icons.duckduckgo.com/ip3/${hostname}.ico`,
-    `${origin}/favicon.ico`,
-    `${origin}/favicon.png`,
-    `${origin}/favicon.svg`,
-    `${origin}/apple-touch-icon.png`,
-    `${origin}/apple-touch-icon-precomposed.png`,
-    `${origin}/favicon-32x32.png`,
-    `${origin}/favicon-16x16.png`,
-    `${origin}/android-chrome-192x192.png`,
-    `${origin}/android-chrome-512x512.png`
-  ];
-  const genericFallbackSrc = `https://www.google.com/s2/favicons?domain=${hostname}&sz=64`;
-  const seen = new Set();
-  const uniqueSrcs = srcs.filter(src => {
-    if (!src || seen.has(src)) return false;
-    seen.add(src);
-    return true;
-  });
-  let i = 0;
-  const tryNext = () => {
-    if (i >= uniqueSrcs.length) {
-      img.onerror = null;
-      fetchNativeFaviconForItem(item, img).then(found => {
-        if (!found && !item.faviconCache) img.src = genericFallbackSrc;
-      });
-      return;
+  resolveFaviconSource(item, { forceNative }).then(src => {
+    if (!src || document.hidden) return;
+    img.onerror = null;
+    img.src = src;
+    if (src.startsWith('data:') && item.faviconCache !== src) {
+      item.faviconCache = src;
+      scheduleFaviconCacheSave();
     }
-    img.onerror = tryNext;
-    img.src = uniqueSrcs[i++];
-  };
-  if (nativeFaviconRefreshRequests.has(item.url.trim())) {
-    nativeFaviconRefreshRequests.delete(item.url.trim());
-    fetchNativeFaviconForItem(item, img, { ignoreMiss: true }).then(found => {
-      if (!found && !item.faviconCache) tryNext();
-    });
-    return;
-  }
-  tryNext();
+  });
 }
 
 function createCountChip(value, title, variant = 'bookmark') {
@@ -489,7 +480,14 @@ function renderSearchResults(options = {}) {
     return searchFilters.typeBookmark;
   };
 
-  const searchDataCache = new WeakMap();
+  const mutationSequence = typeof getLocalStateMutationSequence === 'function'
+    ? getLocalStateMutationSequence()
+    : -1;
+  if (searchDataCacheSequence !== mutationSequence) {
+    searchDataCacheSequence = mutationSequence;
+    persistentSearchDataCache = new WeakMap();
+  }
+  const searchDataCache = persistentSearchDataCache;
   const getSearchData = (item, board) => {
     let perBoard = searchDataCache.get(item);
     if (!perBoard) {
@@ -533,48 +531,64 @@ function renderSearchResults(options = {}) {
     return [...activeTagFilters].some(id => data.tagIds.includes(id));
   };
 
-  const allBaseHits = [];
-  const collectFromList = (items, board, columnId) => {
+  const buildSearchIndex = () => {
+    const index = [];
+    const collectFromList = (items, board, columnId) => {
     const hits = [];
     for (const item of (items || [])) {
       const childItems = item.type === 'folder'
-        ? resolveFolderChildren(item, board)
+        ? (isDynamicFolder(item) ? [] : (item.children || []))
         : item.children;
       if (item.type === 'title') {
         if (childItems) hits.push(...collectFromList(childItems, board, columnId));
         continue;
       }
       const data = getSearchData(item, board);
-      if (matchesText(item, board, data)) hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board, searchData: data });
+      hits.push({ item, meta: { area: 'board-item', boardId: board.id, columnId }, board, searchData: data });
       if (childItems) hits.push(...collectFromList(childItems, board, columnId));
     }
     return hits;
+    };
+
+    state.essentials.forEach((item, slot) => {
+      if (!item) return;
+      index.push({ item, meta: { area: 'essential', slot }, board: null, searchData: getSearchData(item, null) });
+    });
+    (state.sets || []).forEach(set => {
+      const item = { id: set.id, type: 'set', title: set.title, itemCount: resolveSetItems(set).length };
+      index.push({ item, meta: { area: 'set', setId: set.id }, board: null, searchData: getSearchData(item, null) });
+    });
+    for (const board of state.boards) {
+      index.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null, searchData: getSearchData(board, null) });
+      board.speedDial.forEach(item => {
+        if (item) index.push({ item, meta: { area: 'speed-dial-item', boardId: board.id }, board, searchData: getSearchData(item, board) });
+      });
+      for (const tab of getBoardTabs(board)) {
+        (tab.columns || []).forEach(column => index.push(...collectFromList(column.items, board, column.id)));
+        const inbox = getTabInbox(tab, tab.id);
+        if (inbox) index.push(...collectFromList(inbox.items, board, inbox.id));
+      }
+    }
+    const collectImports = items => {
+      for (const item of (items || [])) {
+        index.push({
+          item,
+          meta: { area: 'import-manager-item', itemId: item.id },
+          board: null,
+          searchData: getSearchData(item, null)
+        });
+        if (item.children) collectImports(item.children);
+      }
+    };
+    collectImports(state.importManager?.items || []);
+    return index;
   };
 
-  state.essentials.forEach((e, i) => {
-    if (!e) return;
-    const data = getSearchData(e, null);
-    if (matchesText(e, null, data)) allBaseHits.push({ item: e, meta: { area: 'essential', slot: i }, board: null, searchData: data });
-  });
-  (state.sets || []).forEach(set => {
-    const item = { id: set.id, type: 'set', title: set.title, itemCount: resolveSetItems(set).length };
-    const data = getSearchData(item, null);
-    if (matchesText(item, null, data)) {
-      allBaseHits.push({ item, meta: { area: 'set', setId: set.id }, board: null, searchData: data });
-    }
-  });
-  for (const board of state.boards) {
-    const boardData = getSearchData(board, null);
-    if (matchesText(board, null, boardData)) allBaseHits.push({ item: board, meta: { area: 'board-item', boardId: board.id }, board: null, searchData: boardData });
-    board.speedDial.forEach(i => {
-      if (!i) return;
-      const data = getSearchData(i, board);
-      if (matchesText(i, board, data)) allBaseHits.push({ item: i, meta: { area: 'speed-dial-item', boardId: board.id }, board, searchData: data });
-    });
-    for (const tab of getBoardTabs(board)) {
-      (tab.columns || []).forEach(col => allBaseHits.push(...collectFromList(col.items, board, col.id)));
-    }
+  if (searchIndexSequence !== mutationSequence) {
+    searchIndexSequence = mutationSequence;
+    persistentSearchIndex = buildSearchIndex();
   }
+  const allBaseHits = persistentSearchIndex.filter(hit => matchesText(hit.item, hit.board, hit.searchData));
 
   const finalHits = hasTagFilters ? allBaseHits.filter(h => matchesTagFilter(h.searchData)) : allBaseHits;
 
@@ -584,6 +598,8 @@ function renderSearchResults(options = {}) {
       ? 'Essentials'
       : h.meta.area === 'set'
         ? 'Sets'
+        : h.meta.area === 'import-manager-item'
+          ? 'Import Manager'
         : (h.board?.title || state.boards.find(b => b.id === h.meta.boardId)?.title || '');
     if (!groupMap.has(label)) groupMap.set(label, []);
     groupMap.get(label).push(h);
@@ -1008,8 +1024,24 @@ function renderEssentials() {
   }
 }
 
+let navWidgetReusePool = null;
+
 function renderNav() {
-  clearNavWidgetTimers();
+  const reusableWidgets = new Map();
+  elements.navList.querySelectorAll('.nav-widget-item[data-id]').forEach(element => {
+    reusableWidgets.set(element.dataset.id, element);
+    element.remove();
+  });
+  const nextWidgetIds = new Set();
+  const collectWidgetIds = items => (items || []).forEach(item => {
+    if (item?.type === 'widget') nextWidgetIds.add(item.id);
+    if (item?.children) collectWidgetIds(item.children);
+  });
+  collectWidgetIds(state.navItems);
+  for (const widgetId of reusableWidgets.keys()) {
+    if (!nextWidgetIds.has(widgetId)) clearWidgetContextRuntime(widgetId, 'navpane');
+  }
+  navWidgetReusePool = reusableWidgets;
   elements.navList.innerHTML = '';
   const orderedItems = _orderedNavItemsForRender(state.navItems);
   if (orderedItems.some((item, index) => item !== state.navItems[index])) {
@@ -1019,6 +1051,7 @@ function renderNav() {
   bottomGroup.className = 'nav-bottom-widget-group';
   orderedItems.forEach(item => {
     const element = createNavItem(item);
+    element.classList.remove('nav-widget-item--bottom');
     if (_isBottomAlignedNavWidget(item)) {
       element.classList.add('nav-widget-item--bottom');
       bottomGroup.appendChild(element);
@@ -1027,6 +1060,7 @@ function renderNav() {
     }
   });
   if (bottomGroup.childElementCount) elements.navList.appendChild(bottomGroup);
+  navWidgetReusePool = null;
 }
 
 function _isBottomAlignedNavWidget(item) {
@@ -1042,12 +1076,23 @@ function _orderedNavItemsForRender(items) {
 }
 
 function createNavItem(item, depth = 0, parent = null) {
+  if (item.type === 'widget') {
+    const reusable = navWidgetReusePool?.get(item.id) || null;
+    const parentId = parent?.id || '';
+    if (
+      reusable
+      && reusable.dataset.parentId === parentId
+      && reusable.dataset.widgetRenderSignature === _widgetRenderSignature(item)
+    ) return reusable;
+    if (reusable) clearWidgetContextRuntime(item.id, 'navpane');
+  }
   const el = document.createElement('div');
   el.className = 'nav-item';
   el.dataset.id = item.id;
   el.dataset.type = item.type;
   el.draggable = true;
   if (parent?.type === 'folder') el.classList.add('nav-folder-child');
+  el.dataset.parentId = parent?.id || '';
 
   if (item.type === 'widget') {
     const def = WIDGET_REGISTRY[item.widgetType];
@@ -1061,6 +1106,7 @@ function createNavItem(item, depth = 0, parent = null) {
       });
       el.appendChild(body);
       def.render(item, body, 'navpane');
+      el.dataset.widgetRenderSignature = _widgetRenderSignature(item);
     }
     el.addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -1861,87 +1907,20 @@ function renderSpeedDial(board) {
   }
 }
 
-function renderFolderTabBar(folder) {
-  const tabBar = elements.collectionTabBar;
-  tabBar.innerHTML = '';
-
-  const boardNavItems = (folder.children || []).filter(c => c.type === 'board');
-  boardNavItems.forEach(navItem => {
-    const board = state.boards.find(b => b.id === navItem.boardId);
-    const tab = document.createElement('div');
-    tab.className = 'collection-tab' + (navItem.boardId === state.activeBoardId ? ' active' : '');
-    tab.dataset.boardId = navItem.boardId || '';
-    tab.dataset.navItemId = navItem.id;
-    const tabLabel = document.createElement('span');
-    tabLabel.className = 'collection-tab-label';
-    tabLabel.textContent = board?.title || navItem.title || 'Untitled Board';
-    tab.appendChild(tabLabel);
-    if (board) {
-      const counts = getBoardInboxCounts(board);
-      if (counts.bookmarks + counts.folders > 0) {
-        const indicator = document.createElement('span');
-        indicator.className = 'collection-tab-inbox-indicator';
-        indicator.title = 'Inbox has items';
-        tab.appendChild(indicator);
-      }
-    }
-    if (board?.locked) tab.classList.add('tab-locked');
-    tab.addEventListener('click', () => {
-      if (!navItem.boardId) return;
-      if (!_activateBoardSelection(navItem.boardId)) return;
-      renderAll();
-      saveState();
-    });
-    tab.addEventListener('contextmenu', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      handleFolderTabContextMenu(e, navItem, folder);
-    });
-    tab.draggable = true;
-    tab.addEventListener('dragstart', e => {
-      e.stopPropagation();
-      dragPayload = { area: 'folder-tab', navItemId: navItem.id, boardId: navItem.boardId, folderId: folder.id };
-      e.dataTransfer.setData('text/plain', navItem.boardId || '');
-      e.dataTransfer.effectAllowed = 'move';
-      requestAnimationFrame(() => tab.classList.add('dragging'));
-    });
-    tab.addEventListener('dragend', () => { tab.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
-    tabBar.appendChild(tab);
-  });
-
-  // Add board button
-  const addBtn = document.createElement('div');
-  addBtn.className = 'collection-tab-add';
-  addBtn.title = 'Add board to folder';
-  addBtn.appendChild(icon('icon-board-add'));
-  addBtn.addEventListener('click', () => {
-    pushUndoSnapshot();
-    const board = createBoardInFolder(folder, 'New Board');
-    if (board) createBoardTab(board, 'New Tab');
-    renderAll();
-    saveState();
-    if (board) showBoardSettingsPanel(true);
-  });
-  addBtn.addEventListener('contextmenu', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    contextTarget = { area: 'folder-tab-bar', folderId: folder.id };
-    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToFolder' }]);
-  });
-  tabBar.appendChild(addBtn);
-
-  tabBar.addEventListener('contextmenu', e => {
-    if (e.target.closest('.collection-tab, .collection-tab-add')) return;
-    e.preventDefault();
-    contextTarget = { area: 'folder-tab-bar', folderId: folder.id };
-    showContextMenu(e.clientX, e.clientY, [{ label: 'Add board', action: 'addBoardToFolder' }]);
-  });
-}
-
 function renderColumns(board, activeTab = null) {
-  clearColumnWidgetTimers();
+  const reusableWidgets = new Map();
+  elements.bookmarkColumns.querySelectorAll('.widget-card[data-item-id]').forEach(element => {
+    reusableWidgets.set(element.dataset.itemId, element);
+    element.remove();
+  });
   elements.bookmarkColumns.innerHTML = '';
   const columns = activeTab?.columns || board.columns || [];
+  const nextWidgetIds = new Set(columns.flatMap(column => (column.items || []))
+    .filter(item => item?.type === 'widget')
+    .map(item => item.id));
+  for (const [widgetId] of reusableWidgets) {
+    if (!nextWidgetIds.has(widgetId)) clearWidgetContextRuntime(widgetId, 'column');
+  }
   columns.forEach(column => {
     const columnEl = document.createElement('div');
     columnEl.className = 'board-column';
@@ -1954,7 +1933,19 @@ function renderColumns(board, activeTab = null) {
     columnEl.addEventListener('drop', event => handleBoardColumnDrop(event, column.id));
     columnEl.addEventListener('contextmenu', event => handleBoardColumnContextMenu(event, column.id));
 
-    column.items.forEach(item => columnEl.appendChild(createBoardItemElement(item, column.id, 1, null)));
+    column.items.forEach(item => {
+      const reusable = item?.type === 'widget' ? reusableWidgets.get(item.id) : null;
+      const canReuse = reusable
+        && reusable.dataset.columnId === column.id
+        && reusable.dataset.widgetRenderSignature === _widgetRenderSignature(item);
+      if (canReuse) {
+        columnEl.appendChild(reusable);
+        requestAnimationFrame(() => resizeWidgetRuntime(item.id));
+      } else {
+        if (reusable) clearWidgetContextRuntime(item.id, 'column');
+        columnEl.appendChild(createBoardItemElement(item, column.id, 1, null));
+      }
+    });
     if (column.items.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'column-empty-state';

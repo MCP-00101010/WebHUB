@@ -13,6 +13,7 @@ const WIDGET_CATEGORY_ORDER = [
 const _widgetTimers = new Map();
 const _widgetRefreshers = new Map();
 const _widgetFetches = new Map();
+const _widgetFetchControllers = new Map();
 const _weatherMemoryCache = new Map();
 const _weatherRuntime = new Map();
 const _weatherMapMemoryCache = new Map();
@@ -89,18 +90,104 @@ function _refreshWidget(widgetId, context) {
   if (typeof refresh === 'function') refresh();
 }
 
-function clearColumnWidgetTimers() {
-  _widgetTimers.forEach((timer, key) => {
-    if (key.endsWith(':column')) { clearInterval(timer); _widgetTimers.delete(key); }
-  });
-  _destroyAllWeatherMaps();
-  _destroyAllIssTrackers();
+function _widgetRenderSignature(widget) {
+  try { return JSON.stringify([widget?.title || '', widget?.config || {}, widget?.data || {}]); }
+  catch { return `${widget?.widgetType || ''}:${widget?.id || ''}`; }
 }
 
-function clearNavWidgetTimers() {
-  _widgetTimers.forEach((timer, key) => {
-    if (key.endsWith(':navpane')) { clearInterval(timer); _widgetTimers.delete(key); }
+function clearWidgetContextRuntime(widgetId, context) {
+  const key = `${widgetId}:${context}`;
+  const timer = _widgetTimers.get(key);
+  if (timer) clearInterval(timer);
+  _widgetTimers.delete(key);
+  _widgetRefreshers.delete(key);
+  if (context === 'column') {
+    _destroyWeatherMap(widgetId);
+    _destroyIssTracker(widgetId);
+  }
+}
+
+function resizeWidgetRuntime(widgetId) {
+  _weatherMapInstances.get(widgetId)?.map?.resize?.();
+  _issTrackerInstances.get(widgetId)?.map?.resize?.();
+}
+
+function refreshRenderedWidget(widget, context = 'column') {
+  if (!widget?.id) return false;
+  const selector = context === 'navpane' ? '.nav-widget-item' : '.widget-card';
+  const host = [...document.querySelectorAll(`${selector}[data-item-id], ${selector}[data-id]`)]
+    .find(element => (element.dataset.itemId || element.dataset.id) === widget.id);
+  const body = host?.querySelector(context === 'navpane' ? '.nav-widget-body' : '.widget-body');
+  const def = WIDGET_REGISTRY[widget.widgetType];
+  if (!host || !body || !def) return false;
+  clearWidgetContextRuntime(widget.id, context);
+  body.innerHTML = '';
+  def.render(widget, body, context);
+  host.dataset.widgetRenderSignature = _widgetRenderSignature(widget);
+  requestAnimationFrame(() => resizeWidgetRuntime(widget.id));
+  return true;
+}
+
+function disposeWidgetRuntime(widget) {
+  if (!widget?.id || widget.type !== 'widget') return;
+  const widgetId = widget.id;
+  for (const [key, timer] of _widgetTimers) {
+    if (key.startsWith(`${widgetId}:`)) {
+      clearInterval(timer);
+      _widgetTimers.delete(key);
+    }
+  }
+  for (const key of _widgetRefreshers.keys()) {
+    if (key.startsWith(`${widgetId}:`)) _widgetRefreshers.delete(key);
+  }
+  for (const key of _widgetFetches.keys()) {
+    if (key.includes(`:${widgetId}`)) {
+      _widgetFetchControllers.get(key)?.abort();
+      _widgetFetchControllers.delete(key);
+      _widgetFetches.delete(key);
+    }
+  }
+  _destroyWeatherMap(widgetId, { preserveView: false });
+  _destroyIssTracker(widgetId);
+  _weatherRuntime.delete(widgetId);
+  _weatherMapRuntime.delete(widgetId);
+  _astronomyRuntime.delete(widgetId);
+  _issTrackerRuntime.delete(widgetId);
+  _rssRuntime.delete(widgetId);
+  _ipInfoRuntime.delete(widgetId);
+
+  const keyedCaches = [
+    [_weatherMemoryCache, _weatherCacheKey(widgetId)],
+    [_weatherMapMemoryCache, _weatherMapCacheKey(widgetId)],
+    [_weatherMapViewMemory, _weatherMapViewKey(widgetId)],
+    [_rssMemoryCache, widgetId],
+    [_rssViewMemory, widgetId],
+    [_ipInfoMemoryCache, widgetId],
+    [_ipInfoSpeedMemoryCache, widgetId]
+  ];
+  keyedCaches.forEach(([cache, key]) => cache.delete(key));
+  [
+    _weatherCacheKey(widgetId),
+    _weatherMapCacheKey(widgetId),
+    _weatherMapViewKey(widgetId),
+    _issViewKey(widgetId),
+    _rssCacheKey(widgetId),
+    _rssViewKey(widgetId),
+    _ipInfoCacheKey(widgetId),
+    _ipInfoSpeedCacheKey(widgetId)
+  ].forEach(key => {
+    try { localStorage.removeItem(key); } catch {}
   });
+  const def = WIDGET_REGISTRY[widget.widgetType];
+  if (typeof def?.dispose === 'function') def.dispose(widget);
+}
+
+function disposeWidgetsInValue(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return;
+  seen.add(value);
+  if (value.type === 'widget') disposeWidgetRuntime(value);
+  if (Array.isArray(value)) value.forEach(entry => disposeWidgetsInValue(entry, seen));
+  else Object.values(value).forEach(entry => disposeWidgetsInValue(entry, seen));
 }
 
 function _newWidgetState(widgetType) {
@@ -123,6 +210,7 @@ function _appendWidgetActionButtons(host, widget, body, context, options = {}) {
     if (!body.isConnected) return;
     body.innerHTML = '';
     def.render(widget, body, context);
+    host.dataset.widgetRenderSignature = _widgetRenderSignature(widget);
   };
   const refreshAfterSettings = options.onSettingsRefresh || rerenderBody;
 
@@ -212,6 +300,8 @@ function createWidgetElement(widget, columnId) {
   });
   el.addEventListener('drop', e => handleBoardItemDrop(e, widget, columnId, null, 1));
 
+  el.dataset.widgetRenderSignature = _widgetRenderSignature(widget);
+
   return el;
 }
 
@@ -228,7 +318,25 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   if (!def) return;
 
   const savedConfig = cloneData(widget.config);
+  const savedData   = cloneData(widget.data);
   const savedTitle  = widget.title;
+  const draftWidget = {
+    ...widget,
+    title: savedTitle,
+    config: cloneData(savedConfig),
+    data: cloneData(savedData)
+  };
+
+  const applyDraftToWidget = () => {
+    widget.title = draftWidget.title;
+    widget.config = cloneData(draftWidget.config);
+    widget.data = cloneData(draftWidget.data);
+  };
+  const restoreSavedWidget = () => {
+    widget.title = savedTitle;
+    widget.config = cloneData(savedConfig);
+    widget.data = cloneData(savedData);
+  };
 
   const panel      = document.getElementById('widgetSettingsPanel');
   const titleInput = document.getElementById('wstgTitle');
@@ -239,7 +347,7 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   if (subtitle) subtitle.textContent = (options.isNew ? 'New ' : 'Edit ') + def.name;
   titleInput.value = widget.title || '';
   body.innerHTML   = '';
-  def.renderSettings(widget, body);
+  def.renderSettings(draftWidget, body);
   if (options.widgetContext === 'navpane' && options.sidebarBottomAvailable !== false) {
     const placementRow = document.createElement('div');
     placementRow.className = 'settings-row widget-sidebar-placement-row';
@@ -250,7 +358,7 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
     const placementInput = document.createElement('input');
     placementInput.type = 'checkbox';
     placementInput.dataset.cfg = 'sidebarBottom';
-    placementInput.checked = widget.config?.sidebarBottom === true;
+    placementInput.checked = draftWidget.config?.sidebarBottom === true;
     const placementTrack = document.createElement('span');
     placementTrack.className = 'toggle-track';
     placementToggle.append(placementInput, placementTrack);
@@ -279,9 +387,13 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
     body.querySelectorAll('[data-cfg]').forEach(input => {
       if (input.type === 'radio' && !input.checked) return;
       const key = input.dataset.cfg;
-      widget.config[key] = input.type === 'checkbox' ? input.checked : input.value;
+      draftWidget.config[key] = input.type === 'checkbox' ? input.checked : input.value;
     });
-    if (refreshPreview && def.liveSettingsPreview !== false && onRefresh) onRefresh();
+    draftWidget.title = titleInput.value.trim();
+    if (refreshPreview && def.liveSettingsPreview !== false && onRefresh) {
+      applyDraftToWidget();
+      onRefresh();
+    }
   };
   body.addEventListener('input',  () => syncConfig(), { signal: sig });
   body.addEventListener('change', () => syncConfig(), { signal: sig });
@@ -299,9 +411,10 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
       }
       errorEl?.classList.add('hidden');
     }
-    if (!options.deferUndo) pushUndoSnapshot();
-    widget.title = titleInput.value.trim();
     syncConfig(false);
+    restoreSavedWidget();
+    if (!options.deferUndo) pushUndoSnapshot();
+    applyDraftToWidget();
     if (typeof def.onSettingsCommit === 'function') def.onSettingsCommit(widget, savedConfig);
     if (options.onDone) options.onDone(widget);
     panel.classList.add('hidden');
@@ -312,8 +425,7 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
   }, { signal: sig, once: true });
 
   document.getElementById('wstgCancelBtn').addEventListener('click', () => {
-    widget.config = savedConfig;
-    widget.title  = savedTitle;
+    restoreSavedWidget();
     if (options.onCancel) options.onCancel(widget);
     panel.classList.add('hidden');
     elements.modalOverlay.classList.add('hidden');
@@ -329,6 +441,15 @@ function openWidgetSettings(widget, onRefresh, options = {}) {
 // ---- Shared helpers ----
 
 function _pad2(n) { return String(n).padStart(2, '0'); }
+
+function _escapeWidgetSettingValue(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function _fmtTime(date, config) {
   const h = date.getHours(), m = date.getMinutes(), s = date.getSeconds();
@@ -418,7 +539,7 @@ function _ensureApodData(widget) {
   widget.data.apodStatus = 'loading';
   widget.data.apodError = '';
 
-  const request = fetch(`https://api.nasa.gov/planetary/apod?api_key=${encodeURIComponent(apiKey)}&thumbs=true`)
+  const request = _fetchWithTimeout(`https://api.nasa.gov/planetary/apod?api_key=${encodeURIComponent(apiKey)}&thumbs=true`, { widgetFetchKey: fetchKey })
     .then(async response => {
       let payload = null;
       try {
@@ -439,6 +560,7 @@ function _ensureApodData(widget) {
       saveState();
     })
     .catch(error => {
+      if (error?.name === 'AbortError') return;
       if (document.hidden) return;
       widget.data.apodStatus = 'error';
       widget.data.apodError = error?.message || 'Unable to load the NASA APOD feed.';
@@ -579,7 +701,7 @@ function _ensureWeatherData(widget, options = {}) {
   runtime.autoRefreshHour = _weatherRefreshHour();
   runtime.status = 'loading';
   runtime.error = '';
-  const request = fetch(_weatherForecastUrl(widget))
+  const request = _fetchWithTimeout(_weatherForecastUrl(widget), { widgetFetchKey: fetchKey })
     .then(async response => {
       let payload = null;
       try { payload = await response.json(); } catch { payload = null; }
@@ -593,6 +715,7 @@ function _ensureWeatherData(widget, options = {}) {
       runtime.nextRetryAt = 0;
     })
     .catch(error => {
+      if (error?.name === 'AbortError') return;
       runtime.status = 'error';
       runtime.error = error?.message || 'Unable to load the weather forecast.';
       runtime.nextRetryAt = Date.now() + WEATHER_RETRY_DELAY_MS;
@@ -1006,7 +1129,7 @@ function _ensureWeatherMapData(widget, options = {}) {
   runtime.error = '';
 
   const requestUrl = _weatherMapForecastUrl(widget);
-  const request = fetch(requestUrl)
+  const request = _fetchWithTimeout(requestUrl, { widgetFetchKey: fetchKey }, 20000)
     .then(async response => {
       let payload = null;
       try { payload = await response.json(); } catch { payload = null; }
@@ -1022,6 +1145,7 @@ function _ensureWeatherMapData(widget, options = {}) {
       runtime.nextRetryAt = 0;
     })
     .catch(error => {
+      if (error?.name === 'AbortError') return;
       runtime.status = 'error';
       runtime.error = error?.message || 'Unable to load weather-map data.';
       runtime.nextRetryAt = Date.now() + WEATHER_RETRY_DELAY_MS;
@@ -1400,7 +1524,7 @@ function _getIssRuntime(widgetId) {
 
 async function _fetchIssTle() {
   try {
-    const response = await fetch('https://api.wheretheiss.at/v1/satellites/25544/tles');
+    const response = await _fetchWithTimeout('https://api.wheretheiss.at/v1/satellites/25544/tles');
     let payload = null;
     try { payload = await response.json(); } catch { payload = null; }
     if (!response.ok) throw new Error(payload?.error || `Where The ISS At returned ${response.status}`);
@@ -1412,7 +1536,7 @@ async function _fetchIssTle() {
     });
   } catch (primaryError) {
     try {
-      const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE');
+      const response = await _fetchWithTimeout('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE');
       const text = await response.text();
       if (!response.ok) throw new Error(`CelesTrak returned ${response.status}`);
       const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -1757,7 +1881,7 @@ WIDGET_REGISTRY['clock'] = {
       <div class="settings-row settings-row--top">
         <span>Timezone</span>
         <div class="tz-picker-group">
-          <input type="text" list="wstgTzList" data-cfg="timezone" placeholder="e.g. America/New_York" value="${c.timezone || ''}" class="settings-text-input" autocomplete="off" />
+          <input type="text" list="wstgTzList" data-cfg="timezone" placeholder="e.g. America/New_York" value="${_escapeWidgetSettingValue(c.timezone)}" class="settings-text-input" autocomplete="off" />
           <datalist id="wstgTzList"></datalist>
           <div class="tz-hint-row">
             <span class="tz-hint"></span>
@@ -1828,11 +1952,11 @@ WIDGET_REGISTRY['countdown'] = {
     container.innerHTML = `
       <div class="settings-row">
         <span>Label</span>
-        <input type="text" data-cfg="label" value="${c.label || ''}" placeholder="Event name" class="settings-text-input" />
+        <input type="text" data-cfg="label" value="${_escapeWidgetSettingValue(c.label)}" placeholder="Event name" class="settings-text-input" />
       </div>
       <div class="settings-row">
         <span>Target date</span>
-        <input type="datetime-local" data-cfg="targetDate" value="${c.targetDate || ''}" class="settings-text-input" />
+        <input type="datetime-local" data-cfg="targetDate" value="${_escapeWidgetSettingValue(c.targetDate)}" class="settings-text-input" />
       </div>
       <div id="countdownDateError" class="settings-warning hidden">Target date must be in the future.</div>`;
   }
@@ -1864,7 +1988,7 @@ WIDGET_REGISTRY['notes'] = {
   renderSettings(widget, container) {
     const c = widget.config;
     container.innerHTML = `
-      <textarea data-cfg="content" class="settings-text-input widget-notes-settings-textarea" rows="8" placeholder="Type a note…">${c.content || ''}</textarea>`;
+      <textarea data-cfg="content" class="settings-text-input widget-notes-settings-textarea" rows="8" placeholder="Type a note…">${_escapeWidgetSettingValue(c.content)}</textarea>`;
   }
 };
 
@@ -2017,7 +2141,7 @@ WIDGET_REGISTRY['image'] = {
       <div class="settings-section widget-image-settings-section">
         <div class="settings-section-label">Image</div>
         <div class="settings-row widget-image-settings-url-row">
-          <input type="text" data-cfg="url" value="${c.url || ''}" placeholder="Enter URL" class="settings-text-input" />
+          <input type="text" data-cfg="url" value="${_escapeWidgetSettingValue(c.url)}" placeholder="Enter URL" class="settings-text-input" />
         </div>
         <div class="bg-drop-zone widget-image-settings-drop-zone">
           <span>Drop an image file here</span>
@@ -2037,7 +2161,7 @@ WIDGET_REGISTRY['image'] = {
       <div class="settings-section widget-image-caption-section">
         <div class="settings-section-label">Caption</div>
         <div class="settings-row widget-image-caption-row">
-          <input type="text" data-cfg="caption" value="${c.caption || ''}" placeholder="Optional caption" class="settings-text-input" />
+          <input type="text" data-cfg="caption" value="${_escapeWidgetSettingValue(c.caption)}" placeholder="Optional caption" class="settings-text-input" />
         </div>
       </div>`;
 
@@ -2524,65 +2648,18 @@ WIDGET_REGISTRY['weather'] = {
     const results = container.querySelector('.weather-location-results');
     selected.textContent = c.locationName ? `Selected: ${c.locationName}` : 'No location selected.';
 
-    const showSearchMessage = (message, isError = false) => {
-      results.innerHTML = '';
-      const row = document.createElement('div');
-      row.className = `weather-location-message${isError ? ' is-error' : ''}`;
-      row.textContent = message;
-      results.appendChild(row);
-    };
-
-    const runSearch = async () => {
-      const query = input.value.trim();
-      if (query.length < 2) {
-        showSearchMessage('Enter at least two characters.', true);
-        return;
+    _bindOpenMeteoLocationSearch({
+      input,
+      button: searchBtn,
+      results,
+      signal: _wstgAbort?.signal,
+      onSelect(location, label) {
+        widget.config.locationName = label;
+        widget.config.latitude = location.latitude;
+        widget.config.longitude = location.longitude;
+        widget.config.timezone = location.timezone || 'auto';
+        selected.textContent = `Selected: ${label}`;
       }
-      searchBtn.disabled = true;
-      showSearchMessage('Searching...');
-      try {
-        const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-        url.searchParams.set('name', query);
-        url.searchParams.set('count', '6');
-        url.searchParams.set('language', (navigator.language || 'en').split('-')[0]);
-        url.searchParams.set('format', 'json');
-        const response = await fetch(url, { signal: _wstgAbort?.signal });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload?.reason || `Location search returned ${response.status}`);
-        const locations = Array.isArray(payload?.results) ? payload.results : [];
-        results.innerHTML = '';
-        if (!locations.length) {
-          showSearchMessage('No matching locations found.');
-          return;
-        }
-        locations.forEach(location => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'weather-location-result';
-          const parts = [location.name, location.admin1, location.country].filter(Boolean);
-          button.textContent = [...new Set(parts)].join(', ');
-          button.addEventListener('click', () => {
-            widget.config.locationName = button.textContent;
-            widget.config.latitude = location.latitude;
-            widget.config.longitude = location.longitude;
-            widget.config.timezone = location.timezone || 'auto';
-            selected.textContent = `Selected: ${button.textContent}`;
-            results.innerHTML = '';
-          });
-          results.appendChild(button);
-        });
-      } catch (error) {
-        if (error?.name !== 'AbortError') showSearchMessage(error?.message || 'Location search failed.', true);
-      } finally {
-        searchBtn.disabled = false;
-      }
-    };
-
-    searchBtn.addEventListener('click', runSearch);
-    input.addEventListener('keydown', event => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      runSearch();
     });
   }
 };
@@ -3129,66 +3206,19 @@ WIDGET_REGISTRY['weatherMap'] = {
       if (!settingsSignal?.aborted) updatePreview();
     });
 
-    const showSearchMessage = (message, isError = false) => {
-      results.innerHTML = '';
-      const row = document.createElement('div');
-      row.className = `weather-location-message${isError ? ' is-error' : ''}`;
-      row.textContent = message;
-      results.appendChild(row);
-    };
-
-    const runSearch = async () => {
-      const query = input.value.trim();
-      if (query.length < 2) {
-        showSearchMessage('Enter at least two characters.', true);
-        return;
+    _bindOpenMeteoLocationSearch({
+      input,
+      button: searchBtn,
+      results,
+      signal: _wstgAbort?.signal,
+      onSelect(result, label) {
+        widget.config.locationName = label;
+        widget.config.latitude = result.latitude;
+        widget.config.longitude = result.longitude;
+        widget.config.timezone = result.timezone || 'auto';
+        selected.textContent = `Origin: ${label}`;
+        updatePreview();
       }
-      searchBtn.disabled = true;
-      showSearchMessage('Searching...');
-      try {
-        const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-        url.searchParams.set('name', query);
-        url.searchParams.set('count', '6');
-        url.searchParams.set('language', (navigator.language || 'en').split('-')[0]);
-        url.searchParams.set('format', 'json');
-        const response = await fetch(url, { signal: _wstgAbort?.signal });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload?.reason || `Location search returned ${response.status}`);
-        const locations = Array.isArray(payload?.results) ? payload.results : [];
-        results.innerHTML = '';
-        if (!locations.length) {
-          showSearchMessage('No matching locations found.');
-          return;
-        }
-        locations.forEach(result => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'weather-location-result';
-          const parts = [result.name, result.admin1, result.country].filter(Boolean);
-          button.textContent = [...new Set(parts)].join(', ');
-          button.addEventListener('click', () => {
-            widget.config.locationName = button.textContent;
-            widget.config.latitude = result.latitude;
-            widget.config.longitude = result.longitude;
-            widget.config.timezone = result.timezone || 'auto';
-            selected.textContent = `Origin: ${button.textContent}`;
-            results.innerHTML = '';
-            updatePreview();
-          });
-          results.appendChild(button);
-        });
-      } catch (error) {
-        if (error?.name !== 'AbortError') showSearchMessage(error?.message || 'Location search failed.', true);
-      } finally {
-        searchBtn.disabled = false;
-      }
-    };
-
-    searchBtn.addEventListener('click', runSearch);
-    input.addEventListener('keydown', event => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      runSearch();
     });
   }
 };
@@ -4148,57 +4178,19 @@ WIDGET_REGISTRY['astronomy'] = {
       if (disabled) results.innerHTML = '';
     });
 
-    const showMessage = (message, isError = false) => {
-      results.innerHTML = '';
-      const row = document.createElement('div');
-      row.className = `weather-location-message${isError ? ' is-error' : ''}`;
-      row.textContent = message;
-      results.appendChild(row);
-    };
-    const runSearch = async () => {
-      const query = input.value.trim();
-      if (query.length < 2) return showMessage('Enter at least two characters.', true);
-      searchBtn.disabled = true;
-      showMessage('Searching...');
-      try {
-        const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-        url.searchParams.set('name', query);
-        url.searchParams.set('count', '6');
-        url.searchParams.set('language', (navigator.language || 'en').split('-')[0]);
-        url.searchParams.set('format', 'json');
-        const response = await fetch(url, { signal: _wstgAbort?.signal });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload?.reason || `Location search returned ${response.status}`);
-        const locations = Array.isArray(payload?.results) ? payload.results : [];
-        results.innerHTML = '';
-        if (!locations.length) return showMessage('No matching locations found.');
-        locations.forEach(result => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'weather-location-result';
-          const parts = [result.name, result.admin1, result.country].filter(Boolean);
-          button.textContent = [...new Set(parts)].join(', ');
-          button.addEventListener('click', () => {
-            widget.config.locationName = button.textContent;
-            widget.config.latitude = result.latitude;
-            widget.config.longitude = result.longitude;
-            widget.config.timezone = result.timezone || 'auto';
-            selected.textContent = `Selected: ${button.textContent}`;
-            results.innerHTML = '';
-          });
-          results.appendChild(button);
-        });
-      } catch (error) {
-        if (error?.name !== 'AbortError') showMessage(error?.message || 'Location search failed.', true);
-      } finally {
-        searchBtn.disabled = useWeatherInput.checked;
+    _bindOpenMeteoLocationSearch({
+      input,
+      button: searchBtn,
+      results,
+      signal: _wstgAbort?.signal,
+      disabledAfter: () => useWeatherInput.checked,
+      onSelect(result, label) {
+        widget.config.locationName = label;
+        widget.config.latitude = result.latitude;
+        widget.config.longitude = result.longitude;
+        widget.config.timezone = result.timezone || 'auto';
+        selected.textContent = `Selected: ${label}`;
       }
-    };
-    searchBtn.addEventListener('click', runSearch);
-    input.addEventListener('keydown', event => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      runSearch();
     });
   }
 };

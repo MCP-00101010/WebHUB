@@ -2302,13 +2302,8 @@ input::placeholder {
 .board-column-item.folder-card {
   border-radius: 12px;
   padding: 4px 8px;
-  background: var(--surface-1);
-  border: none;
-}
-
-.nav-item.folder-card,
-.board-column-item.folder-card {
   background: transparent;
+  border: none;
 }
 
 
