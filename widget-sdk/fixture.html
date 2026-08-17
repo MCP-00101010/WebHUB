@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morpheus Widget SDK Fixture</title>
+  <link rel="stylesheet" href="../source/widget-sdk.css" />
+  <link rel="stylesheet" href="widget-template.css" />
+  <style>
+    body { margin: 32px; color: #e9edf5; background: #14171d; font: 14px system-ui, sans-serif; }
+    main { display: grid; gap: 16px; max-width: 720px; margin: auto; }
+    #host, pre { padding: 16px; border: 1px solid #3a4250; border-radius: 10px; background: #202630; }
+    button { width: fit-content; padding: 8px 12px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Widget SDK fixture</h1>
+    <p>Local packages remain disabled until explicitly enabled in this browser profile.</p>
+    <button id="enable" type="button">Enable and load local example</button>
+    <div id="host">No widget loaded.</div>
+    <pre id="report"></pre>
+  </main>
+  <script>const WIDGET_REGISTRY = {};</script>
+  <script src="../source/widget-sdk.js"></script>
+  <script>
+    document.getElementById('enable').addEventListener('click', () => {
+      WidgetSDK.localPackages.setEnabled(true);
+      const script = document.createElement('script');
+      script.src = 'widget-template.js';
+      script.onload = () => {
+        const descriptor = WidgetSDK.registry.get('local-example');
+        const widget = { id: 'fixture-widget', type: 'widget', widgetType: descriptor.id, title: '', config: { ...descriptor.defaultConfig }, data: {} };
+        const host = document.getElementById('host');
+        host.innerHTML = '';
+        WidgetSDK.runtime.render(descriptor, widget, host, 'column');
+        document.getElementById('report').textContent = JSON.stringify({
+          validation: WidgetSDK.registry.validate(descriptor),
+          source: descriptor.source,
+          trusted: descriptor.trusted,
+          capabilities: descriptor.capabilities,
+          responsive: descriptor.responsive
+        }, null, 2);
+      };
+      document.body.appendChild(script);
+    }, { once: true });
+  </script>
+</body>
+</html>

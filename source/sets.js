@@ -86,21 +86,26 @@ function showSetManagerForSet(setId, options = {}) {
   selectedSetId = set.id;
   showSetManagerPanel();
   if (options.focusTitle) {
-    requestAnimationFrame(() => document.getElementById('setsManagerTitleInput')?.focus());
+    requestAnimationFrame(() => {
+      const input = document.getElementById('setsManagerTitleInput');
+      input?.focus();
+      input?.select();
+    });
   }
 }
 
 function openSetById(setId) {
   const set = findSetById(setId);
-  const urls = collectSetUrls(set);
-  if (!urls.length) {
+  const items = resolveSetItems(set).filter(item => item?.url);
+  if (!items.length) {
     showNotice('This set has no bookmarks to open yet.');
     return;
   }
-  for (let i = urls.length - 1; i >= 0; i--) {
-    const url = urls[i];
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    recordBookmarkOpen(item);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = item.url;
     link.target = '_blank';
     link.rel = 'noreferrer noopener';
     link.style.display = 'none';
@@ -167,7 +172,7 @@ function createSetManagerItem(set, item) {
   }
 
   el.addEventListener('click', () => {
-    if (item.url) window.open(item.url, '_blank', 'noreferrer noopener');
+    if (item.url) openHubBookmark(item);
   });
   el.addEventListener('contextmenu', event => {
     event.preventDefault();

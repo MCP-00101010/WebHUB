@@ -1,0 +1,259 @@
+.phase2-nav,
+.phase2-row,
+.phase2-checks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phase2-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 0;
+  background: var(--surface-1);
+}
+
+.phase2-nav .secondary-btn.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.phase2-section,
+.phase2-list,
+.phase2-card-main,
+.phase2-transfer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.phase2-automation-intro,
+.phase2-test-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.phase2-automation-intro {
+  padding: 5px 2px 2px;
+}
+
+.phase2-automation-intro span,
+.phase2-test-panel > div:first-child span {
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.phase2-recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.phase2-recipe {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.phase2-recipe span {
+  color: var(--muted);
+  font-size: .74rem;
+  line-height: 1.35;
+}
+
+.phase2-recipe:hover,
+.phase2-recipe.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+}
+
+.phase2-rule-builder,
+.phase2-test-panel {
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 68%, transparent);
+}
+
+.phase2-rule-builder h4,
+.phase2-section-heading h4 {
+  margin: 0;
+}
+
+.phase2-builder-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.phase2-builder-steps > section {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+}
+
+.phase2-builder-match,
+.phase2-goal-controls {
+  display: grid;
+  gap: 7px;
+}
+
+.phase2-builder-match input,
+.phase2-builder-match select,
+.phase2-goal-controls input,
+.phase2-goal-controls select,
+.phase2-test-panel select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 5px 8px;
+  background: var(--surface-2);
+  color: inherit;
+}
+
+.phase2-rule-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.phase2-rule-advanced summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .78rem;
+}
+
+.phase2-form-grid--advanced {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.phase2-rule-sentence {
+  padding: 9px 11px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  font-size: .82rem;
+}
+
+.phase2-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.phase2-rule-card.is-disabled {
+  opacity: .56;
+}
+
+.phase2-rule-card small {
+  color: var(--muted);
+  font-size: .69rem;
+}
+
+.phase2-empty-rules {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 11px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.phase2-test-panel {
+  margin-top: 4px;
+}
+
+.phase2-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin: 10px 0 14px;
+}
+
+.phase2-field {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: .75rem;
+}
+
+.phase2-field input,
+.phase2-field select,
+.phase2-section > .phase2-row select,
+.phase2-transfer-card > select,
+.phase2-transfer-card > input[type=file] {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 5px 8px;
+  background: var(--surface-2);
+  color: inherit;
+}
+
+.phase2-checks {
+  align-content: center;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.phase2-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.phase2-card,
+.phase2-preview,
+.phase2-transfer-card {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  padding: 10px;
+}
+
+.phase2-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.phase2-card.selected { border-color: var(--accent); }
+.phase2-card-main { min-width: 0; gap: 2px; }
+.phase2-card-main span { color: var(--muted); font-size: .76rem; }
+.phase2-preview { color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.phase2-sticky-actions { margin-top: 12px; }
+
+.phase2-transfer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.phase2-transfer-card h4 { margin: 0; }
+
+@media (max-width: 760px) {
+  .phase2-form-grid,
+  .phase2-transfer-grid,
+  .phase2-builder-steps { grid-template-columns: 1fr; }
+  .phase2-recipe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .phase2-card { grid-template-columns: auto minmax(0, 1fr); }
+  .phase2-card > .phase2-row { grid-column: 1 / -1; }
+}

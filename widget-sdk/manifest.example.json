@@ -1,0 +1,20 @@
+{
+  "id": "local-example",
+  "name": "Local Example",
+  "category": "Other",
+  "description": "Minimal local widget package template",
+  "allowedIn": ["column"],
+  "defaultConfig": { "greeting": "Hello from a local widget" },
+  "defaultData": {},
+  "settingsSchema": {
+    "type": "object",
+    "properties": { "greeting": { "type": "string" } },
+    "additionalProperties": false
+  },
+  "capabilities": {
+    "timers": true,
+    "localCache": { "quotaBytes": 32768 }
+  },
+  "responsive": { "minWidth": 180, "preferredWidth": 320, "compactBelow": 220 },
+  "lifecycle": ["render", "renderSettings", "reload", "migrate", "cleanup"]
+}

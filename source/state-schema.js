@@ -1,6 +1,6 @@
 // Persisted-state versioning and non-destructive structural repair.
 
-const CURRENT_STATE_SCHEMA_VERSION = 1;
+const CURRENT_STATE_SCHEMA_VERSION = 2;
 
 function collectReferencedBoardIds(items) {
   const ids = new Set();
@@ -40,6 +40,8 @@ function migrateStateSchema(parsed) {
   const sourceVersion = Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0;
   // Version 1 formalizes the normalized tab-based board schema. The legacy
   // normalizers in state.js remain the migration body for unversioned data.
+  // Version 2 adds portable automation rules and saved browser sessions. The
+  // records are normalized by state.js so old databases remain valid.
   parsed.schemaVersion = Math.max(sourceVersion, CURRENT_STATE_SCHEMA_VERSION);
   return parsed;
 }

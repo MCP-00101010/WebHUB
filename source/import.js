@@ -109,17 +109,17 @@ function hideImportManagerPanel() {
   _finalizeUtilityPanelClose(panel);
 }
 
-function _collectImportUrls(items) {
-  const urls = [];
+function _collectImportBookmarks(items) {
+  const bookmarks = [];
   for (const item of (items || [])) {
-    if (item?.type === 'bookmark' && item.url) urls.push(item.url);
-    if (item?.children) urls.push(..._collectImportUrls(item.children));
+    if (item?.type === 'bookmark' && item.url) bookmarks.push(item);
+    if (item?.children) bookmarks.push(..._collectImportBookmarks(item.children));
   }
-  return urls;
+  return bookmarks;
 }
 
 function _openImportFolder(item) {
-  _collectImportUrls([item]).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
+  _collectImportBookmarks([item]).forEach(bookmark => openHubBookmark(bookmark));
 }
 
 function _canSendImportToActiveTab() {
@@ -266,7 +266,7 @@ function _createImportManagerItem(item, depth = 1, parentFolder = null) {
     }
 
     itemEl.addEventListener('click', () => {
-      if (item.url) window.open(item.url, '_blank', 'noreferrer noopener');
+      if (item.url) openHubBookmark(item);
     });
   }
 
@@ -535,6 +535,11 @@ async function receiveExternalImportItems(items, options = {}, allowRebase = tru
 
   pushUndoSnapshot();
   state.importManager.items.push(...missing);
+  if (typeof phaseTwoApplyAutomationRecords === 'function') {
+    const deliveryRecords = [];
+    phaseTwoWalkItems(missing, 'import-manager', deliveryRecords, state.importManager.items);
+    phaseTwoApplyAutomationRecords(deliveryRecords, { pushUndo: false, persist: false, render: false });
+  }
   state.importManager.lastImportedAt = new Date().toISOString();
   renderImportManagerPanel();
   const deliveryMutationSequence = typeof getLocalStateMutationSequence === 'function'

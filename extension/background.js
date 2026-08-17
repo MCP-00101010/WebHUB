@@ -13,6 +13,7 @@ let hubPageUrl = '';
 let hubRelayError = '';
 let hubRegisteredAt = 0;
 const hubRegistrations = new Map();
+let lastActiveWebTab = null;
 let storageInfoReady = false;
 let fileSchemeAccess = null;
 let fileSchemeAccessRequired = false;
@@ -31,17 +32,22 @@ const MAX_BACKGROUND_ASSET_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_NATIVE_FAVICON_BYTES = 1024 * 1024;
 const MAX_FEED_RESPONSE_BYTES = 2 * 1024 * 1024;
 const FEED_FETCH_TIMEOUT_MS = 15000;
+const URL_HEALTH_TIMEOUT_MS = 15000;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 const NATIVE_REQUEST_TIMEOUT_MS = 15000;
+const DIRECTORY_APPROVAL_TIMEOUT_MS = 300000;
 const NATIVE_RETRY_COOLDOWN_MS = 5000;
 const HUB_PAGE_REQUEST_TYPES = new Set([
   'MW_PING', 'MW_GET_STORAGE_INFO', 'MW_SET_DATABASE_PATH', 'MW_PICK_DATABASE_PATH',
   'MW_SAVE', 'MW_LOAD', 'MW_LOAD_SHARED_CHUNK', 'MW_GET_DATABASE_FILE_INFO',
   'MW_OPEN_FILE_PICKER', 'MW_BEGIN_ASSET_WRITE', 'MW_APPEND_ASSET_WRITE',
   'MW_FINISH_ASSET_WRITE', 'MW_ABORT_ASSET_WRITE', 'MW_CACHE_ASSET_URL',
-  'MW_FETCH_FAVICON', 'MW_FETCH_FEED', 'MW_SECRET_STATUS', 'MW_SECRET_GET',
+  'MW_FETCH_FAVICON', 'MW_FETCH_FEED', 'MW_FETCH_CALENDAR', 'MW_CHECK_URL', 'MW_SECRET_STATUS', 'MW_SECRET_GET',
   'MW_SECRET_SET', 'MW_SECRET_DELETE', 'MW_SECRET_LIST', 'MW_LIST_THEMES',
-  'MW_WRITE_THEME'
+  'MW_WRITE_THEME', 'MW_CAPTURE_BROWSER_SESSION', 'MW_LAUNCH_BROWSER_SESSION',
+  'MW_LIST_DATABASE_BACKUPS', 'MW_READ_DATABASE_BACKUP', 'MW_CREATE_DATABASE_BACKUP',
+  'MW_MONITOR_SERVICE', 'MW_SYSTEM_METRICS', 'MW_APPROVE_DIRECTORY',
+  'MW_GIT_WORKSPACE_STATUS', 'MW_OPEN_APPROVED_DIRECTORY', 'MW_LIST_RECENT_FILES', 'MW_OPEN_APPROVED_FILE'
 ]);
 
 
@@ -135,13 +141,16 @@ function sendPersistentNativeMessage(message) {
 }
 
 function sendNativeRequest(message, timeoutMs = NATIVE_REQUEST_TIMEOUT_MS) {
+  const safeTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : NATIVE_REQUEST_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       nativeAvailable = false;
       storageInfoReady = false;
-      nativeError = `Native host request timed out after ${timeoutMs / 1000} seconds`;
+      nativeError = `Native host request timed out after ${safeTimeoutMs / 1000} seconds`;
       reject(new Error(nativeError));
-    }, timeoutMs);
+    }, safeTimeoutMs);
     Promise.resolve(browser.runtime.sendNativeMessage('morpheus_webhub', message))
       .then(response => {
         clearTimeout(timer);
@@ -470,8 +479,118 @@ function getStorageInfo() {
     hubRelayError,
     fileSchemeAccess,
     fileSchemeAccessRequired,
-    extensionId: browser.runtime.id || ''
+    extensionId: browser.runtime.id || '',
+    capabilities: ['urlHealth', 'serviceMonitor', 'systemMetrics', 'approvedDirectories', 'gitWorkspace', 'recentFiles', 'commandPalette', 'browserSessions', 'backupTimeline', 'portableBundles']
   };
+}
+
+function sanitizeSessionTab(tab, group = null) {
+  if (!/^https?:\/\//i.test(String(tab?.url || ''))) return null;
+  return {
+    title: String(tab.title || tab.url || ''),
+    url: String(tab.url),
+    pinned: tab.pinned === true,
+    active: tab.active === true,
+    group: group ? { title: String(group.title || ''), color: String(group.color || '') } : null
+  };
+}
+
+async function captureBrowserSession(scope = 'window') {
+  let tabs = [];
+  let skippedPrivate = 0;
+  if (scope === 'recent') {
+    const recentlyClosed = typeof browser.sessions?.getRecentlyClosed === 'function' ? await browser.sessions.getRecentlyClosed({ maxResults: 25 }) : [];
+    for (const entry of recentlyClosed) {
+      if (entry.tab) tabs.push(entry.tab);
+      if (entry.window?.tabs) tabs.push(...entry.window.tabs);
+    }
+  } else {
+    const query = { currentWindow: true };
+    if (scope === 'active-tab' || scope === 'group') query.active = true;
+    if (scope === 'highlighted') query.highlighted = true;
+    tabs = await browser.tabs.query(query);
+    if ((scope === 'active-tab' || scope === 'group') && (!tabs.length || tabs.every(tab => isPotentialHubUrl(tab.url || ''))) && lastActiveWebTab) {
+      tabs = [lastActiveWebTab];
+    }
+    if (scope === 'group') {
+      const groupId = tabs[0]?.groupId;
+      tabs = Number.isInteger(groupId) && groupId >= 0 ? await browser.tabs.query({ windowId: tabs[0]?.windowId, groupId }) : tabs;
+    }
+  }
+  const groupCache = new Map();
+  const sanitized = [];
+  for (const tab of tabs) {
+    if (tab.incognito === true) { skippedPrivate++; continue; }
+    let group = null;
+    if (Number.isInteger(tab.groupId) && tab.groupId >= 0 && typeof browser.tabGroups?.get === 'function') {
+      if (!groupCache.has(tab.groupId)) {
+        try { groupCache.set(tab.groupId, await browser.tabGroups.get(tab.groupId)); } catch { groupCache.set(tab.groupId, null); }
+      }
+      group = groupCache.get(tab.groupId);
+    }
+    const record = sanitizeSessionTab(tab, group);
+    if (record) sanitized.push(record);
+  }
+  return { ok: true, title: scope === 'recent' ? 'Recently Closed' : 'Firefox Session', createdAt: new Date().toISOString(), tabs: sanitized, skippedPrivate };
+}
+
+async function launchBrowserSession(tabs, options = {}) {
+  const safeTabs = (Array.isArray(tabs) ? tabs : []).map(tab => sanitizeSessionTab(tab, tab.group)).filter(Boolean);
+  const seen = new Set();
+  const unique = safeTabs.filter(tab => { const key = tab.url.replace(/#.*$/, ''); if (seen.has(key)) return false; seen.add(key); return true; });
+  const created = [];
+  const failures = [];
+  for (const tab of unique) {
+    try {
+      const opened = await browser.tabs.create({ url: tab.url, active: false, pinned: tab.pinned });
+      created.push({ id: opened.id, group: tab.group });
+    } catch (error) { failures.push({ url: tab.url, error: error?.message || String(error) }); }
+    if (options.staggerMs) await new Promise(resolve => setTimeout(resolve, Math.min(1000, Number(options.staggerMs))));
+  }
+  let groupingSupported = typeof browser.tabs.group === 'function' && typeof browser.tabGroups?.update === 'function';
+  if (options.recreateGroups !== false && groupingSupported) {
+    const groups = new Map();
+    for (const entry of created) if (entry.group?.title) {
+      const key = `${entry.group.title}|${entry.group.color}`;
+      if (!groups.has(key)) groups.set(key, { ...entry.group, tabIds: [] });
+      groups.get(key).tabIds.push(entry.id);
+    }
+    for (const group of groups.values()) {
+      try { const groupId = await browser.tabs.group({ tabIds: group.tabIds }); await browser.tabGroups.update(groupId, { title: group.title, color: group.color || undefined }); } catch { groupingSupported = false; }
+    }
+  }
+  return { ok: true, opened: created.length, failed: failures.length, failures, groupingSupported };
+}
+
+async function listDatabaseBackups() {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable || !saveFilePath) throw new Error('A native shared database must be configured');
+  return sendNativeRequest({ type: 'LIST_DATABASE_BACKUPS', databasePath: saveFilePath });
+}
+
+async function readDatabaseBackup(name) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable || !saveFilePath) throw new Error('A native shared database must be configured');
+  let offset = 0; let readVersion = null; let metadata = null; const chunks = [];
+  while (true) {
+    const res = await sendNativeRequest({ type: 'READ_DATABASE_BACKUP_CHUNK', databasePath: saveFilePath, name, offset, length: PAGE_DATABASE_READ_CHUNK_BYTES, expectedVersion: readVersion });
+    readVersion ||= res.readVersion;
+    metadata ||= res;
+    chunks.push(res.chunk || '');
+    if (res.done) break;
+    if (!res.nextOffset || res.nextOffset <= offset) throw new Error('Backup read stalled');
+    offset = res.nextOffset;
+  }
+  const bytes = chunks.map(chunk => Uint8Array.from(atob(chunk), character => character.charCodeAt(0)));
+  const total = bytes.reduce((sum, chunk) => sum + chunk.length, 0); const joined = new Uint8Array(total); let cursor = 0;
+  for (const chunk of bytes) { joined.set(chunk, cursor); cursor += chunk.length; }
+  return { ok: true, content: new TextDecoder().decode(joined), summary: metadata.summary, fileInfo: metadata.fileInfo };
+}
+
+async function createDatabaseBackup() {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable || !saveFilePath) throw new Error('A native shared database must be configured');
+  return sendNativeRequest({ type: 'CREATE_DATABASE_BACKUP', databasePath: saveFilePath });
 }
 
 async function writeHostConfig() {
@@ -851,6 +970,134 @@ async function fetchFeedText(options = {}) {
   }
 }
 
+async function checkUrlHealth(options = {}) {
+  const url = typeof options.url === 'string' ? options.url.trim() : '';
+  if (!/^https?:\/\//i.test(url) || url.length > 4096) {
+    return { ok: true, reachable: false, status: 0, finalUrl: url, errorType: 'unsupported', error: 'Only bounded HTTP and HTTPS URLs can be checked' };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), URL_HEALTH_TIMEOUT_MS);
+  const request = async method => fetch(url, {
+    method,
+    credentials: 'omit',
+    redirect: 'follow',
+    cache: 'no-store',
+    signal: controller.signal,
+    headers: method === 'GET' ? { Range: 'bytes=0-0' } : undefined
+  });
+  try {
+    let response = null;
+    let headError = null;
+    try {
+      response = await request('HEAD');
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      headError = error;
+    }
+    if (!response || response.status === 405 || response.status === 501) {
+      try {
+        response = await request('GET');
+      } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        if (headError) {
+          const combined = new Error(`HEAD failed: ${headError?.message || headError}; GET failed: ${error?.message || error}`);
+          combined.cause = error;
+          throw combined;
+        }
+        throw error;
+      }
+    }
+    try { await response.body?.cancel?.(); } catch {}
+    return {
+      ok: true,
+      reachable: true,
+      status: response.status,
+      statusText: String(response.statusText || '').slice(0, 128),
+      finalUrl: response.url || url,
+      errorType: response.status === 401 || response.status === 403 ? 'authentication' : (response.status >= 400 ? 'http' : '')
+    };
+  } catch (error) {
+    const message = error?.message || 'Network request failed';
+    const causeCode = String(error?.cause?.code || error?.code || '').toUpperCase();
+    const dnsFailure = /ENOTFOUND|EAI_AGAIN|DNS/.test(causeCode) || /DNS|name not resolved|host not found/i.test(message);
+    return {
+      ok: true,
+      reachable: false,
+      status: 0,
+      finalUrl: url,
+      errorType: error?.name === 'AbortError' ? 'timeout' : (dnsFailure ? 'dns' : 'network'),
+      error: error?.name === 'AbortError' ? 'Request timed out' : message
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function monitorService(options = {}) {
+  const url = typeof options.url === 'string' ? options.url.trim() : '';
+  if (!/^https:\/\//i.test(url) || url.length > 4096) return { ok: false, error: 'Only bounded HTTPS endpoints can be monitored' };
+  const timeoutSeconds = Math.max(3, Math.min(30, Number(options.timeoutSeconds) || 10));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      method: 'GET', credentials: 'omit', redirect: 'follow', cache: 'no-store', signal: controller.signal,
+      headers: { Accept: options.assertionType === 'json' ? 'application/json, text/plain;q=0.8, */*;q=0.2' : 'text/plain, application/json;q=0.8, */*;q=0.2' }
+    });
+    const declaredLength = Number(response.headers?.get?.('content-length') || 0);
+    if (declaredLength > 128 * 1024) return { ok: false, error: 'Service response exceeds the 128 KiB limit' };
+    let text = '';
+    if (options.assertionType === 'text' || options.assertionType === 'json') {
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > 128 * 1024) return { ok: false, error: 'Service response exceeds the 128 KiB limit' };
+      text = new TextDecoder('utf-8').decode(buffer);
+    } else {
+      try { await response.body?.cancel?.(); } catch {}
+    }
+    return { ok: true, status: response.status, finalUrl: response.url || url, text, durationMs: Date.now() - startedAt };
+  } catch (error) {
+    return { ok: false, error: error?.name === 'AbortError' ? 'Service check timed out' : (error?.message || 'Service check failed') };
+  } finally { clearTimeout(timer); }
+}
+
+async function fetchCalendarText(options = {}) {
+  const url = typeof options.url === 'string' ? options.url.trim() : '';
+  if (!/^https:\/\//i.test(url)) return { ok: false, error: 'Only HTTPS calendar URLs are supported' };
+  let parsedUrl;
+  try { parsedUrl = new URL(url); } catch { return { ok: false, error: 'Calendar URL is invalid' }; }
+  const requested = options.headers && typeof options.headers === 'object' ? options.headers : {};
+  const headers = {
+    Accept: typeof requested.Accept === 'string'
+      ? requested.Accept.slice(0, 256)
+      : 'text/calendar, application/json, text/plain, */*;q=0.2'
+  };
+  if (parsedUrl.hostname === 'api.football-data.org'
+      && typeof requested['X-Auth-Token'] === 'string' && requested['X-Auth-Token'].length <= 512) {
+    headers['X-Auth-Token'] = requested['X-Auth-Token'];
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: 'GET', credentials: 'omit', redirect: headers['X-Auth-Token'] ? 'error' : 'follow', cache: 'no-store', signal: controller.signal, headers
+    });
+    if (!response.ok) return { ok: false, error: `Calendar provider returned ${response.status}` };
+    const declaredLength = Number(response.headers?.get?.('content-length') || 0);
+    if (declaredLength > MAX_FEED_RESPONSE_BYTES) return { ok: false, error: 'Calendar response exceeds the 2 MiB limit' };
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > MAX_FEED_RESPONSE_BYTES) return { ok: false, error: 'Calendar response exceeds the 2 MiB limit' };
+    return {
+      ok: true, text: new TextDecoder('utf-8').decode(buffer), finalUrl: response.url || url,
+      contentType: response.headers?.get?.('content-type') || '', bytes: buffer.byteLength
+    };
+  } catch (error) {
+    return { ok: false, error: error?.name === 'AbortError' ? 'Calendar request timed out' : (error?.message || 'Calendar request failed') };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function secretStatus() {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: true, available: false, provider: '', error: nativeError || 'Native host not available' };
@@ -879,6 +1126,54 @@ async function secretList() {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: true, keys: [] };
   return sendNativeRequest({ type: 'SECRET_LIST' });
+}
+
+async function systemMetrics(metrics = []) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  const allowed = new Set(['cpu', 'memory', 'disk', 'network', 'uptime', 'battery', 'platform']);
+  return sendNativeRequest({ type: 'SYSTEM_METRICS', metrics: [...new Set((Array.isArray(metrics) ? metrics : []).filter(metric => allowed.has(metric)))] });
+}
+
+async function approveDirectory(purpose, title) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  if (!['git', 'recent-files'].includes(purpose)) return { ok: false, error: 'Unsupported directory purpose' };
+  return sendNativeRequest(
+    { type: 'APPROVE_DIRECTORY', purpose, title: String(title || 'Select folder').slice(0, 160) },
+    DIRECTORY_APPROVAL_TIMEOUT_MS
+  );
+}
+
+async function gitWorkspaceStatus(handle) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendNativeRequest({ type: 'GIT_WORKSPACE_STATUS', handle: String(handle || '').slice(0, 80) });
+}
+
+async function openApprovedDirectory(handle, purpose, action) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  if (!['git', 'recent-files'].includes(purpose) || !['folder', 'terminal'].includes(action)) return { ok: false, error: 'Unsupported directory action' };
+  return sendNativeRequest({ type: 'OPEN_APPROVED_DIRECTORY', handle: String(handle || '').slice(0, 80), purpose, action });
+}
+
+async function listRecentFiles(options = {}) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  const extensions = (Array.isArray(options.extensions) ? options.extensions : []).map(value => String(value).slice(0, 16)).slice(0, 20);
+  return sendNativeRequest({
+    type: 'LIST_RECENT_FILES', handle: String(options.handle || '').slice(0, 80), extensions,
+    maxAgeHours: Math.max(1, Math.min(8760, Number(options.maxAgeHours) || 168)),
+    limit: Math.max(1, Math.min(100, Number(options.limit) || 30)), recursive: options.recursive === true
+  });
+}
+
+async function openApprovedFile(handle, relativePath, action) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  if (!['open', 'reveal'].includes(action)) return { ok: false, error: 'Unsupported file action' };
+  return sendNativeRequest({ type: 'OPEN_APPROVED_FILE', handle: String(handle || '').slice(0, 80), relativePath: String(relativePath || '').slice(0, 2048), action });
 }
 
 
@@ -1187,6 +1482,50 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
+    case 'MW_FETCH_CALENDAR':
+      fetchCalendarText(msg)
+        .then(res => sendResponse(res || { ok: false, error: 'Calendar request failed' }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_CHECK_URL':
+      checkUrlHealth(msg)
+        .then(res => sendResponse(res))
+        .catch(e => sendResponse({ ok: true, reachable: false, status: 0, finalUrl: msg.url || '', error: e.message }));
+      return true;
+
+    case 'MW_MONITOR_SERVICE':
+      monitorService(msg)
+        .then(res => sendResponse(res))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_SYSTEM_METRICS':
+      systemMetrics(msg.metrics)
+        .then(res => sendResponse(res))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_APPROVE_DIRECTORY':
+      approveDirectory(msg.purpose, msg.title).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_GIT_WORKSPACE_STATUS':
+      gitWorkspaceStatus(msg.handle).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_OPEN_APPROVED_DIRECTORY':
+      openApprovedDirectory(msg.handle, msg.purpose, msg.action).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_LIST_RECENT_FILES':
+      listRecentFiles(msg).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_OPEN_APPROVED_FILE':
+      openApprovedFile(msg.handle, msg.relativePath, msg.action).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
     case 'MW_SECRET_STATUS':
       secretStatus()
         .then(res => sendResponse(res || { ok: true, available: false }))
@@ -1215,6 +1554,36 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       secretList()
         .then(res => sendResponse(res || { ok: true, keys: [] }))
         .catch(e => sendResponse({ ok: false, keys: [], error: e.message }));
+      return true;
+
+    case 'MW_CAPTURE_BROWSER_SESSION':
+      captureBrowserSession(msg.scope || 'window')
+        .then(sendResponse)
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_LAUNCH_BROWSER_SESSION':
+      launchBrowserSession(msg.tabs || [], { staggerMs: msg.staggerMs, recreateGroups: msg.recreateGroups })
+        .then(sendResponse)
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_LIST_DATABASE_BACKUPS':
+      listDatabaseBackups()
+        .then(sendResponse)
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_READ_DATABASE_BACKUP':
+      readDatabaseBackup(msg.name || '')
+        .then(sendResponse)
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_CREATE_DATABASE_BACKUP':
+      createDatabaseBackup()
+        .then(sendResponse)
+        .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case 'MW_LIST_THEMES': {
@@ -1325,6 +1694,22 @@ if (browser.menus?.onClicked) {
   });
 }
 
+if (browser.commands?.onCommand) {
+  browser.commands.onCommand.addListener(command => {
+    if (command !== 'open-command-palette') return;
+    void ensureMorpheusTab()
+      .then(async tab => {
+        if (!tab) throw new Error('Morpheus WebHub is not open');
+        if (browser.tabs.update) await browser.tabs.update(tab.id, { active: true }).catch(() => {});
+        if (tab.windowId !== undefined && browser.windows?.update) {
+          await browser.windows.update(tab.windowId, { focused: true }).catch(() => {});
+        }
+        return sendToMorpheus({ type: 'MW_OPEN_COMMAND_PALETTE' });
+      })
+      .catch(error => console.warn('Morpheus: command palette shortcut failed', error));
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
@@ -1353,6 +1738,11 @@ if (browser.tabs.onActivated) {
       if (registration.active) registration.lastActiveAt = now;
     }
     selectRegisteredHub();
+    if (typeof browser.tabs.get === 'function') {
+      void browser.tabs.get(tabId).then(tab => {
+        if (/^https?:\/\//i.test(tab?.url || '') && !isPotentialHubUrl(tab.url)) lastActiveWebTab = tab;
+      }).catch(() => {});
+    }
   });
 }
 

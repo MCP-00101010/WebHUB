@@ -10,6 +10,8 @@ const bridge = (() => {
   let _readyResolved = false;
   let _connectPromise = null;
   let _lastError = '';
+  let _extensionVersion = '';
+  let _capabilities = new Set();
 
   let _seq = 0;
   const _pending = new Map();
@@ -19,6 +21,8 @@ const bridge = (() => {
   const ASSET_WRITE_TIMEOUT_MS = 60000;
   const FAVICON_FETCH_TIMEOUT_MS = 30000;
   const FEED_FETCH_TIMEOUT_MS = 30000;
+  const URL_HEALTH_TIMEOUT_MS = 20000;
+  const DIRECTORY_APPROVAL_TIMEOUT_MS = 305000;
 
   function _send(type, payload = {}, options = {}) {
     return new Promise((resolve, reject) => {
@@ -123,6 +127,8 @@ const bridge = (() => {
           const recoveredAfterStartup = _readyResolved && !_available;
           _available = true;
           _nativeAvailable = res.nativeAvailable === true;
+          _extensionVersion = res.version || '';
+          _capabilities = new Set(Array.isArray(res.capabilities) ? res.capabilities : []);
           _lastError = '';
           if (recoveredAfterStartup) {
             window.dispatchEvent(new CustomEvent('morpheus:bridge-ready', {
@@ -133,6 +139,7 @@ const bridge = (() => {
         } catch (error) {
           _available = false;
           _nativeAvailable = false;
+          _capabilities = new Set();
           _lastError = error?.message || String(error);
           if (attempt < retries) await _sleep(delayMs);
         }
@@ -192,6 +199,12 @@ const bridge = (() => {
       }));
       return;
     }
+    if (e.data._push && e.data.type === 'MW_OPEN_COMMAND_PALETTE') {
+      window.dispatchEvent(new CustomEvent('morpheus:open-command-palette', {
+        detail: { pushRequestId: e.data.pushRequestId || '' }
+      }));
+      return;
+    }
 
     // Response to one of our _send() calls.
     if (!e.data._res) return;
@@ -216,11 +229,14 @@ const bridge = (() => {
     whenReady,
     isAvailable()       { return _available; },
     nativeIsAvailable() { return _nativeAvailable; },
+    supports(capability) { return _capabilities.has(capability); },
     getDiagnostics() {
       return {
         relayState: document.documentElement.dataset.morpheusExtensionRelay || 'not-injected',
         relayError: document.documentElement.dataset.morpheusExtensionError || '',
-        bridgeError: _lastError
+        bridgeError: _lastError,
+        extensionVersion: _extensionVersion,
+        capabilities: [..._capabilities]
       };
     },
 
@@ -231,9 +247,12 @@ const bridge = (() => {
         const res = await _send('MW_GET_STORAGE_INFO');
         _available = true;
         _nativeAvailable = res.nativeAvailable === true;
+        if (Array.isArray(res.capabilities)) _capabilities = new Set(res.capabilities);
         return {
           nativeAvailable: res.nativeAvailable === true,
-          databasePath: res.databasePath || null
+          databasePath: res.databasePath || null,
+          extensionVersion: res.version || _extensionVersion,
+          capabilities: Array.isArray(res.capabilities) ? res.capabilities : [..._capabilities]
         };
       } catch {
         _available = false;
@@ -321,6 +340,43 @@ const bridge = (() => {
         _nativeAvailable = false;
         return { databasePath: null, fileInfo: null };
       }
+    },
+
+    async captureBrowserSession(scope = 'window') {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('browserSessions')) throw new Error('Firefox session capture is unavailable');
+      const res = await _send('MW_CAPTURE_BROWSER_SESSION', { scope });
+      return { title: res.title || 'Browser Session', createdAt: res.createdAt, tabs: Array.isArray(res.tabs) ? res.tabs : [] };
+    },
+
+    async launchBrowserSession(tabs, options = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('browserSessions')) throw new Error('Firefox session launch is unavailable');
+      return _send('MW_LAUNCH_BROWSER_SESSION', {
+        tabs: Array.isArray(tabs) ? tabs : [],
+        staggerMs: Math.max(0, Math.min(1000, Number(options.staggerMs || 0))),
+        recreateGroups: options.recreateGroups !== false
+      }, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
+    },
+
+    async listDatabaseBackups() {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('backupTimeline')) return [];
+      const res = await _send('MW_LIST_DATABASE_BACKUPS', {}, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
+      return Array.isArray(res.backups) ? res.backups : [];
+    },
+
+    async readDatabaseBackup(name) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('backupTimeline')) throw new Error('Backup timeline is unavailable');
+      const res = await _send('MW_READ_DATABASE_BACKUP', { name }, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
+      return { content: res.content || '', summary: res.summary || null, fileInfo: res.fileInfo || null };
+    },
+
+    async createDatabaseSafetyBackup() {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('backupTimeline')) throw new Error('Native backup support is unavailable');
+      return _send('MW_CREATE_DATABASE_BACKUP', {}, { timeoutMs: LARGE_PAYLOAD_TIMEOUT_MS });
     },
 
     // Returns { name, dataUrl } or null (cancelled / unavailable).
@@ -440,6 +496,120 @@ const bridge = (() => {
         console.warn('Morpheus: extension feed fetch failed', error);
         return null;
       }
+    },
+
+    async checkUrl(url) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) return { available: false, reachable: false, status: 0, finalUrl: url || '', error: 'Extension relay unavailable' };
+      const targetUrl = typeof url === 'string' ? url.trim() : '';
+      if (!/^https?:\/\//i.test(targetUrl)) return { available: true, reachable: false, status: 0, finalUrl: targetUrl, errorType: 'unsupported', error: 'Unsupported URL scheme' };
+      if (!_capabilities.has('urlHealth')) {
+        return {
+          available: false,
+          reachable: false,
+          status: 0,
+          finalUrl: targetUrl,
+          errorType: 'relay',
+          error: `Link Health requires the current Firefox extension${_extensionVersion ? `; detected ${_extensionVersion}` : ''}. Reload or update the extension.`
+        };
+      }
+      try {
+        const res = await _send('MW_CHECK_URL', { url: targetUrl }, { timeoutMs: URL_HEALTH_TIMEOUT_MS });
+        return {
+          available: true,
+          reachable: res.reachable !== false,
+          status: Number(res.status || 0),
+          statusText: res.statusText || '',
+          finalUrl: res.finalUrl || targetUrl,
+          errorType: res.errorType || '',
+          error: res.error || ''
+        };
+      } catch (error) {
+        const message = error?.message || 'URL check failed';
+        const relayFailure = /bridge error|relay|not registered|unsupported message/i.test(message);
+        return { available: !relayFailure, reachable: false, status: 0, finalUrl: targetUrl, errorType: relayFailure ? 'relay' : (/timed out/i.test(message) ? 'timeout' : 'network'), error: message };
+      }
+    },
+
+    async fetchCalendar(url, headers = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available) return null;
+      const calendarUrl = typeof url === 'string' ? url.trim() : '';
+      if (!/^https?:\/\//i.test(calendarUrl)) return null;
+      const safeHeaders = {};
+      if (typeof headers.Accept === 'string') safeHeaders.Accept = headers.Accept.slice(0, 256);
+      if (typeof headers['X-Auth-Token'] === 'string') safeHeaders['X-Auth-Token'] = headers['X-Auth-Token'].slice(0, 512);
+      try {
+        const res = await _send('MW_FETCH_CALENDAR', { url: calendarUrl, headers: safeHeaders }, { timeoutMs: FEED_FETCH_TIMEOUT_MS });
+        return res.ok && typeof res.text === 'string' ? {
+          text: res.text,
+          finalUrl: res.finalUrl || calendarUrl,
+          contentType: res.contentType || '',
+          bytes: Number(res.bytes || 0)
+        } : null;
+      } catch (error) {
+        console.warn('Morpheus: extension calendar fetch failed', error);
+        return null;
+      }
+    },
+
+    async monitorService(endpoint = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('serviceMonitor')) throw new Error('Service monitor relay is unavailable');
+      const res = await _send('MW_MONITOR_SERVICE', {
+        url: String(endpoint.url || '').slice(0, 4096),
+        timeoutSeconds: Math.max(3, Math.min(30, Number(endpoint.timeoutSeconds) || 10)),
+        assertionType: ['none', 'text', 'json'].includes(endpoint.assertionType) ? endpoint.assertionType : 'none'
+      }, { timeoutMs: Math.max(5000, Math.min(35000, (Number(endpoint.timeoutSeconds) || 10) * 1000 + 2000)) });
+      return {
+        status: Number(res.status || 0), finalUrl: res.finalUrl || endpoint.url || '',
+        text: typeof res.text === 'string' ? res.text : '', durationMs: Math.max(0, Number(res.durationMs) || 0)
+      };
+    },
+
+    async getSystemMetrics(metrics = []) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('systemMetrics')) throw new Error('System metrics are unavailable');
+      const allowed = new Set(['cpu', 'memory', 'disk', 'network', 'uptime', 'battery', 'platform']);
+      const res = await _send('MW_SYSTEM_METRICS', { metrics: [...new Set((Array.isArray(metrics) ? metrics : []).filter(metric => allowed.has(metric)))] });
+      return res.metrics && typeof res.metrics === 'object' ? res.metrics : {};
+    },
+
+    async approveDirectory(purpose, title = 'Select folder') {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('approvedDirectories')) throw new Error('Directory approval is unavailable');
+      const res = await _send('MW_APPROVE_DIRECTORY', { purpose, title }, { timeoutMs: DIRECTORY_APPROVAL_TIMEOUT_MS });
+      return res.directory || null;
+    },
+
+    async getGitWorkspaceStatus(handle) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('gitWorkspace')) throw new Error('Git workspace inspection is unavailable');
+      const res = await _send('MW_GIT_WORKSPACE_STATUS', { handle });
+      return res.repository || null;
+    },
+
+    async openApprovedDirectory(handle, purpose, action) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('approvedDirectories')) throw new Error('Native folder actions are unavailable');
+      const res = await _send('MW_OPEN_APPROVED_DIRECTORY', { handle, purpose, action });
+      if (res.ok === false) throw new Error(res.error || 'The native folder action failed');
+      return true;
+    },
+
+    async listRecentFiles(options = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('recentFiles')) throw new Error('Recent-file access is unavailable');
+      const res = await _send('MW_LIST_RECENT_FILES', options);
+      return res.result || null;
+    },
+
+    async openApprovedFile(handle, relativePath, action) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('recentFiles')) throw new Error('Native file actions are unavailable');
+      const res = await _send('MW_OPEN_APPROVED_FILE', { handle, relativePath, action });
+      if (res.ok === false) throw new Error(res.error || 'The native file action failed');
+      return true;
     },
 
     async secretStatus() {

@@ -27,6 +27,13 @@ function loadWidgets(fetchImpl = async () => ({ ok: true, json: async () => ({})
   vm.runInContext(fs.readFileSync(networkFilename, 'utf8'), context, { filename: networkFilename });
   const filename = path.join(__dirname, '..', 'source', 'widgets.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+  const sdkFilename = path.join(__dirname, '..', 'source', 'widget-sdk.js');
+  vm.runInContext(fs.readFileSync(sdkFilename, 'utf8'), context, { filename: sdkFilename });
+  for (const moduleName of ['weather-widget.js', 'weather-map-widget.js']) {
+    const moduleFilename = path.join(__dirname, '..', 'source', moduleName);
+    vm.runInContext(fs.readFileSync(moduleFilename, 'utf8'), context, { filename: moduleFilename });
+  }
+  vm.runInContext('WidgetSDK.registry.adoptBuiltins()', context);
   return { context, storage };
 }
 
@@ -116,7 +123,7 @@ test('weather refresh requests the configured forecast and stays out of shared s
   assert.match(url.searchParams.get('hourly'), /weather_code/);
   assert.equal(url.searchParams.get('forecast_hours'), '24');
   assert.match(url.searchParams.get('daily'), /precipitation_probability_max/);
-  const cached = JSON.parse(storage.get('morpheus-webhub-weather:weather-one'));
+  const cached = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:weather:weather-one:forecast')).value;
   assert.deepEqual(cached.payload, payload);
 });
 
@@ -146,24 +153,22 @@ test('weather manual reload bypasses a fresh cache', async () => {
 
 test('basic Weather exposes a reload action beside widget settings', () => {
   const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'styles.css'), 'utf8');
+  const weather = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-widget.css'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   assert.match(widgets, /if \(typeof def\.reload !== 'function'\) return;/);
   assert.match(widgets, /widget-action-btn widget-action-btn--reload/);
   assert.match(widgets, /appendChild\(icon\('icon-reload'\)\)/);
-  assert.match(widgets, /reload\(widget\) \{\s*return _ensureWeatherData\(widget, \{ force: true \}\);/);
-  assert.match(styles, /\.widget-action-btn--reload\s*\{[^}]*right:\s*26px/s);
+  assert.match(weather, /reload\(widget\) \{\s*return _ensureWeatherData\(widget, \{ force: true \}\);/);
+  const frameworkStyles = fs.readFileSync(path.join(__dirname, '..', 'source', 'styles.css'), 'utf8');
+  assert.match(frameworkStyles, /\.widget-action-btn--reload\s*\{[^}]*right:\s*26px/s);
   assert.match(styles, /\.widget-weather-location\s*\{[^}]*padding-right:\s*50px/s);
   assert.match(html, /<symbol id="icon-reload"/);
 });
 
 test('both Weather widgets force refresh on first render and each new hour', () => {
-  const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'widgets.js'), 'utf8');
-  const weatherSource = widgets.slice(
-    widgets.indexOf("WIDGET_REGISTRY['weather']"),
-    widgets.indexOf("WIDGET_REGISTRY['weatherMap']")
-  );
-  const mapSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['weatherMap']"));
+  const weatherSource = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-widget.js'), 'utf8');
+  const mapSource = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-map-widget.js'), 'utf8');
   assert.match(weatherSource, /_claimWeatherRefreshHour\(runtime\)[\s\S]*?_ensureWeatherData\(widget, \{ force: true \}\)/);
   assert.match(weatherSource, /_setWidgetTimer\(widget\.id, context,[\s\S]*?_claimWeatherRefreshHour\(currentRuntime\)[\s\S]*?_ensureWeatherData\(widget, \{ force: true \}\)[\s\S]*?60 \* 1000/);
   assert.match(mapSource, /_claimWeatherRefreshHour\(runtime\)[\s\S]*?_ensureWeatherMapData\(widget, \{ force: true \}\)/);
@@ -204,11 +209,7 @@ test('weather hourly helper extracts the next 24 hours with icon inputs', () => 
 });
 
 test('weather hourly forecast is optional and rendered between current and daily conditions', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'source', 'widgets.js'), 'utf8');
-  const weatherSource = source.slice(
-    source.indexOf("WIDGET_REGISTRY['weather']"),
-    source.indexOf("WIDGET_REGISTRY['weatherMap']")
-  );
+  const weatherSource = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-widget.js'), 'utf8');
   const currentIndex = weatherSource.indexOf('el.appendChild(header);');
   const hourlyIndex = weatherSource.indexOf('if (c.showHourly24)');
   const dailyIndex = weatherSource.indexOf("const forecast = document.createElement('div');");
@@ -258,7 +259,7 @@ test('weather hourly viewport supports grab-to-scroll without starting a widget 
 });
 
 test('weather styling includes current conditions, forecast rows and location results', () => {
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-widget.css'), 'utf8');
   assert.match(styles, /\.widget-weather-current\s*\{/);
   assert.match(styles, /\.widget-weather-day\s*\{/);
   assert.match(styles, /\.widget-weather-forecast\.is-horizontal\s*\{/);
@@ -360,8 +361,8 @@ test('weather map reset action restores origin centre and zoom without changing 
 test('weather map settings include origin controls and a live origin preview', () => {
   const root = path.join(__dirname, '..');
   const widgets = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source', 'styles.css'), 'utf8');
-  const mapSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['weatherMap']"));
+  const mapSource = fs.readFileSync(path.join(root, 'source', 'weather-map-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source', 'weather-map-widget.css'), 'utf8');
   assert.match(mapSource, /reloadLabel: 'Reset Weather Map to its origin'/);
   assert.match(mapSource, /<span>Origin location<\/span>/);
   assert.match(mapSource, /<span>Current map centre<\/span>/);
@@ -507,7 +508,7 @@ test('weather map view state survives runtime reloads without changing widget da
     label: 'Map centre · 52.100, -1.200'
   });
   assert.deepEqual(context.widget.config, originalConfig);
-  assert.equal(storage.has('morpheus-webhub-weather-map-view:map-local-view'), true);
+  assert.equal(storage.has('morpheus-widget-sdk-cache:v1:weatherMap:map-local-view:view'), true);
 });
 
 test('weather map carries camera and active overlays across forecast-centre changes', () => {
@@ -593,19 +594,19 @@ test('weather map discards a stale response and fetches the latest dragged centr
   });
   await secondRequest;
 
-  const cache = JSON.parse(storage.get('morpheus-webhub-weather-map:map-drag'));
+  const cache = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:weatherMap:map-drag:forecast')).value;
   assert.equal(cache.payload[0].latitude, 52.5);
   assert.match(cache.signature, /^52\.5000:/);
 });
 
 test('weather map uses dedicated layers and animation controls for combined overlays', () => {
   const root = path.join(__dirname, '..');
-  const widgets = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
+  const widgets = fs.readFileSync(path.join(root, 'source', 'weather-map-widget.js'), 'utf8');
   assert.match(widgets, /const WEATHER_MAP_LAYER_ORDER = \['temperature', 'clouds', 'rain'\]/);
   assert.match(widgets, /WEATHER_MAP_LAYER_ORDER\.forEach[\s\S]*?map\.addLayer[\s\S]*?setLayoutProperty\(layerId, 'visibility'/);
   assert.match(widgets, /button\.setAttribute\('aria-pressed',[\s\S]*?runtime\.activeLayers/);
-  assert.match(widgets, /setInterval\(\(\) => \{[\s\S]*?runtime\.hourIndex[\s\S]*?900\)/);
-  assert.match(widgets, /requestAnimationFrame\(tick\)/);
+  assert.match(widgets, /WidgetSDK\.runtime\.schedule\(`\$\{widget\.id\}:weather-map-playback`[\s\S]*?runtime\.hourIndex[\s\S]*?900\)/);
+  assert.match(widgets, /WidgetSDK\.runtime\.requestFrame\(`\$\{instance\.widgetId\}:weather-map-rain`, tick\)/);
   assert.match(widgets, /circle-stroke-opacity/);
   assert.match(widgets, /nowButton\.textContent = 'Now'/);
   assert.match(widgets, /runtime\.hourIndex = _weatherMapCurrentHourIndex\(cache\)/);
@@ -626,7 +627,7 @@ test('weather map uses dedicated layers and animation controls for combined over
 });
 
 test('weather map forecast refreshes update the existing canvas in place', () => {
-  const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'widgets.js'), 'utf8');
+  const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-map-widget.js'), 'utf8');
   const refresherStart = widgets.indexOf("timeInput.addEventListener('input'");
   const refresherEnd = widgets.indexOf('\n  renderSettings(widget, container)', refresherStart);
   assert.ok(refresherStart > 0 && refresherEnd > refresherStart);
@@ -642,7 +643,8 @@ test('weather map forecast refreshes update the existing canvas in place', () =>
 test('weather map assets are pinned locally and unchanged instances survive column rerenders', () => {
   const root = path.join(__dirname, '..');
   const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-  const widgets = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
+  const widgets = fs.readFileSync(path.join(root, 'source', 'weather-map-widget.js'), 'utf8');
+  const framework = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
   const render = fs.readFileSync(path.join(root, 'source', 'render.js'), 'utf8');
   const mapJs = fs.statSync(path.join(root, 'vendor', 'maplibre-gl', 'maplibre-gl.js'));
   const mapCss = fs.statSync(path.join(root, 'vendor', 'maplibre-gl', 'maplibre-gl.css'));
@@ -653,15 +655,16 @@ test('weather map assets are pinned locally and unchanged instances survive colu
   assert.match(index, /vendor\/maplibre-gl\/maplibre-gl\.css/);
   assert.match(index, /vendor\/maplibre-gl\/maplibre-gl\.js/);
   assert.match(render, /function renderColumns[\s\S]*?reusableWidgets[\s\S]*?canReuse/);
-  assert.match(widgets, /function clearWidgetContextRuntime[\s\S]*?_destroyWeatherMap\(widgetId\)/);
-  assert.match(widgets, /if \(instance\.playTimer\) clearInterval\(instance\.playTimer\)/);
-  assert.match(widgets, /cancelAnimationFrame\(instance\.rainAnimationFrame\)/);
+  assert.match(framework, /function clearWidgetContextRuntime[\s\S]*?definition\.clearContextRuntime\(widgetId, context\)/);
+  assert.match(widgets, /clearContextRuntime\(widgetId, context\)[\s\S]*?_destroyWeatherMap\(widgetId\)/);
+  assert.match(widgets, /instance\.playTimer\?\.cancel\?\.\(\)/);
+  assert.match(widgets, /instance\?\.rainAnimationFrame\?\.cancel\?\.\(\)/);
   assert.match(widgets, /https:\/\/tiles\.openfreemap\.org\/styles\//);
   assert.match(widgets, /attributionControl:\s*\{[\s\S]*?customAttribution:[\s\S]*?OpenFreeMap[\s\S]*?OpenMapTiles[\s\S]*?OpenStreetMap/);
 });
 
 test('weather map styling covers controls, timeline, legends and wind markers', () => {
-  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'styles.css'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-map-widget.css'), 'utf8');
   assert.match(styles, /\.widget-weather-map-shell\s*\{/);
   assert.match(styles, /\.widget-weather-map-timeline\s*\{/);
   assert.match(styles, /\.widget-weather-map-legend\.is-rain/);

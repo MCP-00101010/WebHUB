@@ -46,7 +46,10 @@ function _appendContextMenuAction(menu, action, depth = 0) {
   } else {
     button.addEventListener('mouseenter', () => _clearSubmenusFromDepth(depth + 1));
     button.addEventListener('click', () => {
-      try { handleContextMenuAction(action.action); }
+      try {
+        if (typeof action.run === 'function') action.run();
+        else handleContextMenuAction(action.action);
+      }
       catch (err) { console.error('[context menu]', err); showNotice(`Error: ${err.message || err}`); }
       finally { hideContextMenu(); }
     });
@@ -203,10 +206,16 @@ function handleContextMenuAction(action) {
 
   switch (action) {
     case 'openNewTab':
-      if (contextTarget.item?.url) window.open(contextTarget.item.url, '_blank', 'noreferrer noopener');
+      if (contextTarget.item?.url) openHubBookmark(contextTarget.item);
       break;
     case 'openNewWindow':
-      if (contextTarget.item?.url) window.open(contextTarget.item.url, '_blank', 'noreferrer noopener,noopener,width=1280,height=800');
+      if (contextTarget.item?.url) openHubBookmark(contextTarget.item, '_blank', 'noreferrer noopener,noopener,width=1280,height=800');
+      break;
+    case 'locateActivityBookmark':
+      if (contextTarget.activityEntry?.area === 'essential' && typeof setEssentialsView === 'function') {
+        setEssentialsView('essentials');
+      }
+      if (typeof locateStoredBookmarkEntry === 'function') locateStoredBookmarkEntry(contextTarget.activityEntry);
       break;
     case 'renameItem':
       showModal('renameItem', {
@@ -584,17 +593,17 @@ function handleContextMenuAction(action) {
       _showEditBookmarkModal(contextTarget, { inheritedTags: getContextInheritedTags(contextTarget) });
       break;
     case 'openAll': {
-      const collectUrls = (items) => {
-        const urls = [];
+      const collectBookmarks = (items) => {
+        const bookmarks = [];
         for (const item of (items || [])) {
-          if (item.type === 'bookmark' && item.url) urls.push(item.url);
+          if (item.type === 'bookmark' && item.url) bookmarks.push(item);
           if (item.type === 'folder') {
-            urls.push(...collectUrls(resolveFolderChildren(item, getBoardForContext(contextTarget))));
+            bookmarks.push(...collectBookmarks(resolveFolderChildren(item, getBoardForContext(contextTarget))));
           }
         }
-        return urls;
+        return bookmarks;
       };
-      collectUrls(resolveFolderChildren(contextTarget.item, getBoardForContext(contextTarget))).forEach(url => window.open(url, '_blank', 'noreferrer noopener'));
+      collectBookmarks(resolveFolderChildren(contextTarget.item, getBoardForContext(contextTarget))).forEach(bookmark => openHubBookmark(bookmark));
       break;
     }
     case 'refreshFavicon': {
@@ -937,6 +946,17 @@ function handleEssentialContextMenu(event, slot, item) {
       ]
     : [{ label: 'Add bookmark', action: 'addEssential' }];
   showContextMenu(event.clientX, event.clientY, options);
+}
+
+function handleEssentialsActivityContextMenu(event, entry) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!entry?.item) return;
+  contextTarget = { area: 'essentials-activity', item: entry.item, activityEntry: entry };
+  showContextMenu(event.clientX, event.clientY, [
+    { label: 'Open in new tab', action: 'openNewTab' },
+    { label: 'Locate bookmark', action: 'locateActivityBookmark' }
+  ]);
 }
 
 function handleSpeedDialContextMenu(event, item, slot = findSpeedDialSlot(getActiveBoard(), item.id)) {

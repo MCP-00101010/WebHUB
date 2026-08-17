@@ -200,9 +200,10 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
 
     // --- Bookmark-specific ---
     if (item.type === 'bookmark') {
+      itemEl.dataset.bookmarkId = item.id || '';
       itemEl.dataset.tooltip = buildTooltip(item, getActiveBoard());
       itemEl.dataset.tooltipKind = 'bookmark';
-      itemEl.addEventListener('click', () => window.open(item.url, '_blank', 'noreferrer noopener'));
+      itemEl.addEventListener('click', () => openHubBookmark(item));
     }
 
     // --- Folder-specific: drag on header, tag grid, and children container ---

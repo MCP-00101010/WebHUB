@@ -18,6 +18,9 @@ import hashlib
 import tempfile
 import stat
 import re
+import platform
+import subprocess
+import secrets
 from contextlib import contextmanager
 from html.parser import HTMLParser
 import ctypes
@@ -761,6 +764,11 @@ def summarize_hub_content(content):
         'folders': 0,
         'titles': 0,
         'importItems': 0
+        , 'schemaVersion': 0
+        , 'tabs': 0
+        , 'sets': 0
+        , 'tags': 0
+        , 'settings': 0
     }
     try:
         data = json.loads(content or '{}')
@@ -773,6 +781,12 @@ def summarize_hub_content(content):
 
     boards = data.get('boards')
     summary['boards'] = len(boards) if isinstance(boards, list) else 0
+    summary['schemaVersion'] = int(data.get('schemaVersion') or 0)
+    summary['sets'] = len(data.get('sets')) if isinstance(data.get('sets'), list) else 0
+    summary['tags'] = len(data.get('tags')) if isinstance(data.get('tags'), list) else 0
+    summary['settings'] = len(data.get('settings')) if isinstance(data.get('settings'), dict) else 0
+    if isinstance(boards, list):
+        summary['tabs'] = sum(len(board.get('tabs', [])) for board in boards if isinstance(board, dict) and isinstance(board.get('tabs'), list))
 
     import_manager = data.get('importManager')
     import_items = import_manager.get('items') if isinstance(import_manager, dict) else None
@@ -828,7 +842,7 @@ def replacement_looks_dangerously_smaller(new_content, existing_content):
     return True
 
 
-def backup_database_file(path):
+def backup_database_file(path, force=False):
     normalized = str(path or '').strip()
     if not normalized or not os.path.isfile(normalized):
         return None
@@ -849,7 +863,7 @@ def backup_database_file(path):
         key=lambda item: os.path.getmtime(item),
         reverse=True
     )
-    if existing_backups and time.time() - os.path.getmtime(existing_backups[0]) < DATABASE_BACKUP_MIN_INTERVAL_SECONDS:
+    if not force and existing_backups and time.time() - os.path.getmtime(existing_backups[0]) < DATABASE_BACKUP_MIN_INTERVAL_SECONDS:
         return existing_backups[0]
     timestamp = time.strftime('%Y%m%d-%H%M%S')
     backup_path = os.path.join(backup_dir, f'{stem}.before-write.{timestamp}.json')
@@ -868,6 +882,63 @@ def backup_database_file(path):
     return backup_path
 
 
+def database_backup_dir(database_path):
+    normalized = os.path.abspath(str(database_path or '').strip())
+    if not normalized or os.path.splitext(normalized)[1].lower() != '.json':
+        raise ValueError('A JSON database path is required')
+    return os.path.join(os.path.dirname(normalized), 'backups')
+
+
+def resolve_database_backup_path(database_path, name):
+    backup_dir = os.path.abspath(database_backup_dir(database_path))
+    safe_name = os.path.basename(str(name or '').strip())
+    stem = os.path.splitext(os.path.basename(str(database_path)))[0]
+    if safe_name != name or not safe_name.startswith(f'{stem}.before-write.') or not safe_name.endswith('.json'):
+        raise ValueError('Invalid database backup name')
+    target = os.path.abspath(os.path.join(backup_dir, safe_name))
+    if os.path.commonpath([backup_dir, target]) != backup_dir:
+        raise ValueError('Backup path escapes the configured backup directory')
+    return target
+
+
+def list_database_backups(database_path):
+    backup_dir = database_backup_dir(database_path)
+    if not os.path.isdir(backup_dir):
+        return []
+    stem = os.path.splitext(os.path.basename(str(database_path)))[0]
+    output = []
+    for name in os.listdir(backup_dir):
+        if not name.startswith(f'{stem}.before-write.') or not name.endswith('.json'):
+            continue
+        try:
+            path = resolve_database_backup_path(database_path, name)
+            with open(path, 'r', encoding='utf-8') as source:
+                content = source.read()
+            summary = summarize_hub_content(content)
+            info = get_file_info(path, include_hash=True)
+            output.append({
+                'name': name,
+                'size': info.get('size'),
+                'modifiedMs': info.get('modifiedMs'),
+                'version': info.get('version'),
+                'contentHash': info.get('contentHash'),
+                'integrity': 'ok' if summary.get('valid') else 'invalid-json',
+                'summary': summary
+            })
+        except Exception as error:
+            output.append({'name': name, 'integrity': f'unreadable: {error}', 'summary': {}})
+    return sorted(output, key=lambda item: item.get('modifiedMs') or 0, reverse=True)
+
+
+def read_database_backup_chunk(database_path, name, offset=0, length=512 * 1024, expected_version=None):
+    path = resolve_database_backup_path(database_path, name)
+    result = read_file_chunk(path, offset, length, expected_version)
+    if int(offset or 0) == 0:
+        with open(path, 'r', encoding='utf-8') as source:
+            result['summary'] = summarize_hub_content(source.read())
+    return result
+
+
 def load_config():
     try:
         with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
@@ -882,12 +953,457 @@ def load_config():
 
 
 def save_config(config):
+    config = config or {}
+    approved = config.get('approvedDirectories')
+    if approved is None:
+        approved = load_config().get('approvedDirectories', {})
+    if not isinstance(approved, dict):
+        approved = {}
+    safe_approved = {}
+    for handle, entry in list(approved.items())[:64]:
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{12,80}', str(handle)) or not isinstance(entry, dict):
+            continue
+        path = os.path.realpath(str(entry.get('path', '') or ''))
+        purpose = str(entry.get('purpose', '') or '')
+        if not path or purpose not in {'git', 'recent-files'}:
+            continue
+        safe_approved[str(handle)] = {
+            'path': path, 'purpose': purpose, 'label': str(entry.get('label', '') or os.path.basename(path) or path)[:160],
+            'approvedAt': int(entry.get('approvedAt', 0) or 0)
+        }
     data = {
-        'databasePath': (config or {}).get('databasePath', '') or ''
+        'databasePath': config.get('databasePath', '') or '',
+        'approvedDirectories': safe_approved
     }
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write('\n')
+
+
+# ---------------------------------------------------------------------------
+# Fixed-purpose system metrics (no arbitrary commands or process details)
+# ---------------------------------------------------------------------------
+
+def _cpu_snapshot():
+    if sys.platform == 'win32':
+        idle = FILETIME()
+        kernel = FILETIME()
+        user = FILETIME()
+        if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+        value = lambda part: (part.dwHighDateTime << 32) | part.dwLowDateTime
+        return value(idle), value(kernel), value(user)
+    try:
+        with open('/proc/stat', 'r', encoding='ascii') as source:
+            parts = source.readline().split()[1:]
+        values = [int(value) for value in parts]
+        return values[3] + (values[4] if len(values) > 4 else 0), sum(values)
+    except Exception:
+        return None
+
+
+def _cpu_percent():
+    first = _cpu_snapshot()
+    if first is None:
+        load = os.getloadavg()[0] if hasattr(os, 'getloadavg') else 0
+        return round(min(100.0, max(0.0, load * 100.0 / max(1, os.cpu_count() or 1))), 1)
+    time.sleep(0.1)
+    second = _cpu_snapshot()
+    if second is None:
+        return None
+    if sys.platform == 'win32':
+        idle_delta = second[0] - first[0]
+        total_delta = (second[1] - first[1]) + (second[2] - first[2])
+    else:
+        idle_delta = second[0] - first[0]
+        total_delta = second[1] - first[1]
+    return round(max(0.0, min(100.0, 100.0 * (1.0 - idle_delta / max(1, total_delta)))), 1)
+
+
+def _memory_metrics():
+    if sys.platform == 'win32':
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [('dwLength', wintypes.DWORD), ('dwMemoryLoad', wintypes.DWORD),
+                        ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                        ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong),
+                        ('ullTotalVirtual', ctypes.c_ulonglong), ('ullAvailVirtual', ctypes.c_ulonglong),
+                        ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return {'percent': float(status.dwMemoryLoad), 'usedBytes': int(status.ullTotalPhys - status.ullAvailPhys),
+                    'totalBytes': int(status.ullTotalPhys), 'availableBytes': int(status.ullAvailPhys)}
+    try:
+        values = {}
+        with open('/proc/meminfo', 'r', encoding='ascii') as source:
+            for line in source:
+                key, value = line.split(':', 1)
+                values[key] = int(value.strip().split()[0]) * 1024
+        total = values.get('MemTotal', 0)
+        available = values.get('MemAvailable', values.get('MemFree', 0))
+        return {'percent': round(100.0 * (total - available) / max(1, total), 1),
+                'usedBytes': total - available, 'totalBytes': total, 'availableBytes': available}
+    except Exception:
+        return None
+
+
+def _disk_metrics():
+    roots = []
+    if sys.platform == 'win32':
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+        roots = [f'{chr(65 + index)}:\\' for index in range(26) if mask & (1 << index)]
+    else:
+        roots = ['/']
+        try:
+            with open('/proc/mounts', 'r', encoding='utf-8') as source:
+                for line in source:
+                    parts = line.split()
+                    if len(parts) >= 3 and parts[2] in {'ext4', 'xfs', 'btrfs', 'zfs', 'apfs'}:
+                        roots.append(parts[1].replace('\\040', ' '))
+        except Exception:
+            pass
+    disks = []
+    for root in dict.fromkeys(roots):
+        try:
+            usage = shutil.disk_usage(root)
+            disks.append({'name': root, 'totalBytes': usage.total, 'usedBytes': usage.used,
+                          'freeBytes': usage.free, 'percent': round(100.0 * usage.used / max(1, usage.total), 1)})
+        except Exception:
+            continue
+        if len(disks) >= 16:
+            break
+    return disks
+
+
+def _network_metrics():
+    try:
+        if sys.platform.startswith('linux'):
+            received = sent = 0
+            with open('/proc/net/dev', 'r', encoding='ascii') as source:
+                for line in source.readlines()[2:]:
+                    _, values = line.split(':', 1)
+                    fields = values.split()
+                    received += int(fields[0])
+                    sent += int(fields[8])
+            return {'receivedBytes': received, 'sentBytes': sent}
+        if sys.platform == 'win32':
+            result = subprocess.run(['netstat', '-e'], capture_output=True, text=True, timeout=3,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            for line in result.stdout.splitlines():
+                if line.strip().lower().startswith('bytes'):
+                    values = re.findall(r'\d+', line)
+                    if len(values) >= 2:
+                        return {'receivedBytes': int(values[0]), 'sentBytes': int(values[1])}
+    except Exception:
+        pass
+    return None
+
+
+def _battery_metrics():
+    if sys.platform != 'win32':
+        return None
+    class SYSTEM_POWER_STATUS(ctypes.Structure):
+        _fields_ = [('ACLineStatus', ctypes.c_ubyte), ('BatteryFlag', ctypes.c_ubyte),
+                    ('BatteryLifePercent', ctypes.c_ubyte), ('SystemStatusFlag', ctypes.c_ubyte),
+                    ('BatteryLifeTime', wintypes.DWORD), ('BatteryFullLifeTime', wintypes.DWORD)]
+    status = SYSTEM_POWER_STATUS()
+    if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)) or status.BatteryFlag == 128:
+        return None
+    return {'percent': None if status.BatteryLifePercent == 255 else int(status.BatteryLifePercent),
+            'charging': status.ACLineStatus == 1, 'secondsRemaining': None if status.BatteryLifeTime == 0xFFFFFFFF else int(status.BatteryLifeTime)}
+
+
+def collect_system_metrics(requested):
+    allowed = {'cpu', 'memory', 'disk', 'network', 'uptime', 'battery', 'platform'}
+    selected = [name for name in (requested or []) if name in allowed][:len(allowed)]
+    result = {'sampledAt': int(time.time() * 1000)}
+    if 'cpu' in selected:
+        result['cpu'] = {'percent': _cpu_percent(), 'cores': os.cpu_count() or 1}
+    if 'memory' in selected:
+        result['memory'] = _memory_metrics()
+    if 'disk' in selected:
+        result['disk'] = _disk_metrics()
+    if 'network' in selected:
+        result['network'] = _network_metrics()
+    if 'uptime' in selected:
+        result['uptime'] = {'seconds': int(ctypes.windll.kernel32.GetTickCount64() / 1000) if sys.platform == 'win32' else int(time.monotonic())}
+    if 'battery' in selected:
+        result['battery'] = _battery_metrics()
+    if 'platform' in selected:
+        result['platform'] = {'system': platform.system(), 'release': platform.release(), 'machine': platform.machine()}
+    return result
+
+
+# ---------------------------------------------------------------------------
+# User-approved directory handles and fixed repository/file operations
+# ---------------------------------------------------------------------------
+
+def open_directory_picker(title='Select folder'):
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes('-topmost', True)
+        path = filedialog.askdirectory(title=str(title or 'Select folder')[:160], mustexist=True)
+        root.destroy()
+        if path:
+            return path
+    except Exception:
+        pass
+    if sys.platform == 'win32':
+        try:
+            safe_title = str(title or 'Select folder')[:160].replace("'", "''")
+            script = ('Add-Type -AssemblyName System.Windows.Forms;'
+                      '$d = New-Object System.Windows.Forms.FolderBrowserDialog;'
+                      f'$d.Description = \'{safe_title}\';'
+                      'if ($d.ShowDialog() -eq \'OK\') { Write-Output $d.SelectedPath }')
+            result = subprocess.run(['powershell', '-STA', '-NonInteractive', '-Command', script],
+                                    capture_output=True, text=True, timeout=60,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+    return None
+
+
+def approve_directory(purpose, title='Select folder', selected_path=None):
+    if purpose not in {'git', 'recent-files'}:
+        raise ValueError('Unsupported directory approval purpose')
+    path = os.path.realpath(selected_path or open_directory_picker(title) or '')
+    if not path:
+        return None
+    if not os.path.isdir(path):
+        raise ValueError('The selected directory is unavailable')
+    config = load_config()
+    approved = config.setdefault('approvedDirectories', {})
+    for handle, entry in approved.items():
+        if entry.get('purpose') == purpose and os.path.normcase(os.path.realpath(entry.get('path', ''))) == os.path.normcase(path):
+            return {'handle': handle, 'label': entry.get('label') or os.path.basename(path) or path, 'path': path, 'purpose': purpose}
+    handle = f'dir_{secrets.token_urlsafe(18)}'
+    label = os.path.basename(path.rstrip('\\/')) or path
+    approved[handle] = {'path': path, 'purpose': purpose, 'label': label, 'approvedAt': int(time.time() * 1000)}
+    save_config(config)
+    return {'handle': handle, 'label': label, 'path': path, 'purpose': purpose}
+
+
+def resolve_approved_directory(handle, purpose=None, require_exists=True):
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{12,80}', str(handle or '')):
+        raise ValueError('Directory approval handle is invalid')
+    entry = load_config().get('approvedDirectories', {}).get(str(handle))
+    if not isinstance(entry, dict):
+        raise ValueError('Directory approval was not found')
+    if purpose and entry.get('purpose') != purpose:
+        raise ValueError('Directory approval does not grant this capability')
+    path = os.path.realpath(entry.get('path', ''))
+    if require_exists and not os.path.isdir(path):
+        raise FileNotFoundError('The approved directory is missing or unavailable')
+    return path, entry
+
+
+def _run_git(path, arguments, timeout=8):
+    result = subprocess.run(['git', '-C', path, *arguments], capture_output=True, text=True,
+                            encoding='utf-8', errors='replace', timeout=timeout,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    output = (result.stdout or '')[:1024 * 1024]
+    error = (result.stderr or '')[:4096]
+    if result.returncode != 0:
+        raise RuntimeError(error.strip() or 'Git command failed')
+    return output
+
+
+def _git_remote_link(remote):
+    value = str(remote or '').strip()
+    if value.startswith('git@') and ':' in value:
+        host, repo = value[4:].split(':', 1)
+        value = f'https://{host}/{repo}'
+    elif value.startswith('ssh://git@'):
+        value = 'https://' + value[len('ssh://git@'):]
+    if not value.startswith('https://'):
+        return ''
+    return value[:-4] if value.endswith('.git') else value
+
+
+def git_workspace_status(handle):
+    path, entry = resolve_approved_directory(handle, 'git')
+    status = _run_git(path, ['status', '--porcelain=v2', '--branch', '--untracked-files=normal'])
+    branch = ''
+    detached = False
+    ahead = behind = staged = unstaged = untracked = 0
+    for line in status.splitlines():
+        if line.startswith('# branch.head '):
+            branch = line[len('# branch.head '):].strip()
+            detached = branch == '(detached)'
+        elif line.startswith('# branch.ab '):
+            match = re.search(r'\+(\d+)\s+-(\d+)', line)
+            if match:
+                ahead, behind = int(match.group(1)), int(match.group(2))
+        elif line.startswith('? '):
+            untracked += 1
+            unstaged += 1
+        elif line.startswith(('1 ', '2 ', 'u ')):
+            parts = line.split()
+            xy = parts[1] if len(parts) > 1 else '..'
+            if len(xy) >= 1 and xy[0] not in {'.', ' '}:
+                staged += 1
+            if len(xy) >= 2 and xy[1] not in {'.', ' '}:
+                unstaged += 1
+    try:
+        commit = _run_git(path, ['log', '-1', '--format=%H%x1f%h%x1f%ct%x1f%s']).strip().split('\x1f')
+    except Exception:
+        commit = []
+    try:
+        remote = _run_git(path, ['remote', 'get-url', 'origin']).strip()
+    except Exception:
+        remote = ''
+    return {
+        'handle': handle, 'label': entry.get('label') or os.path.basename(path), 'path': path,
+        'branch': branch or 'HEAD', 'detached': detached, 'ahead': ahead, 'behind': behind,
+        'staged': staged, 'unstaged': unstaged, 'untracked': untracked, 'clean': staged == 0 and unstaged == 0,
+        'lastCommit': {'hash': commit[0] if len(commit) > 0 else '', 'shortHash': commit[1] if len(commit) > 1 else '',
+                       'timestamp': int(commit[2]) * 1000 if len(commit) > 2 and commit[2].isdigit() else 0,
+                       'subject': commit[3][:300] if len(commit) > 3 else ''},
+        'remoteUrl': _git_remote_link(remote), 'sampledAt': int(time.time() * 1000)
+    }
+
+
+def _launch_terminal(path):
+    if sys.platform == 'win32':
+        windows_terminal = shutil.which('wt.exe')
+        if windows_terminal:
+            try:
+                subprocess.Popen([windows_terminal, '-d', path], cwd=path, close_fds=True)
+                return
+            except OSError:
+                pass
+
+        powershell = shutil.which('pwsh.exe') or shutil.which('powershell.exe')
+        if powershell:
+            try:
+                subprocess.Popen(
+                    [powershell, '-NoExit', '-NoLogo'], cwd=path, close_fds=True,
+                    creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
+                )
+                return
+            except OSError:
+                pass
+
+        command_prompt = os.environ.get('COMSPEC') or shutil.which('cmd.exe') or 'cmd.exe'
+        subprocess.Popen(
+            [command_prompt, '/D', '/K'], cwd=path, close_fds=True,
+            creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
+        )
+        return
+
+    if sys.platform == 'darwin':
+        subprocess.Popen(['open', '-a', 'Terminal', path], close_fds=True)
+        return
+
+    terminal = shutil.which('x-terminal-emulator')
+    if not terminal:
+        raise RuntimeError('No supported terminal application was found')
+    subprocess.Popen([terminal, '--working-directory', path], close_fds=True)
+
+
+def open_approved_directory(handle, purpose, action):
+    path, _ = resolve_approved_directory(handle, purpose)
+    if action not in {'folder', 'terminal'}:
+        raise ValueError('Unsupported directory action')
+    if sys.platform == 'win32':
+        if action == 'folder':
+            os.startfile(path)
+        else:
+            _launch_terminal(path)
+    elif sys.platform == 'darwin':
+        if action == 'folder':
+            subprocess.Popen(['open', path], close_fds=True)
+        else:
+            _launch_terminal(path)
+    else:
+        if action == 'folder':
+            subprocess.Popen(['xdg-open', path], close_fds=True)
+        else:
+            _launch_terminal(path)
+    return True
+
+
+def _approved_child_path(handle, purpose, relative_path, require_file=False):
+    root, _ = resolve_approved_directory(handle, purpose)
+    relative = str(relative_path or '').replace('\\', '/')
+    if not relative or relative.startswith('/') or '\x00' in relative:
+        raise ValueError('Relative file path is invalid')
+    candidate = os.path.realpath(os.path.join(root, *relative.split('/')))
+    try:
+        contained = os.path.commonpath([os.path.normcase(root), os.path.normcase(candidate)]) == os.path.normcase(root)
+    except ValueError:
+        contained = False
+    if not contained:
+        raise ValueError('File path escapes the approved directory')
+    if require_file and not os.path.isfile(candidate):
+        raise FileNotFoundError('The selected file was renamed, deleted, or is unavailable')
+    return root, candidate
+
+
+def list_recent_files(handle, extensions=None, max_age_hours=168, limit=30, recursive=False):
+    root, entry = resolve_approved_directory(handle, 'recent-files')
+    allowed_extensions = {str(value).lower().lstrip('.')[:16] for value in (extensions or []) if re.fullmatch(r'\.?[A-Za-z0-9]{1,16}', str(value))}
+    max_age = max(1, min(24 * 365, int(max_age_hours or 168)))
+    max_results = max(1, min(100, int(limit or 30)))
+    cutoff = time.time() - max_age * 3600
+    deadline = time.monotonic() + 3.0
+    scanned = 0
+    results = []
+    if recursive:
+        iterator = os.walk(root, followlinks=False)
+    else:
+        iterator = [(root, [], os.listdir(root))]
+    for current, directories, names in iterator:
+        if recursive:
+            relative_depth = os.path.relpath(current, root).count(os.sep)
+            if relative_depth >= 3:
+                directories[:] = []
+            directories[:] = [name for name in directories if not os.path.islink(os.path.join(current, name))][:100]
+        for name in names:
+            if scanned >= 5000 or time.monotonic() > deadline:
+                break
+            scanned += 1
+            candidate = os.path.join(current, name)
+            try:
+                if os.path.islink(candidate) or not os.path.isfile(candidate):
+                    continue
+                info = os.stat(candidate)
+                if info.st_mtime < cutoff:
+                    continue
+                extension = os.path.splitext(name)[1].lower().lstrip('.')
+                if allowed_extensions and extension not in allowed_extensions:
+                    continue
+                relative = os.path.relpath(candidate, root).replace(os.sep, '/')
+                results.append({'name': name[:260], 'relativePath': relative[:2048], 'extension': extension,
+                                'sizeBytes': int(info.st_size), 'modifiedAt': int(info.st_mtime * 1000)})
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+        if scanned >= 5000 or time.monotonic() > deadline:
+            break
+    results.sort(key=lambda item: item['modifiedAt'], reverse=True)
+    return {'handle': handle, 'label': entry.get('label') or os.path.basename(root), 'files': results[:max_results],
+            'scanned': scanned, 'truncated': scanned >= 5000 or time.monotonic() > deadline, 'sampledAt': int(time.time() * 1000)}
+
+
+def open_approved_file(handle, relative_path, action):
+    if action not in {'open', 'reveal'}:
+        raise ValueError('Unsupported file action')
+    root, path = _approved_child_path(handle, 'recent-files', relative_path, require_file=True)
+    if sys.platform == 'win32':
+        if action == 'open':
+            os.startfile(path)
+        else:
+            subprocess.Popen(['explorer.exe', '/select,', path])
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', path] if action == 'open' else ['open', '-R', path])
+    else:
+        subprocess.Popen(['xdg-open', path] if action == 'open' else ['xdg-open', os.path.dirname(path) or root])
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -1035,6 +1551,33 @@ def handle(msg):
         except Exception as e:
             reply_err(str(e))
 
+    elif msg_type == 'LIST_DATABASE_BACKUPS':
+        try:
+            reply_ok(backups=list_database_backups(msg.get('databasePath', '')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'READ_DATABASE_BACKUP_CHUNK':
+        try:
+            reply_ok(**read_database_backup_chunk(
+                msg.get('databasePath', ''), msg.get('name', ''),
+                msg.get('offset', 0), msg.get('length', 512 * 1024),
+                msg.get('expectedVersion') or None
+            ))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'CREATE_DATABASE_BACKUP':
+        try:
+            database_path = msg.get('databasePath', '')
+            with database_write_lock(database_path):
+                backup_path = backup_database_file(database_path, force=True)
+            if not backup_path:
+                raise ValueError('The configured database is missing or empty')
+            reply_ok(name=os.path.basename(backup_path), fileInfo=get_file_info(backup_path, include_hash=True))
+        except Exception as e:
+            reply_err(str(e))
+
     elif msg_type == 'SECRET_STATUS':
         try:
             reply_ok(**secret_status())
@@ -1064,6 +1607,47 @@ def handle(msg):
     elif msg_type == 'SECRET_LIST':
         try:
             reply_ok(keys=secret_list())
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'SYSTEM_METRICS':
+        try:
+            reply_ok(metrics=collect_system_metrics(msg.get('metrics', [])))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'APPROVE_DIRECTORY':
+        try:
+            approved = approve_directory(msg.get('purpose', ''), msg.get('title', 'Select folder'))
+            reply_ok(directory=approved)
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'GIT_WORKSPACE_STATUS':
+        try:
+            reply_ok(repository=git_workspace_status(msg.get('handle', '')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'OPEN_APPROVED_DIRECTORY':
+        try:
+            open_approved_directory(msg.get('handle', ''), msg.get('purpose', ''), msg.get('action', ''))
+            reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'LIST_RECENT_FILES':
+        try:
+            reply_ok(result=list_recent_files(msg.get('handle', ''), msg.get('extensions', []),
+                                              msg.get('maxAgeHours', 168), msg.get('limit', 30),
+                                              msg.get('recursive') is True))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'OPEN_APPROVED_FILE':
+        try:
+            open_approved_file(msg.get('handle', ''), msg.get('relativePath', ''), msg.get('action', ''))
+            reply_ok()
         except Exception as e:
             reply_err(str(e))
 

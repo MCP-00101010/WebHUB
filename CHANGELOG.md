@@ -5,6 +5,450 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.157] — 2026-08-17
+
+### Added
+
+- **Persistent Media Watchlist view state** — Media Watchlist now remembers which movie or series details are expanded, the active season tab for each series, and whether Specials are visible after the Hub reloads.
+
+### Changed
+
+- **Local-only viewing position** — view state is stored through the bounded widget cache rather than the portable database, so personal navigation choices remain browser-local. Deleted records are pruned and provider responses, loading/error state, and loaded episode payloads are excluded.
+
+### Tests
+
+- Added coverage for local view-state round trips across runtime recreation, movie and series expansion, active season and Specials restoration, deleted-record pruning, season bounds, and exclusion of transient provider data. All focused Media Watchlist, SDK, settings, and global-symbol tests passed; native-host persistence passed 17 of 17 tests. The stale RSS manifest-version assertion was updated for extension 1.0.29, bringing all 34 JavaScript test files back to green. All 39 source JavaScript files and diff checks passed.
+
+## [0.11.156] — 2026-08-17
+
+### Fixed
+
+- **Language-path episode lookup** — episode lookups now derive their effective language consistently from the Fandom community URL as well as the editable language field. A canonical path such as `/de` takes precedence over blank or stale `en` metadata for normalization, localized TMDB prefetching, cache access, context-menu labels, and final search construction.
+- **X-Files German lookup** — `akte-x.fandom.com/de` now requests German season metadata and searches for the localized episode title instead of allowing the English title to leak back in through an empty language-field fallback. For season 5 episode 4, this targets the German title used by the wiki's season article.
+
+### Tests
+
+- Added regression coverage for blank and stale language metadata on `/de` communities, canonical language precedence during record normalization, and language-neutral fallback searches. All focused Media Watchlist tests passed; native-host persistence passed 17 of 17 tests. 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. All 39 source JavaScript files and diff checks passed.
+
+## [0.11.155] — 2026-08-17
+
+### Fixed
+
+- **Localized episode wiki searches** — non-English Fandom lookups now prefetch the matching TMDB season in the wiki's language and search using only the localized episode title. This avoids MediaWiki's all-terms matching rejecting German results because an English episode title was included. When no localized title is available, the search falls back to the language-neutral `SxxExx` identifier.
+
+### Changed
+
+- **Compact localized cache** — translated lookup metadata remains browser-local and stores only episode numbers and names, once per visible season and wiki language. It is never added to the portable watchlist database.
+
+### Tests
+
+- Added coverage for TMDB language-tag normalization, translated German lookup terms, language-path search URLs, language-neutral fallbacks, request deduplication, and local-only translated season caching. All focused Media Watchlist, SDK, widget-category, API-key, and global-symbol tests passed; native-host persistence passed 17 of 17 tests. 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. All 39 source JavaScript files and diff checks passed.
+
+## [0.11.154] — 2026-08-17
+
+### Added
+
+- **Episode wiki lookup** — right-clicking an episode in Media Watchlist now opens a context menu with one lookup action for every Fandom community attached to that series. Searches include the series title, padded season/episode identifier, and episode name; language labels and the preferred-wiki marker make similar sources easy to distinguish.
+
+### Changed
+
+- **Reusable context-menu actions** — the shared context-menu renderer now accepts internal callback actions, allowing self-contained widgets to add safe contextual commands without adding widget-specific cases to the global action dispatcher.
+
+### Tests
+
+- Added coverage for English and language-path Fandom search URLs, episode search terms, invalid-community rejection, episode-row context-menu wiring, safe new-tab behavior, and callback-enabled shared context menus. Focused Media Watchlist, widget-category, and global-symbol tests passed; native-host persistence passed 17 of 17 tests. 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. All 39 source JavaScript files and diff checks passed.
+
+## [0.11.153] — 2026-08-17
+
+### Added
+
+- **Multi-wiki Fandom links** — each Media Watchlist title can now link to multiple Fandom communities, so sources such as English and German editions or Memory Alpha and Memory Beta can coexist. Each source has an editable label and language, can be reordered or selected as the default, and appears inside one compact `Wikis (n)` menu on the live card.
+- **Assisted article matching** — the settings manager verifies an HTTPS Fandom community through its wiki API, searches that community for the title, and lets the user select or change the linked article. Community-home links remain available when no exact article is selected, and a separate discovery link helps locate candidate communities.
+
+### Changed
+
+- **Portable watchlist format** — export format version 3 includes the bounded multi-wiki metadata while remaining compatible with older imports. Fandom search responses stay in the local widget cache; no Fandom credential is required or stored.
+- **Narrow network capability** — Media Watchlist network access now declares only TMDB plus the `fandom.com` community domain family, with HTTPS validation, bounded responses, and no arbitrary user-configured hosts.
+
+### Tests
+
+- Added coverage for HTTPS/domain validation, language-path API derivation, duplicate removal, single-default normalization, article URL generation, API verification/search, local search caching, bounded SDK requests, settings controls, compact card links, and export versioning. All focused Media Watchlist, API-key, SDK, settings, layout, category, and global-symbol tests passed; native-host persistence passed 17 of 17 tests. 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. JavaScript syntax and diff checks passed; an in-app browser target was unavailable for visual automation.
+
+## [0.11.152] — 2026-08-17
+
+### Changed
+
+- **Settings-based watchlist management** — moved Add, TMDB search/matching, Import, Export, Remove, and existing-title matching into the Media Watchlist settings panel. The live widget now contains only its movie/series cards and an unobtrusive settings prompt when empty, making single-title and multi-widget layouts substantially cleaner.
+- **Episode progress cleanup** — removed the obsolete manual season and episode number inputs. Series progress is now driven exclusively by the episode watched checkboxes while legacy progress data remains readable for backward compatibility.
+- **Per-title detail visibility** — each movie or series now has independent Rating and Notes visibility switches in widget settings. Hidden ratings disappear from card metadata and hidden fields are omitted from the expandable detail editor without deleting their saved values.
+- **Cancel-safe library edits** — settings-based add, match, import, remove, and visibility changes operate on the widget draft and are committed only with Done; cancelling restores the original library.
+
+### Tests
+
+- Added coverage for settings-only library management, draft-only imports, per-record visibility migration, removal of live management controls and manual progress inputs, retained tab navigation, shared action spacing, and settings draft cancellation. All focused Media Watchlist, API-key, SDK, settings, layout, category, and global-symbol tests passed; 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. JavaScript syntax and diff checks passed; an in-app browser target was unavailable for visual automation.
+
+## [0.11.151] — 2026-08-17
+
+### Changed
+
+- **Tabbed season navigation** — replaced vertically stacked season accordions with a compact, horizontally scrollable season tab bar and one episode panel. Each tab retains its watched/episode count, the active season remains clear, and season metadata still loads only when selected.
+
+### Tests
+
+- Added layout-contract coverage for the season tablist, active tab, single tab panel, and removal of nested season disclosures. Media Watchlist syntax and focused regression tests passed.
+
+## [0.11.150] — 2026-08-17
+
+### Added
+
+- **Episode-level series tracking** — matched TMDB series now expose season counts and lazy-loaded season accordions with episode names, air dates, runtimes, and locally persisted watched checkboxes. Season-wide controls mark all aired episodes watched or unwatched, while future and TBA episodes remain excluded from those actions.
+- **Series progress guidance** — series cards show portable episode progress and the next unwatched episode; expanded views summarize total seasons and episodes. Specials remain hidden by default and can be enabled per expanded series.
+
+### Changed
+
+- **Portable watchlist format** — export format version 2 stores only compact watched episode coordinates and optional TMDB episode IDs. Provider season/episode responses remain in the bounded local SDK cache and are refreshed independently of shared watchlist data.
+
+### Tests
+
+- Added coverage for response normalization, duplicate-safe episode progress, aired-only counts, next-episode selection, and lazy series-before-season request ordering with local cache writes. All relevant Media Watchlist, global API-key, SDK, settings, category, and layout tests passed; 33 of 34 JavaScript test files passed overall, with the unrelated RSS suite still expecting extension 1.0.27 while the existing manifest is 1.0.29. JavaScript syntax and diff checks passed; an in-app browser target was unavailable for visual automation.
+
+## [0.11.149] — 2026-08-17
+
+### Changed
+
+- **Central API key management** — added TMDB and football-data.org credentials beside NASA in Settings → API Keys. Media Watchlist and Calendar now consume those shared global credentials instead of asking for separate tokens in each widget instance; private calendar URLs remain source-specific.
+- **Credential migration** — existing per-widget TMDB and football-data.org tokens migrate into their global Windows Credential Manager entries on startup, after which obsolete instance-level entries are removed. Browser-storage fallback values remain excluded from portable exports.
+- **Independent key saving** — each API key now has its own debounced save operation, so editing one service cannot cancel another service's pending update.
+
+### Tests
+
+- Added coverage for the centralized API-key fields, shared provider lookup, removal of per-widget token controls, legacy instance-key discovery/migration, independent key saving, and continued source-specific storage for private calendar URLs. Passed all 41 relevant settings, state, SDK, provider, Calendar, and Media Watchlist tests plus JavaScript syntax, version, and diff checks.
+
+## [0.11.148] — 2026-08-17
+
+### Fixed
+
+- **Git Workspace terminal action** — Windows now opens approved repositories in Windows Terminal when available, with visible PowerShell and Command Prompt fallbacks. Launches use fixed argument lists and the approved working directory without interpolating repository paths into shell commands.
+- **Native action feedback** — failed folder, terminal, file-open, and file-reveal requests now surface the native host error instead of silently appearing to succeed.
+
+### Tests
+
+- Added native launcher coverage for Windows Terminal selection, special-character paths, and the visible PowerShell fallback, plus page-bridge coverage for native action errors. Passed all 17 native-host tests and all 3 page-bridge tests plus syntax and diff checks; `web-ext lint` reported no errors (only the existing native-host Python notice and installer shell-file warning).
+
+## [0.11.147] — 2026-08-17
+
+### Fixed
+
+- **Native folder approval** — corrected the Git Workspace and Recent Downloads folder picker request to pass a numeric timeout instead of an options object, preventing the immediate `NaN seconds` timeout. Interactive folder selection now remains open for up to five minutes, with the page relay allowing a small response margin; invalid native timeout values now safely fall back to the standard timeout.
+
+### Tests
+
+- Added extension and page-bridge regression coverage proving directory approval uses finite numeric timeouts and returns the approved opaque directory handle. Passed all 21 relevant bridge/background tests plus JavaScript syntax and diff checks; `web-ext lint` reported no errors (only the existing native-host Python notice and installer shell-file warning).
+
+## [0.11.146] — 2026-08-17
+
+### Fixed
+
+- **Widget refresh controls** — removed duplicate in-content refresh buttons from Service Monitor, System Monitor, Git Workspace, and Recent Downloads & Files. Their shared card refresh icon is now the single whole-widget refresh action; Service Monitor retains only its distinct per-endpoint check buttons.
+- **Widget action spacing** — reserved a dedicated top-right action rail for the shared refresh/settings icons and kept Media Watchlist controls plus Universal Search input clear of their settings icon in both board and sidebar layouts.
+
+### Tests
+
+- Added action-layout regression coverage for duplicate refresh controls, per-endpoint checks, action-rail spacing, and stylesheet order. Relevant widget, SDK, syntax, version, and diff checks passed.
+
+## [0.11.145] — 2026-08-17
+
+### Added
+
+- **Service Monitor** — added HTTPS endpoint checks with expected-status and text/JSON assertions, bounded direct requests plus Firefox relay fallback, response timing, local uptime history, visibility-aware scheduling, failure backoff, manual refresh, and optional outage notifications.
+- **System Monitor** — added configurable aggregate CPU, memory, disk, network, uptime, battery, and platform cards with warning thresholds and bounded browser-local graphs. The native host returns only requested aggregate fields and the widget explains unavailable platform metrics.
+- **Git Workspace** — added user-approved repository folders, branch/detached state, clean/dirty and staged/unstaged counts, ahead/behind state, last commit, sanitized remote links, and fixed folder/terminal actions without arbitrary shell input.
+- **Media Watchlist** — added portable film/series records with watched state, progress, ratings, notes, notification preferences, provider-independent import/export, optional securely stored TMDB matching, local metadata caches, and an opt-in read-only Calendar source for upcoming releases and episodes.
+- **Recent Downloads & Files** — added approved-directory views with extension, age, count, and bounded-recursion filters; browser-local result caches; safe relative metadata; and containment-checked fixed Open/Reveal actions.
+- **Universal Search Launcher** — added local bookmark, board, tab, folder, Set, tag, widget, and command matching alongside direct URL navigation and configurable HTTPS web providers with aliases, icons, keyboard control, and optional local recents.
+
+### Changed
+
+- **Native SDK boundary** — added a declared `WidgetSDK.nativeHost` gateway plus opaque native directory approvals, fixed-purpose system/Git/file commands, and matching extension capabilities. Approved filesystem paths remain in native configuration and never enter portable widget state.
+- **Calendar integration** — Calendar can now merge opted-in Media Watchlist dates as a local read-only source.
+- **Release versions** — bumped the Hub to 0.11.145 and the Firefox extension to 1.0.27 for the expanded relay/native protocol.
+
+### Tests
+
+- Added focused suites for all six widgets plus native-host coverage for aggregate-metric privacy, approval-purpose isolation, Git parsing/remote sanitization, bounded recent-file enumeration, and path containment. Passed all 200 JavaScript tests and all 15 native-host tests; syntax and diff checks passed, and `web-ext lint` reported no errors (only the expected bundled native-host/installer notices).
+
+## [0.11.144] — 2026-08-17
+
+### Changed
+
+- **SDK-owned widget integrations** — routed standalone widget HTTP requests through declared-domain checks, concurrency and response-size limits, timeouts, and teardown-aware abort handling. RSS Reader and Calendar fallbacks plus Saved Sessions browser operations now use the shared extension-relay gateway, while Calendar secrets use the SDK credential boundary.
+- **Unified browser-local caches** — moved NASA APOD, Weather, Weather Map, ISS Tracker, RSS Reader, IP Info, and Calendar runtime caches and view preferences into quota-managed SDK storage. Existing legacy `localStorage` entries migrate automatically on first use, and NASA APOD payloads no longer live in portable shared widget data.
+- **Managed visual runtime** — added cancellable SDK animation frames and moved Weather Map playback/rain/resize work, ISS resize work, Calendar agenda positioning, IP speed-test timeouts, and Saved Sessions rename focus onto shared scheduler/frame lifecycle services.
+
+### Tests
+
+- Added NASA APOD persistence-boundary and migration coverage plus SDK tests for animation-frame teardown, legacy-cache migration, extension relay, secure credentials, and request abortion. Passed all 183 JavaScript regression cases, all standalone widget boundary and syntax checks, and all 11 native-host tests.
+
+## [0.11.143] — 2026-08-17
+
+### Changed
+
+- **Standalone built-in widget modules** — extracted NASA APOD, Weather, Weather Map, ISS Tracker, Astronomy & Night Sky, RSS Reader, and IP Info from the legacy widget catalogue into dedicated JavaScript and CSS modules, preserving their existing behaviour and ordered classic-script loading.
+- **Module-owned runtime lifecycle** — Weather Map and ISS now expose their own context cleanup and resize hooks, while every extracted stateful widget owns disposal of its private runtime maps, browser-local caches, timers, map instances, and saved views. The shared widget framework no longer contains widget-specific cleanup paths.
+- **Smaller legacy catalogue** — `source/widgets.js` now contains the common framework and lightweight Clock, Countdown, Notes, To-do, and Image widgets, making subsequent SDK service migrations and widget development more isolated.
+
+### Tests
+
+- Updated all affected widget suites to load and inspect the standalone modules, added ordered module-boundary coverage, and passed all 177 JavaScript regression cases, relevant syntax and combined classic-script checks, and all 11 native-host tests.
+
+## [0.11.142] — 2026-08-17
+
+### Added
+
+- **Saved Sessions widget** — added responsive column and sidebar views for named browser sessions, including tab counts, created and last-launched times, current favicon previews, group-colour indicators, and clear Firefox bridge availability messaging.
+- **Complete session management** — sessions can be captured from the active tab, current window, selected tabs, current group, or recently closed tabs; replaced from a fresh capture; appended with unique current tabs; renamed inline; deeply duplicated; safely launched; and deleted with confirmation. Launches above ten tabs require an additional confirmation.
+- **Graceful launch fallback** — when the Firefox session bridge is unavailable, existing portable URLs can still open in order through a user-triggered browser fallback, with an explicit warning that group and pinned state cannot be restored.
+
+### Changed
+
+- **Portable session metadata** — shared session records now preserve `updatedAt` and `lastLaunchedAt`, deduplicate fragment/tracking variants while retaining order, and continue to exclude transient browser tab/window/group IDs and cached favicon data. Hub Tools and every Saved Sessions widget refresh from the same normalized records.
+- **Favicon previews** — session previews reuse the Hub's browser-local origin resolution cache without persisting temporary session favicon data or triggering redundant shared-database saves.
+
+### Tests
+
+- Added coverage for portable sanitization, duplicate and unsupported URLs, missing capture permissions, create/replace/append identity, partial launch failures, unsupported grouping, browser fallback, large-launch confirmation, deep duplication, shared metadata migration, Hub Tools synchronization, SDK metadata, favicon boundaries, placement menus, and responsive assets. Passed all 176 JavaScript regression cases, relevant syntax/diff checks, and all 11 native-host tests. An in-app browser target was unavailable for visual verification.
+
+## [0.11.141] — 2026-08-17
+
+### Added
+
+- **Focus Session widget** — added responsive column and sidebar layouts with Pomodoro, Deep Work, Short Sprint, and custom focus/break timing; start, pause, resume, skip, and reset controls; configurable long-break cadence; optional automatic phase progression; recent phase history; and local daily session/minute totals.
+- **Focus launch helpers** — a session can optionally open a selected Set or nested bookmark folder once at the start, with URL deduplication, missing/empty-target feedback, and confirmation before opening more than ten bookmarks.
+- **Calendar and notification awareness** — Focus can warm configured Calendar widgets and warn when a timed event overlaps the current focus window without changing calendar sources. Phase-complete notifications remain off by default and request browser permission explicitly when enabled.
+
+### Changed
+
+- **Drift-free local timer lifecycle** — running phases persist an absolute deadline in the Widget SDK's quota-limited local cache, reconcile overdue phases after reload or sleep, and keep timer state, history, totals, and session progress outside the shared Hub database. Independent widget instances retain isolated runtime state.
+
+### Tests
+
+- Added coverage for absolute deadlines, pause/resume, reload and overdue recovery, automatic short/long-break sequences, skip/reset behavior, daily totals, timed Calendar conflicts, granted/denied notifications, Set and nested-folder launches, cache boundaries, multiple widget instances, SDK metadata, placement menus, and responsive assets. Passed all 165 JavaScript regression cases, relevant syntax/diff checks, and all 11 native-host tests. An in-app browser target was unavailable for visual verification.
+
+## [0.11.140] — 2026-08-17
+
+### Added
+
+- **Extended converter units** — added bits to Storage and astronomical units, light-years, and parsecs to Length, with direct conversion to every existing unit in their respective families.
+
+### Tests
+
+- Added exact and tolerance-based regression coverage for bit/byte and astronomical-distance conversions. Passed all 151 JavaScript regression cases and relevant syntax/diff checks.
+
+## [0.11.139] — 2026-08-17
+
+### Added
+
+- **Calculator and Converter widget** — added a standalone Phase 3 widget for board columns and the sidebar, with a safe local expression parser, operator precedence, parentheses, powers, percentages, common scientific functions, memory controls, copyable results, and a bounded browser-local history.
+- **Comprehensive conversions** — added explicit source/target conversion for length, mass, temperature, duration, decimal and binary storage, angles, ISO/Unix dates, and selected IANA time zones. Time-zone conversion detects nonexistent daylight-saving transition times instead of silently changing them.
+- **Command-palette calculation** — expressions prefixed with `=` now use the same parser in the command palette, with Enter copying a valid result and clear feedback for incomplete or invalid expressions.
+
+### Changed
+
+- **SDK-native widget state** — Calculator runtime values, memory, history, and view choices use the Widget SDK's quota-limited local cache and remain outside the shared Hub database. Settings cover the starting mode, conversion family, significant-digit precision, and history visibility.
+
+### Tests
+
+- Added regression coverage for precedence, powers, unary values, contextual percentages, invalid and unsafe input, decimal commas, precision and extreme values, every conversion family, daylight-saving gaps, clipboard behavior, local-state boundaries, SDK metadata, responsive assets, placement menus, and command-palette results. Passed all 150 JavaScript regression cases, relevant syntax/diff checks, and all 11 native-host tests. An in-app browser target was unavailable for visual verification.
+
+## [0.11.138] — 2026-08-17
+
+### Added
+
+- **Activity views in Essentials** — the sidebar Essentials pane can now cycle through Essentials, Recently Opened, Most Used, Neglected, and Newly Added without creating a separate widget or duplicating bookmarks. The centred view label opens a direct-selection menu, while previous/next chevrons provide one-click cycling.
+- **Compact read-only activity grid** — activity views reuse the configured Essentials slot count and favicon layout, show local open counts in Most Used, refresh after an open, and expose only Open and Locate context actions. Neglected means previously opened but untouched for 90 days; Never Opened remains in the complete Smart Views panel.
+
+### Changed
+
+- **Local view preference** — the selected Essentials mode is stored only with browser-local activity metadata, survives reloads and statistics resets, and never enters the shared Hub database. Disabled activity tracking produces a clear empty state while Newly Added remains available from local inventory metadata.
+
+### Tests
+
+- Added regression coverage for Neglected thresholds, forward/backward view cycling, local preference persistence, read-only activity rendering, controls, styling, and retained privacy boundaries. Passed all 139 JavaScript regression cases, the Phase 1 and Phase 2 feature scripts, relevant syntax checks, and all 11 native-host tests. An in-app browser target was unavailable for visual verification.
+
+## [0.11.137] — 2026-08-17
+
+### Added
+
+- **Widget and Integration SDK foundation** — added a versioned descriptor contract covering identity, placement, defaults, settings schemas, lifecycle hooks, migrations, responsive hints, and declared integration capabilities. All 13 current widgets are normalized as trusted built-ins while future local packages remain explicitly opt-in and untrusted.
+- **Shared widget runtime services** — added visibility-aware scheduling with error backoff, bounded/concurrency-limited network requests with declared-domain checks, quota-limited expiring local caches, standard unavailable/error states, settings-draft validation, state migration, and centralized teardown. Existing widget render, reload, scheduling, settings, state-loading, and disposal seams now pass through the SDK.
+- **Developer kit** — added a documented local widget template, stylesheet, example manifest, standalone manifest validator, browser fixture harness, and contract tests for registration, trust, drafts, migrations, persistence boundaries, cleanup, networking, and unavailable capabilities.
+
+### Tests
+
+- Passed all 139 JavaScript regression cases, the Phase 1 and Phase 2 feature scripts, Widget SDK manifest validation, relevant syntax checks, and all 11 native-host tests. An in-app browser target was unavailable for visual fixture verification.
+
+## [0.11.136] — 2026-08-17
+
+### Changed
+
+- **Guided Automation builder** — replaced the dense all-at-once rule form with four task-oriented recipes: Add Tags, Change Names, Move Bookmarks, and Clean Incoming Links. Creating a rule now follows three plainly labelled steps, shows a live “When… then…” sentence, keeps secondary filters under Advanced Options, and provides clearer empty, edit, enable/disable, ordering, preview, and apply states.
+- **Capture-to-Set handoff** — capturing the current Firefox session to a new Set now closes Hub Tools and immediately opens that Set in Set Manager. The generated Set title is focused and selected for immediate renaming, while every captured bookmark remains available for normal Set Manager editing.
+
+### Tests
+
+- Added regression coverage for plain-language Automation summaries, all four guided recipes, and the automatic Set Manager handoff; passed all 132 JavaScript regression cases and syntax checks.
+
+## [0.11.135] — 2026-08-17
+
+### Added
+
+- **Inbox Automation Rules** — added ordered, importable rules for hostname, URL/path, title, source, tags, and duplicate conditions, with tagging, renaming, routing, URL normalization, duplicate rejection, stop/continue semantics, target validation, and a no-change dry-run preview. The same evaluator handles manual Inbox/Import Manager batches and automatic Firefox deliveries with one-step Undo.
+- **Firefox session workflows** — extension 1.0.26 captures active, window, selected, grouped, and recently closed tabs without persisting browser IDs. Sessions can be saved or captured to an Inbox, new folder, or Set; folders, Sets, board tabs, and saved sessions launch with URL deduplication, stagger controls, large-batch confirmation, partial-failure reporting, and tab-group fallback.
+- **Backup timeline and selective restore** — added contained native-host APIs for integrity-checked backup enumeration and chunked reads, summary comparison, explicit safety backups, and rollback-safe restore of the full Hub or selected boards, Sets, tags, settings, Import Manager data, bookmarks, and folder subtrees.
+- **Scoped portable transfer** — added sanitized, versioned bundles for boards, tabs, folders, Sets, Smart View results, Inbox contents, and selected items, with optional dependencies/assets/usage, an included/omitted manifest, preview, merge/copy/replace modes, destination selection, duplicate filtering, ID remapping, and Undo.
+
+### Changed
+
+- **Hub Tools** — Phase 2 lives in a new Workflows tab inside the existing Hub Tools panel, avoiding another sidebar icon and preserving the single-row icon bar.
+- **State schema 2** — automation rules and sanitized saved sessions are now normalized persisted records; older databases migrate non-destructively.
+
+### Tests
+
+- Added Phase 2 core coverage for ordered/multiple rule matches, duplicate rejection, conflicts, session sanitization/deduplication, portable round trips and sanitization, folder export, summary comparison, and collision-safe selective restore.
+- Added extension tests for private/internal tab exclusion, browser-ID removal, launch deduplication, group fallback, and partial failures; expanded native tests for backup integrity, forced safety copies, containment, corrupt files, and concurrent chunk reads.
+- Passed all 132 JavaScript regression cases, 11 native-host persistence tests, JavaScript/Python syntax checks, and extension lint validation.
+
+## [0.11.134] — 2026-08-17
+
+### Changed
+
+- **Single-row sidebar actions** — removed the redundant Settings icon from the sidebar icon bar so the Smart Views action no longer pushes Settings onto a second row. The version button remains the sidebar entry point for Settings and About.
+
+### Tests
+
+- Added regression coverage ensuring the redundant icon stays removed while the version-button Settings handler remains wired.
+- Passed all 127 `node:test` regression cases, the dedicated Phase 1 integration suite, and JavaScript syntax checks.
+
+## [0.11.133] — 2026-08-17
+
+### Fixed
+
+- **False all-broken Link Health scans** — extension 1.0.25 advertises Link Health support through the bridge handshake. An older or stale extension background now produces a clear update/reload notice and an unavailable result instead of classifying every bookmark as a network failure; cached generic bridge errors are likewise removed from Broken Links.
+- **HEAD-incompatible sites** — URL checks now retry with a bounded one-byte GET when HEAD throws or is rejected, while retaining the existing overall timeout and categorized failure reporting.
+
+### Tests
+
+- Added regression coverage for bridge capability negotiation, relay failures remaining unavailable, and successful GET fallback after a HEAD network error.
+- Passed all 127 `node:test` regression cases, the dedicated Phase 1 integration suite, JavaScript syntax checks, and `web-ext lint` with no errors. The existing native Python-file notice and installer shell-file warning remain.
+
+## [0.11.132] — 2026-08-17
+
+### Fixed
+
+- **Missing-favicon accuracy** — Smart Views and Maintenance no longer label a bookmark as missing merely because it lacks an embedded `faviconCache`. Icons successfully resolved from the bookmark site or the normal DuckDuckGo/Google fallbacks now count as available, matching what the Hub actually displays.
+- **Complete favicon repair batches** — the Maintenance action now checks every unresolved hostname with bounded concurrency and persists native data icons directly, instead of only queueing bookmarks that happened to rerender. Unchecked bookmarks are labelled as potential issues until resolution finishes; only exhausted candidates remain confirmed missing.
+
+### Tests
+
+- Added regression coverage for effective remote-icon state, exhausted candidate detection, same-origin persisted favicon reuse, and Maintenance avoiding raw `faviconCache` counts.
+- Passed all 126 `node:test` regression cases, the dedicated Phase 1 integration suite, and JavaScript syntax checks.
+
+## [0.11.131] — 2026-08-17
+
+### Added
+
+- **Bookmark Maintenance Centre** — added a canonical cross-Hub bookmark inventory with scoped exact-host URL migration, configurable duplicate analysis and merging, tracking-parameter cleanup, missing-favicon refresh, and previewed/confirmed batch changes using one Undo snapshot.
+- **Categorized link health** — extension 1.0.24 adds bounded Hub-authenticated URL checks, cancellable browser-local scans, redirect acceptance, local exclusions, and distinct redirect, timeout, DNS/network, HTTP, unsupported-scheme, and authentication-gated results.
+- **Command Palette** — added an accessible `Ctrl+K` palette with fuzzy matching, recent commands, keyboard navigation, focus trapping, contextual bookmark actions, and indexes for boards, tabs, folders, bookmarks, Sets, tags, widgets, Settings pages, and available actions. Firefox's `Ctrl+Shift+K` extension command focuses or opens the registered Hub palette.
+- **Smart Views and local activity** — added Recently Opened, Most Used, Never Opened, Added Recently, Duplicates, Broken Links, Redirected Links, and Missing Favicons views with period/limit controls. Stable-ID activity counts and recent-open history stay in browser-local storage, can be disabled, reset, or exported, and are never added to the shared database.
+
+### Changed
+
+- **Central bookmark opening path** — board, Essentials, speed-dial, Search, Set, Import Manager, folder, and context-menu opens now share the same local activity-recording path.
+- **Fast control entry points** — Smart Views are available from Essentials, Search, and the sidebar, while maintenance results can be opened, located, moved, excluded, or acted on directly.
+
+### Fixed
+
+- **Favicon rerenders** — resolved favicon sources are reused for the rest of the page session, preventing unchanged icons from being decoded or requested again when folders or tabs rerender.
+
+### Tests
+
+- Added Phase 1 regression coverage for canonical/nested inventory discovery, dynamic projections, hostname boundaries, query/fragment preservation, configurable duplicates, local-only activity cleanup/reset/sorting, cancellable categorized health scans, palette indexing/actions, centralized opens, and extension command/relay wiring.
+- Passed all 123 `node:test` regression cases, the dedicated Phase 1 integration suite, 7 native-host persistence tests, JavaScript syntax checks, and `web-ext lint` with no errors. The existing native Python-file notice and installer shell-file warning remain.
+
+## [0.11.130] — 2026-08-05
+
+### Added
+
+- **24-hour day agenda** — clicking a day number in Calendar Month view now opens a focused modal for that day, with all-day events followed by a scrollable midnight-to-midnight hourly timeline. The modal supports its close button, Done, backdrop dismissal, and Escape.
+- **Moon phases source** — added a separate local source for new moon, first quarter, full moon, and last quarter transitions. Month cells show a compact NASA LRO moon image clipped to the relevant phase in their top-right corner, while the agenda retains the calculated transition time.
+
+### Changed
+
+- **Astronomy source separation** — the general Astronomy source now covers solstices/equinoxes, meteor-shower peaks, and known close approaches without duplicating the dedicated Moon phases source.
+
+### Tests
+
+- Added regression coverage for source separation, phase metadata, full-moon rendering inputs, the day-number trigger, all 24 hourly rows, and modal dismissal paths.
+- Passed all 119 JavaScript regression tests and JavaScript syntax checks.
+
+## [0.11.129] — 2026-08-05
+
+### Fixed
+
+- **Current PDC events** — replaced the free TheSportsDB season API's stale January-only 15-event slice with PDC's own public tournament service. The Calendar now loads the complete previous, current, and next-season schedules—including current August–December events—through the existing bounded extension relay, while retaining TheSportsDB as an emergency fallback.
+
+### Tests
+
+- Added regression coverage for normalizing official PDC records, inclusive multi-day ranges, venues, links, and all-day timing.
+- Passed all 118 JavaScript regression tests and JavaScript syntax checks.
+
+## [0.11.128] — 2026-08-05
+
+### Added
+
+- **Unified Calendar sources** — expanded the Calendar widget beyond Proton with generic HTTPS iCalendar feeds, regional UK bank holidays, locally calculated astronomy events, upcoming space launches, football competitions or teams, and official PDC darts schedules. All enabled sources merge chronologically into the existing agenda and month views.
+- **Per-source controls** — Calendar settings now provide source types and relevant provider options, while the widget legend can temporarily show or hide individual sources without changing the shared Hub database.
+- **Authenticated calendar relay** — extension 1.0.23 adds a bounded, authenticated Hub-only calendar request that forwards only the allowlisted `Accept` and football-data.org token headers.
+
+### Changed
+
+- **Automatic Proton migration** — existing Proton Calendar source entries retain their IDs, colours, names, and Windows Credential Manager links while gaining the new Proton source type automatically.
+- **Credential isolation** — private ICS URLs and football API tokens remain in Windows Credential Manager; public source configuration contains only non-secret provider options.
+
+### Tests
+
+- Added coverage for legacy Proton migration, public-only settings, common provider-event normalization, authenticated header allowlisting, and the expanded extension relay.
+- Passed all 117 JavaScript regression tests, 7 native-host persistence tests, JavaScript syntax checks, and `web-ext lint` with no errors. The existing native Python-file notice and installer-shell-file warning remain.
+
+## [0.11.127] — 2026-08-05
+
+### Fixed
+
+- **Calendar header controls** — reserved the calendar header's top-right action area for the settings and reload buttons, and moved `Open Proton` into the responsive status footer so it cannot overlap widget controls at narrow widths.
+
+### Tests
+
+- Passed all 112 JavaScript regression tests and JavaScript syntax checks.
+
+## [0.11.126] — 2026-08-05
+
+### Added
+
+- **Proton Calendar widget** — added a read-only calendar widget for Proton Unlimited sharing links, with combined multi-calendar agenda and month views, calendar colours, Today/period navigation, expandable event details, all-day events, and common recurring-event rules.
+- **Private calendar sources** — Proton sharing URLs are stored per widget and calendar in Windows Credential Manager. Neither the URLs nor fetched event details are written to the shared Hub database, browser cache, or backups.
+- **Calendar controls** — settings support up to six calendars, default agenda/month view, 7–60 day agenda ranges, Monday/Sunday week starts, and 30-minute to six-hour automatic refresh. A widget reload action forces an immediate refresh and event links open separately from the read-only feed.
+
+### Changed
+
+- **Asynchronous widget-setting commits** — widgets can now finish secure external-storage updates before the settings modal commits its database draft. Done and Cancel remain guarded during the operation, and a failed secure write leaves the modal open without changing the widget.
+- **Widget code separation** — the Proton Calendar implementation and responsive presentation live in dedicated source files rather than further expanding the main widget module.
+
+### Tests
+
+- Added regression coverage for secure URL exclusion, Credential Manager writes and removals, direct-to-extension fetch fallback, ICS time-zone parsing, all-day events, escaped content, recurrence exclusions, responsive assets, and widget categorization.
+- Passed all 112 JavaScript regression tests, 7 native-host persistence tests, and JavaScript syntax checks.
+
 ## [0.11.125] — 2026-08-05
 
 ### Added

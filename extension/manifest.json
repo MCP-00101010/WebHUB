@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Morpheus WebHub",
-  "version": "1.0.22",
+  "version": "1.0.29",
   "description": "Send tabs to your Morpheus WebHub inbox and enable file save/load.",
 
   "browser_specific_settings": {
@@ -22,6 +22,7 @@
     "bookmarks",
     "menus",
     "storage",
+    "sessions",
     "nativeMessaging",
     "file:///*",
     "https://*/*",
@@ -50,6 +51,15 @@
       "96": "icons/icon-96.svg"
     },
     "default_title": "Morpheus WebHub"
+  },
+
+  "commands": {
+    "open-command-palette": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K"
+      },
+      "description": "Open the Morpheus WebHub command palette"
+    }
   },
 
   "icons": {

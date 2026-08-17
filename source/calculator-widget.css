@@ -1,0 +1,197 @@
+.calculator-widget {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text);
+}
+
+.calculator-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+}
+
+.calculator-tabs button,
+.calculator-memory button,
+.calculator-keypad button,
+.calculator-copy,
+.calculator-swap,
+.calculator-history-item {
+  border: 1px solid color-mix(in srgb, var(--text) 13%, transparent);
+  border-radius: 7px;
+  color: inherit;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  cursor: pointer;
+}
+
+.calculator-tabs button {
+  padding: 7px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+}
+
+.calculator-tabs button.active {
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.calculator-body,
+.calculator-display,
+.calculator-converter-form {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calculator-expression,
+.calculator-converter-input,
+.calculator-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: inherit;
+  background: color-mix(in srgb, var(--panel) 84%, #000 16%);
+}
+
+.calculator-expression {
+  font: 500 16px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: right;
+}
+
+.calculator-result,
+.calculator-converter-output {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.calculator-result output,
+.calculator-converter-output output {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 600 18px/1.25 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.calculator-result.is-error output,
+.calculator-converter-output output.is-error {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.calculator-copy,
+.calculator-swap {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+.calculator-copy:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.calculator-memory {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.calculator-memory button {
+  padding: 6px 3px;
+  color: color-mix(in srgb, var(--accent) 74%, var(--text));
+  font-size: 11px;
+}
+
+.calculator-keypad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+}
+
+.calculator-keypad button {
+  min-height: 34px;
+  padding: 6px 3px;
+  font-size: 14px;
+}
+
+.calculator-keypad button:hover,
+.calculator-memory button:hover,
+.calculator-copy:hover:not(:disabled),
+.calculator-swap:hover,
+.calculator-history-item:hover {
+  background: color-mix(in srgb, var(--text) 13%, transparent);
+}
+
+.calculator-keypad .is-operator {
+  color: var(--accent);
+}
+
+.calculator-keypad .calculator-equals {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  font-weight: 700;
+}
+
+.calculator-history {
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  padding-top: 7px;
+}
+
+.calculator-history summary {
+  margin-bottom: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.calculator-history-item {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 6px 7px;
+  font: 11px/1.25 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: left;
+}
+
+.calculator-history-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calculator-converter-output {
+  margin-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+  padding-top: 9px;
+}
+
+.calculator-widget--navpane .calculator-history,
+.calculator-widget--navpane .calculator-keypad button:nth-child(-n + 3) {
+  display: none;
+}
+
+.calculator-widget--navpane .calculator-keypad {
+  grid-template-columns: repeat(4, minmax(30px, 1fr));
+}
+
+@container (max-width: 260px) {
+  .calculator-history { display: none; }
+  .calculator-expression { font-size: 14px; }
+  .calculator-keypad button { min-height: 31px; }
+}

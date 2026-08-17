@@ -1,0 +1,276 @@
+.saved-sessions-widget {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--text);
+}
+
+.saved-sessions-availability,
+.saved-sessions-status,
+.saved-sessions-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.saved-sessions-availability {
+  border-left: 2px solid color-mix(in srgb, var(--text-muted) 55%, transparent);
+  padding-left: 7px;
+}
+
+.saved-sessions-availability.is-connected {
+  border-left-color: #39a96b;
+}
+
+.saved-sessions-capture {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(112px, .8fr) auto;
+  gap: 6px;
+}
+
+.saved-sessions-name,
+.saved-sessions-scope,
+.saved-sessions-rename {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+  border-radius: 7px;
+  padding: 7px 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 88%, #000 12%);
+}
+
+.saved-sessions-save,
+.saved-sessions-detail-heading button,
+.saved-sessions-actions button {
+  border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  cursor: pointer;
+}
+
+.saved-sessions-save {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
+  font-weight: 650;
+}
+
+.saved-sessions-save:disabled,
+.saved-sessions-actions button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.saved-sessions-list {
+  display: flex;
+  max-height: 310px;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.saved-sessions-card {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 9px;
+  padding: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  cursor: pointer;
+  text-align: left;
+}
+
+.saved-sessions-card:hover,
+.saved-sessions-card.active {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 11%, var(--panel));
+}
+
+.saved-sessions-card-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.saved-sessions-card-copy strong,
+.saved-sessions-card-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-sessions-card-copy strong {
+  font-size: 12px;
+}
+
+.saved-sessions-card-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.saved-sessions-favicons {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-left: 4px;
+}
+
+.saved-sessions-favicon,
+.saved-sessions-favicon-more {
+  position: relative;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--session-group-color, var(--panel));
+  border-radius: 50%;
+  margin-left: -5px;
+  background: var(--panel-strong);
+}
+
+.saved-sessions-favicon img {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.saved-sessions-favicon-fallback {
+  position: absolute;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.saved-sessions-favicon-more {
+  width: auto;
+  min-width: 25px;
+  padding-inline: 4px;
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.saved-sessions-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding-top: 8px;
+}
+
+.saved-sessions-detail-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saved-sessions-detail-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-sessions-detail-heading span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.saved-sessions-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.saved-sessions-groups span {
+  border-left: 3px solid var(--session-group-color, var(--text-muted));
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  font-size: 10px;
+}
+
+.saved-sessions-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.saved-sessions-actions button {
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 11px;
+}
+
+.saved-sessions-actions button:hover:not(:disabled),
+.saved-sessions-detail-heading button:hover {
+  background: color-mix(in srgb, var(--text) 13%, transparent);
+}
+
+.saved-sessions-actions .is-primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 23%, transparent);
+  font-weight: 650;
+}
+
+.saved-sessions-actions .is-danger {
+  color: var(--danger);
+}
+
+.saved-sessions-status {
+  min-height: 15px;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-capture {
+  grid-template-columns: 1fr 1fr;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-name {
+  grid-column: 1 / -1;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-list {
+  max-height: 250px;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-card-copy small {
+  max-width: 125px;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-favicon:nth-child(n + 4) {
+  display: none;
+}
+
+.saved-sessions-widget--navpane .saved-sessions-actions {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.saved-sessions-widget--navpane .saved-sessions-detail-heading > span,
+.saved-sessions-widget--navpane .saved-sessions-groups {
+  display: none;
+}
+
+@container (max-width: 300px) {
+  .saved-sessions-capture { grid-template-columns: 1fr 1fr; }
+  .saved-sessions-name { grid-column: 1 / -1; }
+  .saved-sessions-actions { grid-template-columns: repeat(2, 1fr); }
+  .saved-sessions-detail-heading > span, .saved-sessions-groups { display: none; }
+  .saved-sessions-favicon:nth-child(n + 4) { display: none; }
+}

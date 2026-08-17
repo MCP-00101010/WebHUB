@@ -148,3 +148,56 @@ test('relay-ready reconnects after the initial bridge attempts have expired', as
   assert.equal(dispatchedEvents.at(-1)?.type, 'morpheus:bridge-ready');
   assert.equal(dispatchedEvents.at(-1)?.detail.nativeAvailable, true);
 });
+
+test('directory approval keeps the page request alive for the interactive picker', async () => {
+  const windowListeners = new Map();
+  const scheduledTimeouts = [];
+  const window = {
+    location: { href: 'file:///hub/index.html' },
+    addEventListener(type, listener) {
+      const listeners = windowListeners.get(type) || [];
+      listeners.push(listener);
+      windowListeners.set(type, listeners);
+    },
+    dispatchEvent: () => {},
+    postMessage(message) {
+      if (!message?._req) return;
+      let response;
+      if (message.type === 'MW_PING') response = { ok: true, nativeAvailable: true, capabilities: ['approvedDirectories'] };
+      else if (message.type === 'MW_APPROVE_DIRECTORY') response = { ok: true, directory: { handle: 'dir_abcdefghijklmnop', label: 'Repository' } };
+      else response = { ok: false, error: 'No terminal application was found' };
+      setImmediate(() => {
+        for (const listener of (windowListeners.get('message') || [])) {
+          listener({ source: window, data: { _mw: true, _res: true, id: message.id, ...response } });
+        }
+      });
+    }
+  };
+  const context = vm.createContext({
+    window,
+    document: { hidden: false, hasFocus: () => true },
+    console,
+    atob: value => Buffer.from(value, 'base64').toString('binary'),
+    TextDecoder,
+    Uint8Array,
+    setTimeout: (callback, delay, ...args) => {
+      scheduledTimeouts.push(delay);
+      return setTimeout(callback, delay, ...args);
+    },
+    clearTimeout
+  });
+  const filename = path.join(__dirname, '..', 'source', 'bridge.js');
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+
+  await vm.runInContext('bridge.whenReady', context);
+  scheduledTimeouts.length = 0;
+  const directory = await vm.runInContext("bridge.approveDirectory('git', 'Approve repository')", context);
+
+  assert.equal(directory.handle, 'dir_abcdefghijklmnop');
+  assert.deepEqual(scheduledTimeouts, [305000]);
+  assert.ok(scheduledTimeouts.every(Number.isFinite));
+  await assert.rejects(
+    vm.runInContext("bridge.openApprovedDirectory('dir_abcdefghijklmnop', 'git', 'terminal')", context),
+    /No terminal application was found/
+  );
+});

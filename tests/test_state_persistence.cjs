@@ -134,13 +134,13 @@ test('state loading repairs orphaned boards instead of deleting them', () => {
   assert.equal(parsed.boards.length, 1);
   assert.equal(parsed.boards[0].id, 'orphan');
   assert.equal(parsed.navItems.some(item => item.boardId === 'orphan'), true);
-  assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.schemaVersion, 2);
 });
 
 test('persisted snapshots omit active-tab board compatibility aliases', () => {
   const harness = loadStateScript();
   const snapshot = JSON.parse(harness.context.serializeStateSnapshot());
-  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.schemaVersion, 2);
   assert.equal(Array.isArray(snapshot.boards[0].tabs[0].columns), true);
   assert.equal('columns' in snapshot.boards[0], false);
   assert.equal('inbox' in snapshot.boards[0], false);

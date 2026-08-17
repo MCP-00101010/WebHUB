@@ -119,7 +119,10 @@ function removeDragPlaceholders() {
 
 function _clearDropDecorations(removePreviews = true) {
   const removable = removePreviews ? '.drag-placeholder, .drag-preview' : '.drag-placeholder';
-  document.querySelectorAll(removable).forEach(el => el.remove());
+  document.querySelectorAll(removable).forEach(el => {
+    if (el.dataset.widgetPreviewId) clearWidgetContextRuntime(el.dataset.widgetPreviewId, 'preview');
+    el.remove();
+  });
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
   document.querySelectorAll('.drop-position-before, .drop-position-after').forEach(el => {
     el.classList.remove('drop-position-before', 'drop-position-after');
@@ -225,10 +228,12 @@ function _renderCrossContextPreview(kind) {
     if (!def) return null;
     const el = document.createElement('div');
     el.className = 'nav-item nav-widget-item drag-preview';
+    el.dataset.widgetPreviewId = item.id;
     const body = document.createElement('div');
     body.className = 'nav-widget-body';
     el.appendChild(body);
-    def.render(item, body, 'navpane');
+    if (typeof WidgetSDK !== 'undefined') WidgetSDK.runtime.render(def, item, body, 'preview');
+    else def.render(item, body, 'navpane');
     return el;
   }
 

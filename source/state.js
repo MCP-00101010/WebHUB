@@ -85,7 +85,9 @@ const defaultSettings = {
   showFolderTags: true,
   tagGroups: [],
   serviceApiKeys: {
-    nasa: ''
+    nasa: '',
+    tmdb: '',
+    footballData: ''
   },
   activeThemeName: 'default-dark',
   customThemes: [],
@@ -134,6 +136,8 @@ const defaultState = {
   lastExported: null,
   tags: [],
   sets: [],
+  automationRules: [],
+  savedSessions: [],
   importManager: {
     items: [],
     lastImportedAt: null
@@ -214,6 +218,7 @@ function invalidateDerivedCaches() {
   inheritedTagContextCache = new WeakMap();
   boardNavInheritedTagsCache = new Map();
   liveBookmarkSourceCache = null;
+  if (typeof invalidateCommandPaletteIndex === 'function') invalidateCommandPaletteIndex();
 }
 
 function normalizeLocalCacheMeta(meta) {
@@ -477,7 +482,9 @@ const DYNAMIC_SORT_LABELS = Object.freeze({
 });
 
 const SERVICE_SECRET_KEYS = Object.freeze({
-  nasa: 'service.nasa.apiKey'
+  nasa: 'service.nasa.apiKey',
+  tmdb: 'service.tmdb.readAccessToken',
+  footballData: 'service.footballData.apiToken'
 });
 
 let serviceSecretCache = Object.fromEntries(Object.keys(SERVICE_SECRET_KEYS).map(key => [key, '']));
@@ -573,6 +580,7 @@ function migrateItems(items) {
       delete item.inheritTags;
       delete item.autoRemoveTags;
     }
+    if (item.type === 'widget' && typeof WidgetSDK !== 'undefined') WidgetSDK.state.migrate(item);
     if (item.children) migrateItems(item.children);
   }
 }
@@ -663,6 +671,56 @@ function normalizeImportManagerState(importManager) {
     items,
     lastImportedAt: typeof importManager?.lastImportedAt === 'string' ? importManager.lastImportedAt : null
   };
+}
+
+function normalizeAutomationRulesState(rules) {
+  return (Array.isArray(rules) ? rules : []).filter(rule => rule && typeof rule === 'object').map((rule, index) => ({
+    id: String(rule.id || `automation-${Date.now()}-${index}`),
+    name: String(rule.name || `Rule ${index + 1}`).trim() || `Rule ${index + 1}`,
+    enabled: rule.enabled !== false,
+    stop: rule.stop !== false,
+    conditions: rule.conditions && typeof rule.conditions === 'object' ? cloneData(rule.conditions) : {},
+    actions: rule.actions && typeof rule.actions === 'object' ? cloneData(rule.actions) : {}
+  }));
+}
+
+function normalizeSavedSessionTabs(tabs) {
+  const seen = new Set();
+  return (Array.isArray(tabs) ? tabs : []).filter(tab => /^https?:\/\//i.test(String(tab?.url || ''))).map(tab => ({
+    title: String(tab.title || tab.url || ''),
+    url: String(tab.url || ''),
+    pinned: tab.pinned === true,
+    active: tab.active === true,
+    group: tab.group && typeof tab.group === 'object' ? {
+      title: String(tab.group.title || ''),
+      color: String(tab.group.color || '')
+    } : null
+  })).filter(tab => {
+    let key = tab.url;
+    try {
+      const url = new URL(tab.url);
+      url.hash = '';
+      for (const parameter of [...url.searchParams.keys()]) {
+        if (/^(utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i.test(parameter)) url.searchParams.delete(parameter);
+      }
+      url.searchParams.sort();
+      key = url.toString();
+    } catch {}
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeSavedSessionsState(sessions) {
+  return (Array.isArray(sessions) ? sessions : []).filter(session => session && typeof session === 'object').map((session, index) => ({
+    id: String(session.id || `session-${Date.now()}-${index}`),
+    title: String(session.title || `Session ${index + 1}`).trim() || `Session ${index + 1}`,
+    createdAt: typeof session.createdAt === 'string' ? session.createdAt : new Date().toISOString(),
+    updatedAt: typeof session.updatedAt === 'string' ? session.updatedAt : (typeof session.createdAt === 'string' ? session.createdAt : new Date().toISOString()),
+    lastLaunchedAt: typeof session.lastLaunchedAt === 'string' ? session.lastLaunchedAt : null,
+    tabs: normalizeSavedSessionTabs(session.tabs)
+  }));
 }
 
 function touchSet(set) {
@@ -1027,6 +1085,8 @@ function parseStateJson(saved) {
       ? parsed.sets.map((set, index) => normalizeSetRecord(set, index))
       : [];
     parsed.importManager = normalizeImportManagerState(parsed.importManager);
+    parsed.automationRules = normalizeAutomationRulesState(parsed.automationRules);
+    parsed.savedSessions = normalizeSavedSessionsState(parsed.savedSessions);
     parsed.boards = Array.isArray(parsed.boards)
       ? parsed.boards.map((board, index) => normalizeBoardRecord(board, index))
       : [];

@@ -24,7 +24,8 @@ function loadAstronomyWidgets() {
   for (const filename of [
     'vendor/astronomy-engine/astronomy.browser.min.js',
     'source/astronomy-events.js',
-    'source/widgets.js'
+    'source/widgets.js',
+    'source/astronomy-widget.js'
   ]) {
     vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), context, { filename });
   }
@@ -157,21 +158,20 @@ test('astronomy assets are local, licensed and loaded before widget code', () =>
   assert.ok(moon.size > 500_000);
   assert.match(licence, /MIT License/);
   assert.match(version, /Astronomy Engine 2\.1\.19/);
-  assert.ok(index.indexOf('vendor/astronomy-engine/astronomy.browser.min.js') < index.indexOf('source/widgets.js'));
-  assert.ok(index.indexOf('source/astronomy-events.js') < index.indexOf('source/widgets.js'));
+  assert.ok(index.indexOf('vendor/astronomy-engine/astronomy.browser.min.js') < index.indexOf('source/astronomy-widget.js'));
+  assert.ok(index.indexOf('source/astronomy-events.js') < index.indexOf('source/astronomy-widget.js'));
 });
 
 test('astronomy widget exposes location, horizon and section controls with responsive styling', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source', 'styles.css'), 'utf8');
-  const source = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['astronomy']"));
+  const source = fs.readFileSync(path.join(root, 'source', 'astronomy-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source', 'astronomy-widget.css'), 'utf8');
   assert.match(source, /Use Weather location/);
   assert.match(source, /Separate location/);
   assert.match(source, /Upcoming events/);
   assert.match(source, /Visible planets tonight/);
   assert.match(source, /Meteor showers/);
-  assert.match(widgets, /\{ label: 'Sunrise', value: snapshot\.sunrise \}/);
-  assert.match(widgets, /\{ label: 'Sunset', value: snapshot\.sunset \}/);
+  assert.match(source, /\{ label: 'Sunrise', value: snapshot\.sunrise \}/);
+  assert.match(source, /\{ label: 'Sunset', value: snapshot\.sunset \}/);
   assert.match(source, /liveSettingsPreview: false/);
   assert.match(styles, /\.widget-astronomy-moon\s*\{/);
   assert.match(styles, /\.widget-astronomy-daylight\s*\{/);

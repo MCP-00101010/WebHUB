@@ -32,9 +32,10 @@ function loadIssWidgets(fetchImpl = async () => { throw new Error('Unexpected fe
     },
     saveState: () => { throw new Error('ISS tracking must not save shared Hub state'); }
   });
-  for (const filename of ['vendor/satellite-js/satellite.min.js', 'source/widget-network.js', 'source/widgets.js']) {
+  for (const filename of ['vendor/satellite-js/satellite.min.js', 'source/widget-network.js', 'source/widgets.js', 'source/widget-sdk.js', 'source/iss-tracker-widget.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), context, { filename });
   }
+  vm.runInContext('WidgetSDK.registry.adoptBuiltins()', context);
   return { context, storage };
 }
 
@@ -105,7 +106,7 @@ test('ISS orbital cache remains browser-local and honours its refresh age', () =
   const { context, storage } = loadIssWidgets();
   context.tle = SAMPLE_TLE;
   vm.runInContext('_writeIssTleCache({ ...tle, fetchedAt: Date.now(), source: "test" })', context);
-  assert.ok(storage.has('morpheus-webhub-iss-tle:v1'));
+  assert.ok(storage.has('morpheus-widget-sdk-cache:v1:issTracker:shared:tle'));
   assert.equal(vm.runInContext('_isIssTleFresh(_readIssTleCache())', context), true);
   vm.runInContext('_issTleMemoryCache.fetchedAt = Date.now() - ISS_TLE_TTL_MS - 1', context);
   assert.equal(vm.runInContext('_isIssTleFresh(_readIssTleCache())', context), false);
@@ -140,8 +141,8 @@ test('CelesTrak provides a fallback when the primary TLE source fails', async ()
 });
 
 test('ISS assets, globe interaction, cleanup, and responsive styling are wired locally', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
+  const widgets = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.css'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.match(html, /vendor\/satellite-js\/satellite\.min\.js/);
   assert.ok(fs.existsSync(path.join(root, 'vendor/satellite-js/LICENSE.md')));
@@ -153,8 +154,7 @@ test('ISS assets, globe interaction, cleanup, and responsive styling are wired l
 });
 
 test('globe projection waits until the MapLibre style has loaded', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const issSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['issTracker']"), widgets.indexOf('// ---- Astronomy / Night Sky widget ----'));
+  const issSource = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8');
   const construction = issSource.slice(issSource.indexOf('map = new maplibregl.Map(mapOptions)'), issSource.indexOf("map.on('load'"));
   const loadedSetup = issSource.slice(issSource.indexOf("map.on('load'"), issSource.indexOf("map.on('moveend'"));
   assert.doesNotMatch(construction, /setProjection/);
@@ -174,8 +174,8 @@ test('Focus ISS state is browser-local and recentres every live update', () => {
   const view = vm.runInContext("_writeIssView('iss-focus', map, { focusOnIss: true }); _readIssView('iss-focus')", context);
   assert.equal(view.focusOnIss, true);
 
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
+  const widgets = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.css'), 'utf8');
   assert.match(widgets, /focusButton\.className = 'widget-iss-focus-button'/);
   assert.match(widgets, /instance\.focusOnIss && instance\.mapReady[\s\S]*?instance\.map\.jumpTo\(\{ center:/);
   assert.match(widgets, /focusButton\.setAttribute\('aria-pressed'/);
@@ -203,16 +203,16 @@ test('ISS map attribution state survives widget recreation and Hub reloads', () 
   assert.equal(vm.runInContext('_captureIssAttribution(instance)', context), true);
   assert.equal(vm.runInContext("_readIssView('iss-attribution').attributionExpanded", context), true);
 
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const issSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['issTracker']"), widgets.indexOf('// ---- Astronomy / Night Sky widget ----'));
+  const widgets = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8');
+  const issSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['issTracker']"));
   assert.match(widgets, /_destroyIssTracker[\s\S]*?_captureIssAttribution\(instance\)/);
   assert.match(issSource, /_restoreIssAttribution\(instance\)/);
 });
 
 test('custom north control is clickable and resets every globe orientation axis', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
-  const issSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['issTracker']"), widgets.indexOf('// ---- Astronomy / Night Sky widget ----'));
+  const widgets = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source/iss-tracker-widget.css'), 'utf8');
+  const issSource = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['issTracker']"));
   assert.match(issSource, /northButton\.className = 'widget-iss-north-button'/);
   assert.match(issSource, /dragRotate:\s*true/);
   assert.match(issSource, /NavigationControl\(\{ showCompass: false \}\)/);

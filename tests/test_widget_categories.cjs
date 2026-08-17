@@ -22,14 +22,33 @@ function readWidgetDefinitions(source) {
 }
 
 test('widget library is grouped into ordered categories for board and sidebar menus', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
+  const widgets = [
+    fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/nasa-apod-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/weather-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/weather-map-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/iss-tracker-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/astronomy-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/rss-reader-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/ip-info-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/calendar-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/calculator-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/focus-session-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/saved-sessions-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/service-monitor-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/system-monitor-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/git-workspace-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/media-watchlist-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/recent-files-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/universal-search-widget.js'), 'utf8')
+  ].join('\n');
   const contextSource = fs.readFileSync(path.join(root, 'source/context.js'), 'utf8');
   const definitions = readWidgetDefinitions(widgets);
   const categoryOrder = vm.runInNewContext(
     widgets.slice(widgets.indexOf('const WIDGET_CATEGORY_ORDER'), widgets.indexOf('];', widgets.indexOf('const WIDGET_CATEGORY_ORDER')) + 2)
       .replace('const WIDGET_CATEGORY_ORDER =', '')
   );
-  assert.equal(Object.keys(definitions).length, 12);
+  assert.equal(Object.keys(definitions).length, 22);
   Object.values(definitions).forEach(definition => assert.ok(categoryOrder.includes(definition.category)));
 
   const helperStart = contextSource.indexOf('function _buildWidgetSubmenu');
@@ -40,22 +59,22 @@ test('widget library is grouped into ordered categories for board and sidebar me
   const boardMenu = vm.runInContext("_buildWidgetSubmenu('column', 'addWidget')", context);
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu.map(group => group.label))),
-    ['Personal & Productivity', 'Weather & Network', 'Space & Astronomy', 'Content & Feeds']
+    ['Personal & Productivity', 'Weather & Network', 'Space & Astronomy', 'Content & Feeds', 'Other']
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu[0].submenu.map(item => item.label))),
-    ['Clock', 'Countdown', 'Notes', 'To-do List']
+    ['Calculator & Converter', 'Calendar', 'Clock', 'Countdown', 'Focus Session', 'Git Workspace', 'Notes', 'Recent Downloads & Files', 'Saved Sessions', 'To-do List', 'Universal Search Launcher']
   );
-  assert.equal(boardMenu.flatMap(group => group.submenu).length, 12);
+  assert.equal(boardMenu.flatMap(group => group.submenu).length, 22);
 
   const sidebarMenu = vm.runInContext("_buildWidgetSubmenu('navpane', 'addNavWidget')", context);
   assert.deepEqual(
     JSON.parse(JSON.stringify(sidebarMenu.map(group => group.label))),
-    ['Personal & Productivity', 'Weather & Network']
+    ['Personal & Productivity', 'Weather & Network', 'Content & Feeds', 'Other']
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(sidebarMenu.flatMap(group => group.submenu).map(item => item.action))),
-    ['addNavWidget:clock', 'addNavWidget:countdown', 'addNavWidget:ipInfo']
+    ['addNavWidget:calculatorConverter', 'addNavWidget:clock', 'addNavWidget:countdown', 'addNavWidget:focusSession', 'addNavWidget:gitWorkspace', 'addNavWidget:recentFiles', 'addNavWidget:savedSessions', 'addNavWidget:universalSearch', 'addNavWidget:ipInfo', 'addNavWidget:serviceMonitor', 'addNavWidget:mediaWatchlist', 'addNavWidget:systemMonitor']
   );
 });
 
@@ -67,6 +86,7 @@ test('context menu renderer supports recursive submenus without removing their a
   assert.match(source, /action\.submenu\.forEach\(subAction => _appendContextMenuAction\(submenu, subAction, depth \+ 1\)\)/);
   assert.match(source, /submenu\.dataset\.menuDepth = String\(depth \+ 1\)/);
   assert.match(source, /_positionContextSubmenu\(submenu, button\)/);
+  assert.match(source, /typeof action\.run === 'function'/);
   assert.match(source, /_buildWidgetSubmenu\('column', 'addWidget'\)/);
   assert.match(source, /_buildWidgetSubmenu\('navpane', 'addNavWidget'\)/);
 });

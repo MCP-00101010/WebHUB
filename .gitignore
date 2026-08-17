@@ -2,6 +2,7 @@ node_modules/
 dist/
 .build/
 build/
+.test-tmp/
 *.lock
 __pycache__/
 *.db
@@ -12,6 +13,7 @@ extension/native/morpheus-webhub.json
 extension/native/backups/
 extension/native/*.backup.json
 extension/native/*.before-write.*.json
+extension/native/*.before-*.json
 extension/native/morpheus_host.bat
 extension/native/morpheus_webhub.json
 morpheus-webhub.json

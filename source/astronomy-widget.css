@@ -1,0 +1,286 @@
+/* Astronomy / Night Sky widget */
+.widget-astronomy {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  width: 100%;
+  min-width: 0;
+}
+
+.widget-astronomy-location {
+  min-width: 0;
+  padding-right: 50px;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-astronomy-moon {
+  display: grid;
+  grid-template-columns: minmax(92px, 126px) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 25%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 45%),
+    color-mix(in srgb, var(--panel) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--panel-r);
+}
+
+.widget-astronomy-moon-disc {
+  display: block;
+  width: 100%;
+  max-width: 126px;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 20%, transparent));
+}
+
+.widget-astronomy-moon-dark {
+  opacity: 0.16;
+  filter: brightness(0.42) saturate(0.65);
+}
+
+.widget-astronomy-moon-lit {
+  filter: brightness(1.08) contrast(1.05);
+}
+
+.widget-astronomy-moon-rim {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 22%, transparent);
+  stroke-width: 0.8;
+}
+
+.widget-astronomy-moon-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.widget-astronomy-moon-name {
+  color: var(--text);
+  font-size: 1.15rem;
+}
+
+.widget-astronomy-moon-summary,
+.widget-astronomy-moon-times,
+.widget-astronomy-next-phase {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.widget-astronomy-next-phase {
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--accent-strong) 82%, var(--text));
+}
+
+.widget-astronomy-daylight {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--control-r);
+}
+
+.widget-astronomy-fact {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 9px;
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+}
+
+.widget-astronomy-fact-label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.widget-astronomy-fact strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-astronomy-section {
+  min-width: 0;
+}
+
+.widget-astronomy-section-title {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.widget-astronomy-planets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 5px;
+}
+
+.widget-astronomy-planet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  background: color-mix(in srgb, var(--panel) 54%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: var(--control-r);
+}
+
+.widget-astronomy-planet.is-visible-now {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.widget-astronomy-planet-symbol {
+  width: 22px;
+  flex: 0 0 22px;
+  color: var(--accent-strong);
+  font-size: 1.25rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.widget-astronomy-planet-details,
+.widget-astronomy-list-main,
+.widget-astronomy-event > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.widget-astronomy-planet-details strong,
+.widget-astronomy-list-main strong,
+.widget-astronomy-event strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.widget-astronomy-planet-details span,
+.widget-astronomy-list-main > span,
+.widget-astronomy-event > span > span {
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  line-height: 1.35;
+}
+
+.widget-astronomy-list,
+.widget-astronomy-events {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: var(--control-r);
+}
+
+.widget-astronomy-list-row,
+.widget-astronomy-event {
+  min-width: 0;
+  padding: 7px 9px;
+  background: color-mix(in srgb, var(--panel) 48%, transparent);
+}
+
+.widget-astronomy-list-row + .widget-astronomy-list-row,
+.widget-astronomy-event + .widget-astronomy-event {
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.widget-astronomy-active-badge {
+  display: inline-flex;
+  margin-left: 7px;
+  padding: 1px 5px;
+  align-items: center;
+  color: var(--accent-strong);
+  font-size: 0.59rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.widget-astronomy-event {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 9px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.widget-astronomy-event.is-eclipse { border-left-color: #b78cff; }
+.widget-astronomy-event.is-planet { border-left-color: #67a9ff; }
+.widget-astronomy-event.is-comet { border-left-color: #69d9c1; }
+
+.widget-astronomy-event time {
+  padding-top: 1px;
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.widget-astronomy-empty {
+  padding: 9px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
+.widget-astronomy-attribution {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.widget-astronomy-attribution a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.widget-astronomy-attribution a:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.astronomy-weather-location {
+  margin: -4px 0 4px;
+  padding-left: 8px;
+}
+
+.astronomy-own-location-row.is-disabled {
+  opacity: 0.55;
+}
+
+@media (max-width: 560px) {
+  .widget-astronomy-moon {
+    grid-template-columns: 86px minmax(0, 1fr);
+    gap: 11px;
+  }
+
+  .widget-astronomy-daylight {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .widget-astronomy-planets {
+    grid-template-columns: 1fr;
+  }
+}

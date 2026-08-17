@@ -1,0 +1,27 @@
+/* Keep widget content clear of the shared settings/reload action rail. */
+.service-monitor-header,
+.system-monitor-header,
+.git-workspace-header,
+.recent-files-header {
+  min-height: 20px;
+  padding-right: 52px;
+  justify-content: flex-start;
+}
+
+.service-monitor-summary,
+.system-monitor-status,
+.git-workspace-header,
+.recent-files-header {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-watchlist-card:first-child > .media-watchlist-main {
+  padding-right: 26px;
+}
+
+.universal-search-input-row {
+  margin-right: 26px;
+}

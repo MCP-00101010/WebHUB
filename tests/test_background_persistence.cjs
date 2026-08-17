@@ -17,6 +17,8 @@ async function loadBackground(options = {}) {
   const sentTabs = [];
   const nativeConnections = [];
   const executedScripts = [];
+  const createdTabs = [];
+  const scheduledTimeouts = [];
   const injectedTabs = new Set();
   const browser = {
     runtime: {
@@ -58,7 +60,14 @@ async function loadBackground(options = {}) {
       }
     },
     tabs: {
-      query: async () => options.tabs || [],
+      query: async query => typeof options.queryTabs === 'function' ? options.queryTabs(query) : (options.tabs || []),
+      get: async tabId => (options.tabs || []).find(tab => tab.id === tabId),
+      create: async details => {
+        if ((options.createFailures || []).includes(details.url)) throw new Error('simulated open failure');
+        const tab = { id: 1000 + createdTabs.length, ...details };
+        createdTabs.push(tab);
+        return tab;
+      },
       executeScript: async (tabId, details) => {
         executedScripts.push({ tabId, details });
         if (details?.file) {
@@ -86,12 +95,14 @@ async function loadBackground(options = {}) {
       onUpdated: { addListener: listener => { listeners.updated = listener; } },
       onActivated: { addListener: listener => { listeners.activated = listener; } }
     },
+    sessions: { getRecentlyClosed: async () => options.recentlyClosed || [] },
     bookmarks: { getSubTree: async () => [] },
     menus: {
       create: () => {},
       remove: async () => {},
       onClicked: { addListener: () => {} }
-    }
+    },
+    commands: { onCommand: { addListener: listener => { listeners.command = listener; } } }
   };
   if (options.usePersistentNative) {
     browser.runtime.connectNative = () => {
@@ -138,14 +149,73 @@ async function loadBackground(options = {}) {
     Uint8Array,
     atob: value => Buffer.from(value, 'base64').toString('binary'),
     crypto: require('node:crypto').webcrypto,
-    setTimeout,
+    setTimeout: (callback, delay, ...args) => {
+      scheduledTimeouts.push(delay);
+      return setTimeout(callback, delay, ...args);
+    },
     clearTimeout
   });
   const filename = path.join(__dirname, '..', 'extension', 'background.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   await new Promise(resolve => setImmediate(resolve));
-  return { context, listeners, nativeWrites, pendingWrites, sentTabs, nativeConnections, executedScripts };
+  return { context, listeners, nativeWrites, pendingWrites, sentTabs, nativeConnections, executedScripts, createdTabs, scheduledTimeouts };
 }
+
+test('directory approval passes a finite interactive timeout to the native request', async () => {
+  const harness = await loadBackground();
+  harness.scheduledTimeouts.length = 0;
+
+  await harness.context.approveDirectory('git', 'Approve a Git repository folder');
+
+  assert.deepEqual(harness.scheduledTimeouts, [300000]);
+  assert.ok(harness.scheduledTimeouts.every(Number.isFinite));
+
+  harness.scheduledTimeouts.length = 0;
+  await harness.context.sendNativeRequest({ type: 'PING' }, { timeoutMs: 1 });
+  assert.deepEqual(harness.scheduledTimeouts, [15000]);
+});
+
+test('session capture removes browser IDs and skips private/internal tabs', async () => {
+  const harness = await loadBackground({ tabs: [
+    { id: 1, windowId: 9, title: 'Public', url: 'https://example.com/', pinned: true },
+    { id: 2, windowId: 9, title: 'Private', url: 'https://private.example/', incognito: true },
+    { id: 3, windowId: 9, title: 'Internal', url: 'about:config' }
+  ] });
+  const result = await harness.context.captureBrowserSession('window');
+  assert.equal(result.tabs.length, 1);
+  assert.equal(result.skippedPrivate, 1);
+  assert.equal(JSON.stringify(result.tabs).includes('windowId'), false);
+  assert.equal(JSON.stringify(result.tabs).includes('"id"'), false);
+});
+
+test('active-tab capture falls back to the last active web tab when invoked from the Hub', async () => {
+  const tabs = [
+    { id: 7, windowId: 2, title: 'Work', url: 'https://work.example/', active: false },
+    { id: 8, windowId: 2, title: 'Hub', url: 'file:///hub.html', active: true }
+  ];
+  const harness = await loadBackground({ tabs, queryTabs: () => [tabs[1]] });
+  harness.listeners.activated({ tabId: 7 });
+  await new Promise(resolve => setImmediate(resolve));
+  harness.listeners.activated({ tabId: 8 });
+  await new Promise(resolve => setImmediate(resolve));
+  const result = await harness.context.captureBrowserSession('active-tab');
+  assert.equal(result.tabs.length, 1);
+  assert.equal(result.tabs[0].url, 'https://work.example/');
+});
+
+test('session launch deduplicates URLs and reports partial failures without aborting', async () => {
+  const harness = await loadBackground({ createFailures: ['https://bad.example/'] });
+  const result = await harness.context.launchBrowserSession([
+    { title: 'One', url: 'https://one.example/' },
+    { title: 'One duplicate', url: 'https://one.example/#again' },
+    { title: 'Bad', url: 'https://bad.example/' },
+    { title: 'Two', url: 'https://two.example/' }
+  ], { staggerMs: 0, recreateGroups: true });
+  assert.equal(result.opened, 2);
+  assert.equal(result.failed, 1);
+  assert.equal(result.groupingSupported, false);
+  assert.deepEqual(harness.createdTabs.map(tab => tab.url), ['https://one.example/', 'https://two.example/']);
+});
 
 test('native save FIFO keeps requests and responses correlated', async () => {
   const harness = await loadBackground();
@@ -207,6 +277,7 @@ test('extension handshake responds before native host startup completes', async 
     { tab: { id: 10, url: 'file:///hub.html' } },
     resolve
   ));
+  assert(registration.capabilities.includes('urlHealth'));
   harness.listeners.message(
     { type: 'MW_PING', morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
     { tab: { id: 10, url: 'file:///hub.html' } },
@@ -258,6 +329,71 @@ test('Firefox 153 reports its new disabled local-file permission instead of a ge
   assert.equal(status.fileSchemeAccess, false);
   assert.match(status.hubRelayError, /Access local files on your computer/);
   assert.equal(harness.executedScripts.length, 0);
+});
+
+test('bounded link-health checks report redirects and unsupported schemes', async () => {
+  const harness = await loadBackground({
+    fetchImpl: async () => ({
+      status: 200,
+      statusText: 'OK',
+      url: 'https://example.com/final',
+      body: { cancel: async () => {} }
+    })
+  });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+  const sendPageRequest = message => new Promise(resolve => harness.listeners.message(
+    { ...message, morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+
+  const checked = await sendPageRequest({ type: 'MW_CHECK_URL', url: 'https://example.com/start' });
+  assert.equal(checked.reachable, true);
+  assert.equal(checked.finalUrl, 'https://example.com/final');
+  const unsupported = await sendPageRequest({ type: 'MW_CHECK_URL', url: 'ftp://example.com/file' });
+  assert.equal(unsupported.errorType, 'unsupported');
+});
+
+test('link-health retries with a bounded GET when a server rejects HEAD', async () => {
+  const methods = [];
+  const harness = await loadBackground({
+    fetchImpl: async (_url, options) => {
+      methods.push(options.method);
+      if (options.method === 'HEAD') throw new TypeError('NetworkError when attempting to fetch resource.');
+      return { status: 200, statusText: 'OK', url: 'https://example.com/page', body: { cancel: async () => {} } };
+    }
+  });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 14, url: 'file:///hub.html' } },
+    resolve
+  ));
+  const checked = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_CHECK_URL', url: 'https://example.com/page', morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
+    { tab: { id: 14, url: 'file:///hub.html' } },
+    resolve
+  ));
+
+  assert.deepEqual(methods, ['HEAD', 'GET']);
+  assert.equal(checked.reachable, true);
+  assert.equal(checked.status, 200);
+});
+
+test('the Firefox command focuses the registered Hub palette', async () => {
+  const harness = await loadBackground();
+  await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 12, url: 'file:///hub.html' } },
+    resolve
+  ));
+  harness.listeners.command('open-command-palette');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(harness.sentTabs.at(-1).tabId, 12);
+  assert.equal(harness.sentTabs.at(-1).message.type, 'MW_OPEN_COMMAND_PALETTE');
 });
 
 test('configured shared read failure never substitutes extension-local state', async () => {
@@ -345,6 +481,50 @@ test('extension feed relay fetches bounded text only for the Hub page', async ()
   });
   assert.equal(denied.ok, false);
   assert.match(denied.error, /not authorized/i);
+});
+
+test('calendar relay forwards only bounded calendar headers for an authenticated Hub session', async () => {
+  const requests = [];
+  const body = JSON.stringify({ matches: [] });
+  const harness = await loadBackground({
+    fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), options });
+      return {
+        ok: true, status: 200, url: String(url),
+        headers: { get: name => name === 'content-length' ? String(Buffer.byteLength(body)) : 'application/json' },
+        arrayBuffer: async () => Buffer.from(body)
+      };
+    }
+  });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub/index.html', active: true },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  const response = await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_FETCH_CALENDAR', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: registration.hubSessionToken, url: 'https://api.football-data.org/v4/competitions/PL/matches',
+      headers: { Accept: 'application/json', 'X-Auth-Token': 'private-token', Authorization: 'must-not-pass' }
+    },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  assert.equal(response.ok, true);
+  assert.equal(requests[0].options.headers.Accept, 'application/json');
+  assert.equal(requests[0].options.headers['X-Auth-Token'], 'private-token');
+  assert.equal(requests[0].options.headers.Authorization, undefined);
+  assert.equal(requests[0].options.credentials, 'omit');
+  assert.equal(requests[0].options.redirect, 'error');
+
+  await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_FETCH_CALENDAR', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: registration.hubSessionToken, url: 'https://example.com/calendar.json',
+      headers: { 'X-Auth-Token': 'must-not-leak' }
+    },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  assert.equal(requests[1].options.headers['X-Auth-Token'], undefined);
+  assert.equal(requests[1].options.redirect, 'follow');
 });
 
 test('native services require the exact registered Hub session', async () => {

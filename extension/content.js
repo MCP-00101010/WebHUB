@@ -98,6 +98,9 @@ if (IS_MORPHEUS) {
     if (msg.type === 'MW_GET_INBOX_TARGETS') {
       return relayPushToPage({ type: 'MW_GET_INBOX_TARGETS' });
     }
+    if (msg.type === 'MW_OPEN_COMMAND_PALETTE') {
+      return relayPushToPage({ type: 'MW_OPEN_COMMAND_PALETTE' });
+    }
   });
 }
 

@@ -1,35 +1,36 @@
 // Shared network and location-search helpers used by data-backed widgets.
 
 async function _fetchWithTimeout(input, options = {}, timeoutMs = 15000) {
-  const { widgetFetchKey = '', ...fetchOptions } = options;
+  if (typeof WidgetSDK !== 'undefined' && options.__widgetSdkManaged !== true) {
+    return WidgetSDK.network.request(
+      input,
+      options,
+      timeoutMs,
+      (nextInput, nextOptions, nextTimeout) => _fetchWithTimeout(nextInput, nextOptions, nextTimeout)
+    );
+  }
+  const { widgetFetchKey = '', __widgetSdkManaged, maxResponseBytes, widgetType, ...fetchOptions } = options;
   const controller = new AbortController();
   const parentSignal = fetchOptions.signal;
   const abortFromParent = () => controller.abort(parentSignal?.reason);
   if (parentSignal?.aborted) abortFromParent();
   else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
   const timer = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
-  if (widgetFetchKey && typeof _widgetFetchControllers !== 'undefined') {
-    _widgetFetchControllers.set(widgetFetchKey, controller);
-  }
   try {
     return await fetch(input, { ...fetchOptions, signal: controller.signal });
   } finally {
     clearTimeout(timer);
-    if (
-      widgetFetchKey && typeof _widgetFetchControllers !== 'undefined'
-      && _widgetFetchControllers.get(widgetFetchKey) === controller
-    ) _widgetFetchControllers.delete(widgetFetchKey);
     parentSignal?.removeEventListener?.('abort', abortFromParent);
   }
 }
 
-async function _searchOpenMeteoLocations(query, signal) {
+async function _searchOpenMeteoLocations(query, signal, widgetType = 'weather') {
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
   url.searchParams.set('name', query);
   url.searchParams.set('count', '6');
   url.searchParams.set('language', (navigator.language || 'en').split('-')[0]);
   url.searchParams.set('format', 'json');
-  const response = await _fetchWithTimeout(url, { signal });
+  const response = await _fetchWithTimeout(url, { signal, widgetType });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.reason || `Location search returned ${response.status}`);
   return Array.isArray(payload?.results) ? payload.results : [];
@@ -40,7 +41,7 @@ function _openMeteoLocationLabel(location) {
 }
 
 function _bindOpenMeteoLocationSearch(options = {}) {
-  const { input, button, results, signal, onSelect, disabledAfter } = options;
+  const { input, button, results, signal, onSelect, disabledAfter, widgetType = 'weather' } = options;
   let generation = 0;
   const showMessage = (message, isError = false) => {
     results.innerHTML = '';
@@ -56,7 +57,7 @@ function _bindOpenMeteoLocationSearch(options = {}) {
     button.disabled = true;
     showMessage('Searching...');
     try {
-      const locations = await _searchOpenMeteoLocations(query, signal);
+      const locations = await _searchOpenMeteoLocations(query, signal, widgetType);
       if (requestGeneration !== generation) return;
       results.innerHTML = '';
       if (!locations.length) return showMessage('No matching locations found.');

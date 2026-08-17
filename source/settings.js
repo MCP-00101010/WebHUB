@@ -3,7 +3,12 @@
 let boardSettingsCreatingId = null;
 let _boardSettingsCancelSnapshot = null;
 let _pendingDatabasePath = '';
-let _serviceSecretSaveTimer = null;
+const _serviceSecretSaveTimers = new Map();
+const SERVICE_SECRET_UI = Object.freeze({
+  nasa: Object.freeze({ inputId: 'stgApiKeyNasa', statusId: 'stgApiKeyNasaStatus', usage: 'the NASA APOD widget' }),
+  tmdb: Object.freeze({ inputId: 'stgApiKeyTmdb', statusId: 'stgApiKeyTmdbStatus', usage: 'every Media Watchlist widget' }),
+  footballData: Object.freeze({ inputId: 'stgApiKeyFootballData', statusId: 'stgApiKeyFootballDataStatus', usage: 'Football sources in Calendar widgets' })
+});
 
 function updateSidebarOpacitySettingsUi() {
   const useActive = document.getElementById('stgSidebarUseActiveOpacity')?.checked !== false;
@@ -1306,17 +1311,19 @@ async function getSecretStorageStatus() {
 }
 
 function updateServiceSecretUi(serviceName = 'nasa', status = null) {
-  const input = document.getElementById('stgApiKeyNasa');
-  const statusEl = document.getElementById('stgApiKeyNasaStatus');
-  if (serviceName !== 'nasa' || !input || !statusEl) return;
+  const ui = SERVICE_SECRET_UI[serviceName];
+  if (!ui) return;
+  const input = document.getElementById(ui.inputId);
+  const statusEl = document.getElementById(ui.statusId);
+  if (!input || !statusEl) return;
   input.value = typeof getServiceSecret === 'function' ? getServiceSecret(serviceName) : '';
   if (!status) {
-    statusEl.textContent = 'Used by the NASA APOD widget. Stored in Windows Credential Manager when desktop sync is available.';
+    statusEl.textContent = `Used by ${ui.usage}. Stored in Windows Credential Manager when desktop sync is available.`;
     return;
   }
   statusEl.textContent = status.available
-    ? 'Used by the NASA APOD widget. Stored in Windows Credential Manager, not in the shared JSON database.'
-    : `Used by the NASA APOD widget. Secret storage unavailable: ${status.error || 'native host unavailable'}.`;
+    ? `Used by ${ui.usage}. Stored in Windows Credential Manager, not in the shared JSON database.`
+    : `Used by ${ui.usage}. Secret storage unavailable: ${status.error || 'native host unavailable'}.`;
 }
 
 async function loadServiceSecretsIntoSettingsUi() {
@@ -1327,7 +1334,7 @@ async function loadServiceSecretsIntoSettingsUi() {
       if (value || !getServiceSecret(serviceName)) setServiceSecretCache(serviceName, value || '');
     }
   }
-  updateServiceSecretUi('nasa', status);
+  Object.keys(SERVICE_SECRET_UI).forEach(serviceName => updateServiceSecretUi(serviceName, status));
 }
 
 async function persistServiceSecret(serviceName, value) {
@@ -1337,7 +1344,7 @@ async function persistServiceSecret(serviceName, value) {
   const status = await getSecretStorageStatus();
   if (!status.available || typeof bridge === 'undefined') {
     setServiceSecretsCanScrubState(false);
-    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = { nasa: '' };
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
     state.settings.serviceApiKeys[serviceName] = value;
     updateServiceSecretUi(serviceName, status);
     saveState();
@@ -1348,12 +1355,13 @@ async function persistServiceSecret(serviceName, value) {
     : await bridge.secretDelete(secretKey);
   updateServiceSecretUi(serviceName, status);
   if (ok) {
-    setServiceSecretsCanScrubState(true);
-    clearStoredServiceApiKeys(state);
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
+    state.settings.serviceApiKeys[serviceName] = '';
+    setServiceSecretsCanScrubState(Object.values(state.settings.serviceApiKeys).every(stored => !String(stored || '').trim()));
     saveState();
   } else {
     setServiceSecretsCanScrubState(false);
-    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = { nasa: '' };
+    if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') state.settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
     state.settings.serviceApiKeys[serviceName] = value;
     saveState();
     showNotice('Could not update Windows Credential Manager. The key was kept in the shared JSON database for now.');
@@ -1363,13 +1371,47 @@ async function persistServiceSecret(serviceName, value) {
 
 function queueServiceSecretSave(serviceName, value) {
   setServiceSecretCache(serviceName, value);
-  if (_serviceSecretSaveTimer) clearTimeout(_serviceSecretSaveTimer);
-  _serviceSecretSaveTimer = setTimeout(() => {
-    _serviceSecretSaveTimer = null;
+  const pendingTimer = _serviceSecretSaveTimers.get(serviceName);
+  if (pendingTimer) clearTimeout(pendingTimer);
+  _serviceSecretSaveTimers.set(serviceName, setTimeout(() => {
+    _serviceSecretSaveTimers.delete(serviceName);
     persistServiceSecret(serviceName, value).catch(error => {
       console.warn('Failed to save service secret', error);
     });
-  }, 350);
+  }, 350));
+}
+
+function collectLegacyWidgetServiceSecretKeys(root = state) {
+  const collected = { tmdb: [], footballData: [] };
+  const seen = { tmdb: new Set(), footballData: new Set() };
+  const add = (serviceName, key) => {
+    if (!key || seen[serviceName].has(key)) return;
+    seen[serviceName].add(key);
+    collected[serviceName].push(key);
+  };
+  const visit = item => {
+    if (!item || typeof item !== 'object') return;
+    if (item.type === 'widget' && item.id) {
+      if (item.widgetType === 'mediaWatchlist') add('tmdb', `media-watchlist:${item.id}:tmdb-token`);
+      if (item.widgetType === 'protonCalendar') {
+        (item.config?.calendars || []).filter(source => source?.type === 'football' && source.id).forEach(source => {
+          add('footballData', `proton-calendar:${item.id}:${source.id}`);
+        });
+      }
+    }
+    (item.children || []).forEach(visit);
+  };
+  (root?.essentials || []).forEach(visit);
+  (root?.navItems || []).forEach(visit);
+  if (typeof recentlyDeleted !== 'undefined' && Array.isArray(recentlyDeleted)) {
+    recentlyDeleted.forEach(entry => visit(entry?.item));
+  }
+  for (const board of (root?.boards || [])) {
+    for (const tab of (typeof getBoardTabs === 'function' ? getBoardTabs(board) : board.tabs || [])) {
+      for (const column of (tab.columns || [])) (column.items || []).forEach(visit);
+    }
+  }
+  return collected;
 }
 
 async function initializeServiceSecrets() {
@@ -1385,21 +1427,28 @@ async function initializeServiceSecrets() {
 
   let canScrub = true;
   let migrated = false;
+  const legacyWidgetKeys = collectLegacyWidgetServiceSecretKeys(state);
   for (const [serviceName, secretKey] of Object.entries(SERVICE_SECRET_KEYS)) {
-    const stored = await bridge.secretGet(secretKey);
+    let stored = await bridge.secretGet(secretKey);
     const legacy = typeof legacyKeys[serviceName] === 'string' ? legacyKeys[serviceName].trim() : '';
-    if (!stored && legacy) {
-      const ok = await bridge.secretSet(secretKey, legacy);
+    let candidate = stored || legacy;
+    if (!candidate) {
+      for (const oldSecretKey of (legacyWidgetKeys[serviceName] || [])) {
+        candidate = String(await bridge.secretGet(oldSecretKey) || '').trim();
+        if (candidate) break;
+      }
+    }
+    if (!stored && candidate) {
+      const ok = await bridge.secretSet(secretKey, candidate);
       if (ok) {
-        setServiceSecretCache(serviceName, legacy);
+        stored = candidate;
         migrated = true;
       } else {
-        setServiceSecretCache(serviceName, legacy);
         canScrub = false;
       }
-    } else {
-      setServiceSecretCache(serviceName, stored || '');
     }
+    setServiceSecretCache(serviceName, stored || candidate || '');
+    if (stored) await Promise.all((legacyWidgetKeys[serviceName] || []).map(oldSecretKey => bridge.secretDelete(oldSecretKey)));
   }
   setServiceSecretsCanScrubState(canScrub);
   if (canScrub && (migrated || Object.values(legacyKeys).some(Boolean))) {
@@ -1467,7 +1516,7 @@ function showSettingsPanel(tab = 'general') {
   document.getElementById('stgConfirmDeleteFolder').checked = s.confirmDeleteFolder;
   document.getElementById('stgConfirmDeleteTitleDivider').checked = s.confirmDeleteTitleDivider;
   document.getElementById('stgConfirmDeleteTag').checked = s.confirmDeleteTag;
-  document.getElementById('stgApiKeyNasa').value = typeof getServiceSecret === 'function' ? getServiceSecret('nasa') : '';
+  Object.keys(SERVICE_SECRET_UI).forEach(serviceName => updateServiceSecretUi(serviceName));
   document.getElementById('stgShowFolderTags').checked = s.showFolderTags !== false;
   document.getElementById('stgSidebarUseActiveOpacity').checked = s.sidebarUseActiveTabOpacity !== false;
   document.getElementById('stgSidebarOpacity').value = s.sidebarOpacity ?? 100;
@@ -2503,10 +2552,11 @@ function renderTagGroups() {
 function attachSettingsListeners() {
   const ensureServiceApiKeySettings = () => {
     if (!state.settings.serviceApiKeys || typeof state.settings.serviceApiKeys !== 'object') {
-      state.settings.serviceApiKeys = { nasa: '' };
-    } else if (typeof state.settings.serviceApiKeys.nasa !== 'string') {
-      state.settings.serviceApiKeys.nasa = '';
+      state.settings.serviceApiKeys = cloneData(defaultSettings.serviceApiKeys);
     }
+    Object.keys(SERVICE_SECRET_KEYS).forEach(serviceName => {
+      if (typeof state.settings.serviceApiKeys[serviceName] !== 'string') state.settings.serviceApiKeys[serviceName] = '';
+    });
   };
 
   document.getElementById('stgHubName').addEventListener('input', e => {
@@ -2515,10 +2565,12 @@ function attachSettingsListeners() {
     document.title = state.hubName;
   });
 
-  document.getElementById('stgApiKeyNasa').addEventListener('input', e => {
-    ensureServiceApiKeySettings();
-    state.settings.serviceApiKeys.nasa = '';
-    queueServiceSecretSave('nasa', e.target.value.trim());
+  Object.entries(SERVICE_SECRET_UI).forEach(([serviceName, ui]) => {
+    document.getElementById(ui.inputId)?.addEventListener('input', e => {
+      ensureServiceApiKeySettings();
+      state.settings.serviceApiKeys[serviceName] = '';
+      queueServiceSecretSave(serviceName, e.target.value.trim());
+    });
   });
 
   document.querySelectorAll('input[name="stgGlobalFontScale"]').forEach(radio => {

@@ -28,8 +28,10 @@ function loadRssWidgets(fetchImpl = async () => { throw new Error('Unexpected fe
     },
     saveState: () => { throw new Error('RSS runtime data must not save shared Hub state'); }
   });
-  const filename = path.join(root, 'source/widgets.js');
-  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+  for (const filename of ['source/widget-network.js', 'source/widgets.js', 'source/widget-sdk.js', 'source/rss-reader-widget.js']) {
+    vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), context, { filename });
+  }
+  vm.runInContext('WidgetSDK.registry.adoptBuiltins()', context);
   return { context, storage };
 }
 
@@ -170,14 +172,15 @@ test('feed refresh caches parsed articles locally without saving the Hub databas
     { id: 'one:item', title: 'Cached item', link: 'https://example.com/item', summary: '', author: '', timestamp: Date.now() }
   ] })`, context);
   await vm.runInContext('_ensureRssData(widget, { force: true })', context);
-  const cached = JSON.parse(storage.get('morpheus-webhub-rss-cache:rss-refresh'));
+  const cached = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:rssReader:rss-refresh:feeds')).value;
   assert.equal(cached.feeds.one.title, 'One feed');
   assert.equal(cached.feeds.one.items[0].title, 'Cached item');
 });
 
 test('RSS UI exposes combined, starred and feed tabs with local read state', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
+  const widgets = fs.readFileSync(path.join(root, 'source/rss-reader-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source/rss-reader-widget.css'), 'utf8');
+  const frameworkStyles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
   const bridge = fs.readFileSync(path.join(root, 'source/bridge.js'), 'utf8');
   const background = fs.readFileSync(path.join(root, 'extension/background.js'), 'utf8');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'extension/manifest.json'), 'utf8'));
@@ -189,16 +192,18 @@ test('RSS UI exposes combined, starred and feed tabs with local read state', () 
   assert.match(rssSource, /rss-settings-add-feed/);
   assert.match(rssSource, /settingsPanelWidth: 'wide'/);
   assert.match(rssSource, /heading\.textContent = widget\.title/);
-  assert.match(widgets, /panel\.classList\.toggle\('widget-settings-panel--wide', def\.settingsPanelWidth === 'wide'\)/);
+  const framework = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
+  assert.match(framework, /panel\.classList\.toggle\('widget-settings-panel--wide', def\.settingsPanelWidth === 'wide'\)/);
   assert.match(styles, /\.widget-rss-tabs\s*\{[^}]*overflow-x:\s*auto/s);
   assert.match(styles, /\.widget-rss-tabs\s*\{[^}]*padding-bottom:\s*7px/s);
   assert.match(styles, /\.widget-rss-articles\s*\{[^}]*max-height:\s*480px/s);
-  assert.match(styles, /#widgetSettingsPanel\.widget-settings-panel--wide\s*\{[^}]*760px/s);
+  assert.match(frameworkStyles, /#widgetSettingsPanel\.widget-settings-panel--wide\s*\{[^}]*760px/s);
   assert.match(styles, /\.rss-settings-feed-inputs\s*\{[^}]*minmax\(260px, 1fr\)/s);
   assert.match(styles, /\.rss-settings-feed-actions \.icon-btn\.is-danger\s*\{[^}]*border:\s*1px solid var\(--danger\)/s);
   assert.match(bridge, /async fetchFeed\(url\)[\s\S]*?MW_FETCH_FEED/);
+  assert.match(bridge, /async fetchCalendar\(url, headers = \{\}\)[\s\S]*?MW_FETCH_CALENDAR/);
   assert.match(background, /MAX_FEED_RESPONSE_BYTES = 2 \* 1024 \* 1024/);
   assert.equal(manifest.permissions.includes('https://*/*'), true);
   assert.equal(manifest.permissions.includes('http://*/*'), true);
-  assert.equal(manifest.version, '1.0.22');
+  assert.equal(manifest.version, '1.0.29');
 });

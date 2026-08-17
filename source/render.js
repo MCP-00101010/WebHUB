@@ -27,7 +27,6 @@ const elements = {
   quickSearchBtn: document.getElementById('quickSearchBtn'),
   quickTagManagerBtn: document.getElementById('quickTagManagerBtn'),
   quickSetsBtn: document.getElementById('quickSetsBtn'),
-  quickSettingsBtn: document.getElementById('quickSettingsBtn'),
   speedDialToggleBtn: document.getElementById('speedDialToggleBtn'),
   setBarToggleBtn: document.getElementById('setBarToggleBtn'),
   searchModal: document.getElementById('searchModal'),
@@ -52,6 +51,9 @@ let _tagPickerSort = 'az';
 const nativeFaviconMisses = new Set();
 const nativeFaviconRefreshRequests = new Set();
 const faviconResolutionPromises = new Map();
+const resolvedFaviconSources = new Map();
+const failedFaviconOrigins = new Set();
+const FAVICON_CANDIDATE_TIMEOUT_MS = 5000;
 let faviconCacheSaveTimer = null;
 let searchDataCacheSequence = -1;
 let persistentSearchDataCache = new WeakMap();
@@ -72,8 +74,29 @@ function resolveUiPanelAlpha() {
 function requestNativeFaviconRefresh(item) {
   const url = typeof item?.url === 'string' ? item.url.trim() : '';
   if (!/^https?:\/\//i.test(url)) return;
-  nativeFaviconMisses.delete(url);
+  try {
+    const origin = new URL(url).origin;
+    nativeFaviconMisses.delete(origin);
+    failedFaviconOrigins.delete(origin);
+    resolvedFaviconSources.delete(origin);
+    faviconResolutionPromises.delete(origin);
+  } catch {}
   nativeFaviconRefreshRequests.add(url);
+}
+
+function getBookmarkFaviconResolutionState(item) {
+  if (item?.faviconCache) return 'available';
+  const url = typeof item?.url === 'string' ? item.url.trim() : '';
+  if (!url) return 'missing';
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname) return 'missing';
+    if (resolvedFaviconSources.has(parsed.origin)) return 'available';
+    if (failedFaviconOrigins.has(parsed.origin)) return 'missing';
+    return 'unchecked';
+  } catch {
+    return 'missing';
+  }
 }
 
 function scheduleFaviconCacheSave() {
@@ -87,8 +110,18 @@ function scheduleFaviconCacheSave() {
 function loadFaviconCandidate(src) {
   return new Promise(resolve => {
     const probe = new Image();
-    probe.onload = () => resolve(src);
-    probe.onerror = () => resolve('');
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      probe.onload = null;
+      probe.onerror = null;
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(''), FAVICON_CANDIDATE_TIMEOUT_MS);
+    probe.onload = () => finish(src);
+    probe.onerror = () => finish('');
     probe.src = src;
   });
 }
@@ -101,6 +134,8 @@ async function resolveFaviconSource(item, options = {}) {
   const requestUrl = item.url.trim();
   const cacheKey = parsed.origin;
   const forceNative = options.forceNative === true;
+  if (!forceNative && resolvedFaviconSources.has(cacheKey)) return resolvedFaviconSources.get(cacheKey);
+  if (!forceNative && failedFaviconOrigins.has(cacheKey)) return '';
   if (!forceNative && faviconResolutionPromises.has(cacheKey)) return faviconResolutionPromises.get(cacheKey);
 
   const request = (async () => {
@@ -124,8 +159,17 @@ async function resolveFaviconSource(item, options = {}) {
       const loaded = await loadFaviconCandidate(candidate);
       if (loaded) return loaded;
     }
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=64`;
-  })().finally(() => {
+    return loadFaviconCandidate(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(parsed.hostname)}&sz=64`);
+  })().then(src => {
+    if (src) {
+      resolvedFaviconSources.set(cacheKey, src);
+      failedFaviconOrigins.delete(cacheKey);
+    } else {
+      resolvedFaviconSources.delete(cacheKey);
+      failedFaviconOrigins.add(cacheKey);
+    }
+    return src;
+  }).finally(() => {
     if (faviconResolutionPromises.get(cacheKey) === request) faviconResolutionPromises.delete(cacheKey);
   });
   if (!forceNative) faviconResolutionPromises.set(cacheKey, request);
@@ -135,17 +179,28 @@ async function resolveFaviconSource(item, options = {}) {
 function setFavicon(img, item, sz) {
   if (item.faviconCache) {
     img.src = item.faviconCache;
+    try {
+      const origin = new URL(item.url).origin;
+      resolvedFaviconSources.set(origin, item.faviconCache);
+      failedFaviconOrigins.delete(origin);
+    } catch {}
     return;
   }
   if (!item.url) return;
   const requestUrl = item.url.trim();
   const forceNative = nativeFaviconRefreshRequests.delete(requestUrl);
+  let origin = '';
+  try { origin = new URL(requestUrl).origin; } catch {}
   if (forceNative) {
-    try {
-      const origin = new URL(requestUrl).origin;
+    if (origin) {
       nativeFaviconMisses.delete(origin);
       faviconResolutionPromises.delete(origin);
-    } catch {}
+      resolvedFaviconSources.delete(origin);
+      failedFaviconOrigins.delete(origin);
+    }
+  } else if (origin && resolvedFaviconSources.has(origin)) {
+    img.src = resolvedFaviconSources.get(origin);
+    return;
   }
   resolveFaviconSource(item, { forceNative }).then(src => {
     if (!src || document.hidden) return;
@@ -739,8 +794,10 @@ function createSearchResultItem(item, meta = {}) {
   el.target = '_blank';
   el.rel = 'noreferrer noopener';
   el.draggable = false;
+  el.dataset.bookmarkId = item.id || '';
   el.dataset.tooltip = buildTooltip(item);
   el.dataset.tooltipKind = 'bookmark';
+  el.addEventListener('click', () => recordBookmarkOpen(item));
   el.addEventListener('contextmenu', e => handleSearchResultContextMenu(e, item, meta));
 
   const header = document.createElement('div');
@@ -931,6 +988,80 @@ function createBoardSearchResultItem(item, meta = {}) {
 
 let lastRenderedBoardId = null;
 
+function _essentialsActivityDetail(viewId, result) {
+  const formatDate = typeof _phaseOneFormatDate === 'function'
+    ? _phaseOneFormatDate
+    : timestamp => new Date(timestamp).toLocaleDateString();
+  if (viewId === 'recent') return `Last opened ${formatDate(result.activity?.lastOpenedAt)}`;
+  if (viewId === 'most-used') return `${result.activity?.openCount || 0} opens · Last ${formatDate(result.activity?.lastOpenedAt)}`;
+  if (viewId === 'neglected') return `Last opened ${formatDate(result.activity?.lastOpenedAt)}`;
+  if (viewId === 'added') return `Added ${formatDate(result.activity?.firstSeenAt)}`;
+  return '';
+}
+
+function _renderEssentialsActivityView(viewId, displayCount) {
+  const activity = getBookmarkActivityState();
+  const results = getEssentialsActivityResults(viewId, { limit: displayCount });
+  if (activity.trackingEnabled === false && viewId !== 'added') {
+    const empty = document.createElement('div');
+    empty.className = 'essentials-activity-empty';
+    empty.textContent = 'Bookmark activity tracking is off.';
+    elements.essentialsGrid.appendChild(empty);
+    return;
+  }
+  if (!results.length) {
+    const emptyMessages = {
+      recent: 'No recently opened bookmarks yet.',
+      'most-used': 'No bookmark usage recorded yet.',
+      neglected: 'No neglected bookmarks.',
+      added: 'No newly added bookmarks.'
+    };
+    const empty = document.createElement('div');
+    empty.className = 'essentials-activity-empty';
+    empty.textContent = emptyMessages[viewId] || 'No bookmarks to show.';
+    elements.essentialsGrid.appendChild(empty);
+    return;
+  }
+
+  for (const result of results) {
+    const item = result.entry.item;
+    const detail = _essentialsActivityDetail(viewId, result);
+    const cell = document.createElement('div');
+    cell.className = 'essential-slot filled essentials-activity-slot';
+    cell.dataset.activityBookmarkId = item.id || '';
+
+    const link = document.createElement('a');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noreferrer noopener';
+    link.dataset.bookmarkId = item.id || '';
+    link.dataset.tooltip = [buildTooltip(item), detail, result.entry.location].filter(Boolean).join('\n');
+    link.dataset.tooltipKind = 'bookmark';
+    link.addEventListener('click', () => {
+      recordBookmarkOpen(item);
+      requestAnimationFrame(() => renderEssentials());
+    });
+
+    const img = document.createElement('img');
+    setFavicon(img, item, 64);
+    img.alt = item.title || '';
+    img.draggable = false;
+    link.appendChild(img);
+    cell.appendChild(link);
+
+    if (viewId === 'most-used') {
+      const count = document.createElement('span');
+      count.className = 'essentials-activity-count';
+      count.textContent = String(result.activity?.openCount || 0);
+      count.setAttribute('aria-hidden', 'true');
+      cell.appendChild(count);
+    }
+
+    cell.addEventListener('contextmenu', event => handleEssentialsActivityContextMenu(event, result.entry));
+    elements.essentialsGrid.appendChild(cell);
+  }
+}
+
 function renderEssentials() {
   const section = document.getElementById('essentialsSection');
   const visible = state.settings.showEssentials !== false;
@@ -938,6 +1069,14 @@ function renderEssentials() {
   if (!visible) { elements.essentialsGrid.innerHTML = ''; return; }
   elements.essentialsGrid.innerHTML = '';
   const displayCount = state.settings.essentialsDisplayCount || 10;
+  const viewId = typeof getEssentialsViewId === 'function' ? getEssentialsViewId() : 'essentials';
+  section.dataset.essentialsView = viewId;
+  elements.essentialsGrid.classList.toggle('is-activity-view', viewId !== 'essentials');
+  if (typeof updateEssentialsViewControls === 'function') updateEssentialsViewControls();
+  if (viewId !== 'essentials') {
+    _renderEssentialsActivityView(viewId, displayCount);
+    return;
+  }
   for (let slot = 0; slot < displayCount; slot++) {
     const item = state.essentials[slot] || null;
     const cell = document.createElement('div');
@@ -950,8 +1089,10 @@ function renderEssentials() {
       link.target = '_blank';
       link.rel = 'noreferrer noopener';
       link.draggable = true;
+      link.dataset.bookmarkId = item.id || '';
       link.dataset.tooltip = buildTooltip(item);
       link.dataset.tooltipKind = 'bookmark';
+      link.addEventListener('click', () => recordBookmarkOpen(item));
 
       if (item.url) {
         const img = document.createElement('img');
@@ -1105,7 +1246,8 @@ function createNavItem(item, depth = 0, parent = null) {
         onSettingsRefresh: () => renderNav()
       });
       el.appendChild(body);
-      def.render(item, body, 'navpane');
+      if (typeof WidgetSDK !== 'undefined') WidgetSDK.runtime.render(def, item, body, 'navpane');
+      else def.render(item, body, 'navpane');
       el.dataset.widgetRenderSignature = _widgetRenderSignature(item);
     }
     el.addEventListener('contextmenu', e => {
@@ -1873,8 +2015,10 @@ function renderSpeedDial(board) {
     link.target = '_blank';
     link.rel = 'noreferrer noopener';
     link.draggable = true;
+    link.dataset.bookmarkId = item.id || '';
     link.dataset.tooltip = buildTooltip(item, board);
     link.dataset.tooltipKind = 'bookmark';
+    link.addEventListener('click', () => recordBookmarkOpen(item));
 
     if (item.url) {
       const favicon = document.createElement('img');

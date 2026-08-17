@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.125';
+const APP_VERSION = '0.11.157';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -217,6 +217,8 @@ function resetTransientUiForDataReload() {
   if (typeof setsManagerPanelOpen !== 'undefined' && setsManagerPanelOpen) hideSetManagerPanel();
   if (typeof importManagerPanelOpen !== 'undefined' && importManagerPanelOpen) hideImportManagerPanel();
   if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) hideInboxPanel();
+  if (typeof hideHubToolsPanel === 'function') hideHubToolsPanel();
+  if (typeof closeCommandPalette === 'function') closeCommandPalette();
   if (!document.getElementById('trashPanel').classList.contains('hidden')) hideTrashPanel();
   if (!document.getElementById('tagManagerPanel').classList.contains('hidden')) hideTagManagerPanel();
   if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) hideDynamicRuleEditor();
@@ -442,6 +444,13 @@ async function persistExternalTabDelivery(detail = {}, allowRebase = true) {
     };
     pushUndoSnapshot();
     target.inbox.items.push(item);
+    if (typeof phaseTwoApplyAutomationRecords === 'function') {
+      phaseTwoApplyAutomationRecords([{ item, parent: target.inbox.items, source: 'extension' }], {
+        pushUndo: false,
+        persist: false,
+        render: false
+      });
+    }
   }
 
   const deliveryMutationSequence = getLocalStateMutationSequence() + 1;
@@ -906,7 +915,6 @@ function attachEventListeners() {
   document.getElementById('aboutBtn').addEventListener('click', () => showSettingsPanel('about'));
   elements.quickSearchBtn?.addEventListener('click', () => openSearchModal({}));
   elements.quickTagManagerBtn?.addEventListener('click', showTagManagerPanel);
-  elements.quickSettingsBtn?.addEventListener('click', () => showSettingsPanel('general'));
   document.getElementById('trashBtn').addEventListener('click', showTrashPanel);
   document.getElementById('trashCloseBtn').addEventListener('click', hideTrashPanel);
   document.getElementById('trashClearAllBtn').addEventListener('click', () => {
@@ -1417,6 +1425,8 @@ async function initializeHubState() {
   }
 
   renderAll();
+  if (typeof initializePhaseOneFeatures === 'function') initializePhaseOneFeatures();
+  if (typeof initializeCommandPalette === 'function') initializeCommandPalette();
   if (typeof updateSidebarExtensionStatus === 'function') updateSidebarExtensionStatus();
   updateUndoRedoUI();
   isDirty = false;

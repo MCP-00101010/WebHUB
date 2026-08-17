@@ -27,7 +27,10 @@ function loadWidgets(fetchImpl = async () => { throw new Error('Unexpected fetch
     saveState: () => { throw new Error('IP information must not save shared Hub state'); },
     cloneData: value => JSON.parse(JSON.stringify(value))
   });
-  vm.runInContext(fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8'), context, { filename: 'source/widgets.js' });
+  for (const filename of ['source/widget-network.js', 'source/widgets.js', 'source/widget-sdk.js', 'source/ip-info-widget.js']) {
+    vm.runInContext(fs.readFileSync(path.join(root, filename), 'utf8'), context, { filename });
+  }
+  vm.runInContext('WidgetSDK.registry.adoptBuiltins()', context);
   return { context, storage };
 }
 
@@ -90,7 +93,7 @@ test('IP lookup refreshes once per Hub session and caches results outside the da
   assert.equal(vm.runInContext('_claimIpInfoSessionRefresh(_getIpInfoRuntime(widget.id))', context), true);
   assert.equal(vm.runInContext('_claimIpInfoSessionRefresh(_getIpInfoRuntime(widget.id))', context), false);
   await vm.runInContext('_ensureIpInfoData(widget, { force: true })', context);
-  const cached = JSON.parse(storage.get('morpheus-webhub-ip-info:ip-widget'));
+  const cached = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:ipInfo:ip-widget:lookup')).value;
   assert.equal(cached.data.ip, '203.0.113.7');
   assert.equal(cached.data.countryCode, 'GB');
   assert.equal(requests.length, 1);
@@ -155,7 +158,7 @@ test('Cloudflare speed testing runs on IP changes and manual refresh but not unc
     getSummary: () => ({ download: 125e6, upload: 32e6, latency: 18.4, jitter: 2.1 })
   });
   await firstSpeedRequest;
-  const speedCache = JSON.parse(storage.get('morpheus-webhub-ip-speed:ip-speed-widget'));
+  const speedCache = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:ipInfo:ip-speed-widget:speed')).value;
   assert.equal(speedCache.ip, '203.0.113.22');
   assert.equal(speedCache.downloadMbps, 125);
   assert.equal(speedCache.uploadMbps, 32);
@@ -175,7 +178,7 @@ test('Cloudflare speed testing runs on IP changes and manual refresh but not unc
 test('the pinned Cloudflare browser engine loads locally before widget code', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const engine = fs.readFileSync(path.join(root, 'vendor/cloudflare-speedtest/speedtest.js'), 'utf8');
-  assert.ok(html.indexOf('vendor/cloudflare-speedtest/speedtest.js') < html.indexOf('source/widgets.js'));
+  assert.ok(html.indexOf('vendor/cloudflare-speedtest/speedtest.js') < html.indexOf('source/ip-info-widget.js'));
   assert.match(engine, /globalThis\.CloudflareSpeedTest = SpeedTestEngine/);
   assert.doesNotMatch(engine, /^export\b/m);
   assert.equal(fs.existsSync(path.join(root, 'vendor/cloudflare-speedtest/LICENSE.txt')), true);
@@ -195,9 +198,8 @@ test('the Cloudflare engine resolves API URLs when a file Hub has a null origin'
 });
 
 test('IP Info UI exposes flag, address, change state, privacy controls, and attribution', () => {
-  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
-  const source = widgets.slice(widgets.indexOf("WIDGET_REGISTRY['ipInfo']"));
+  const source = fs.readFileSync(path.join(root, 'source/ip-info-widget.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source/ip-info-widget.css'), 'utf8');
   assert.match(source, /widget-ip-info-flag/);
   assert.match(source, /widget-ip-info-address widget-interactive-surface/);
   assert.match(source, /addressType\.textContent = `\(\$\{data\.type\}\)`/);

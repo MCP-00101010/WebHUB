@@ -15,7 +15,7 @@ Morpheus WebHub is a local-first bookmark workspace built with HTML, CSS, and Ja
 
 Implemented areas include multi-tab boards, configurable columns and backgrounds, speed dials, sets and dynamic folders, nested navigation, tag inheritance, Inbox and Import Manager workflows, trash plus Undo/Redo, responsive sidebar sizing, multi-item selection and drag previews, themes, extension relay, atomic shared-database persistence, and a categorized widget library.
 
-The widget library currently includes clocks, countdowns, notes, to-do lists, images, NASA APOD, basic and mapped weather forecasts, astronomy/night-sky information, an interactive ISS tracker, RSS feeds, and IP/VPN information with an optional Cloudflare speed test.
+The widget library currently includes clocks, countdowns, notes, to-do lists, images, NASA APOD, basic and mapped weather forecasts, astronomy/night-sky information, an interactive ISS tracker, RSS feeds, a unified read-only Calendar, and IP/VPN information with an optional Cloudflare speed test.
 
 Outstanding product and platform work is tracked only in `TODO.md`; completed work belongs in `CHANGELOG.md`.
 
@@ -32,12 +32,15 @@ Outstanding product and platform work is tracked only in `TODO.md`; completed wo
 - `source/state-schema.js`: persisted schema version and non-destructive structural repairs.
 - `source/state.js`: normalized state, selectors, mutations, recovery cache, and shared-save coordination.
 - `source/render.js` and `source/render-items.js`: page composition, search, navigation, boards, and item rendering.
-- `source/widgets.js`: widget registry and feature implementations.
-- `source/widget-network.js`: bounded widget requests and shared Open-Meteo geocoding UI.
+- `source/widgets.js`: shared widget framework plus lightweight built-ins; substantial widgets live in paired standalone `*-widget.js` / `*-widget.css` modules.
+- `source/widget-sdk.js`: descriptor normalization, capability gates, bounded networking, extension and credential gateways, local cache quotas/migration, scheduling, managed animation frames, and teardown.
+- `source/calendar-widget.js` / `source/calendar-widget.css`: unified private/public calendar sources, ICS parsing, secure credentials, and agenda/month presentation.
+- `source/*-widget.js` / `source/*-widget.css`: standalone built-ins, including service/system monitoring, approved Git/file views, media tracking, and universal local/web search.
+- `source/widget-network.js`: SDK-routed widget requests and shared Open-Meteo geocoding UI.
 - `source/dnd.js`: navigation, board, sidebar, set, and Import Manager drag/drop adapters.
 - `source/bridge.js`: page-side extension transport.
 - `extension/background.js`: registered-Hub routing and native-service boundary.
-- `extension/native/morpheus_host.py`: atomic file I/O, chunk transport, backup retention, file pickers, downloads, and secret storage.
+- `extension/native/morpheus_host.py`: atomic file I/O, chunk transport, backup retention, file pickers, downloads, secret storage, aggregate system metrics, opaque directory approvals, fixed Git inspection, and bounded recent-file enumeration/actions.
 
 Scripts run as ordered classic scripts to retain direct local-file operation. Top-level declarations must therefore remain unique; `tests/test_global_script_symbols.cjs` enforces this until remaining code is moved behind explicit namespaces or modules.
 

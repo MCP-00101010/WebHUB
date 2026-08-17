@@ -11,6 +11,8 @@ test('widget settings use a full draft and restore original data on cancel', () 
   assert.match(settings, /def\.renderSettings\(draftWidget, body\)/);
   assert.match(settings, /restoreSavedWidget\(\);\s*if \(!options\.deferUndo\) pushUndoSnapshot\(\);\s*applyDraftToWidget\(\)/);
   assert.match(settings, /widget\.data = cloneData\(savedData\)/);
+  assert.match(settings, /await def\.beforeSettingsCommit\(draftWidget, body/);
+  assert.match(settings, /cancelButton\.disabled = true/);
 });
 
 test('widget setting values are escaped and shared networking loads before widgets', () => {

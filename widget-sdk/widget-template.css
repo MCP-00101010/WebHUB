@@ -1,0 +1,11 @@
+.local-example-widget {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.local-example-widget p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
