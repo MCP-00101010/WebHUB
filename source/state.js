@@ -89,7 +89,8 @@ const defaultSettings = {
     tmdb: '',
     footballData: '',
     sportmonks: '',
-    apiFootball: ''
+    apiFootball: '',
+    nexusMods: ''
   },
   activeThemeName: 'default-dark',
   customThemes: [],
@@ -488,7 +489,8 @@ const SERVICE_SECRET_KEYS = Object.freeze({
   tmdb: 'service.tmdb.readAccessToken',
   footballData: 'service.footballData.apiToken',
   sportmonks: 'service.sportmonks.apiToken',
-  apiFootball: 'service.apiFootball.apiKey'
+  apiFootball: 'service.apiFootball.apiKey',
+  nexusMods: 'service.nexusMods.apiKey'
 });
 
 let serviceSecretCache = Object.fromEntries(Object.keys(SERVICE_SECRET_KEYS).map(key => [key, '']));

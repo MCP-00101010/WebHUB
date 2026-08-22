@@ -1,0 +1,34 @@
+.widget-nexus-mods-tracker{display:flex;flex-direction:column;gap:8px;min-width:0}
+.nexus-mods-heading{padding-right:62px;color:var(--text);font-size:13px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nexus-mods-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.nexus-mods-tabs{display:flex;gap:4px;min-width:0}
+.nexus-mods-tab{border:1px solid var(--border);border-radius:7px;background:var(--input-bg,var(--panel-bg));color:var(--text-muted);font-size:10px;padding:5px 8px;cursor:pointer;white-space:nowrap}
+.nexus-mods-tab:hover{background:var(--hover-bg);color:var(--text)}
+.nexus-mods-tab.is-active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel-bg));color:var(--text)}
+.nexus-mods-quota{font-size:9px;color:var(--text-muted);white-space:nowrap}
+.nexus-mods-list{display:flex;flex-direction:column;gap:6px;max-height:440px;padding-right:3px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.nexus-mods-item{position:relative;display:block;box-sizing:border-box;flex:0 0 78px;height:78px;padding:8px 9px;border:1px solid var(--border);border-radius:8px;background:color-mix(in srgb,var(--panel-bg) 72%,transparent);min-width:0;overflow:hidden}
+.nexus-mods-list.has-summaries .nexus-mods-item{flex-basis:104px;height:104px}
+.nexus-mods-item.has-image{display:grid;grid-template-columns:112px minmax(0,1fr);gap:9px}
+.nexus-mods-item-content{display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden}
+.nexus-mods-image{display:block;width:112px;height:100%;min-height:0;border:1px solid var(--border);border-radius:6px;background:var(--hover-bg);object-fit:cover}
+.nexus-mods-title-row{display:flex;align-items:center;gap:5px;min-width:0}
+.nexus-mods-item-title{min-width:0;color:var(--text);font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+a.nexus-mods-item-title:hover{color:var(--accent);text-decoration:underline}
+.nexus-mods-meta{color:var(--text-muted);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nexus-mods-summary{display:-webkit-box;margin:2px 0 0;color:var(--text-muted);font-size:10px;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.nexus-mods-badge{flex:0 0 auto;padding:1px 5px;border:1px solid color-mix(in srgb,#d86b9d 65%,var(--border));border-radius:999px;color:#e38ab4;font-size:8px;line-height:1.2;text-transform:uppercase;letter-spacing:.05em}
+.nexus-mods-state{padding:10px;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:10px;text-align:center}
+.nexus-mods-state.is-warning{border-color:color-mix(in srgb,#d99b42 55%,var(--border));color:color-mix(in srgb,#e8b05d 82%,var(--text))}
+.nexus-mods-footer{color:var(--text-muted);font-size:9px;text-align:right}
+.nexus-mods-footer a{color:var(--accent);text-decoration:none}
+.nexus-mods-game-picker{display:flex;flex-direction:column;gap:7px}
+.nexus-mods-game-add{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:6px}
+.nexus-mods-game-picker-status.is-error{color:color-mix(in srgb,#e56b6f 82%,var(--text))}
+.nexus-mods-selected-games{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+.nexus-mods-selected-game{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 8px;border:1px solid var(--border);border-radius:7px;background:var(--input-bg,var(--panel-bg));min-width:0}
+.nexus-mods-selected-game>span{display:flex;flex-direction:column;min-width:0}
+.nexus-mods-selected-game strong,.nexus-mods-selected-game small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nexus-mods-selected-game small{color:var(--text-muted);font-size:9px}
+.nexus-mods-selected-empty{grid-column:1/-1;text-align:center}
+@media(max-width:650px){.nexus-mods-toolbar{align-items:flex-start;flex-direction:column}.nexus-mods-quota{display:none}.nexus-mods-item.has-image{grid-template-columns:88px minmax(0,1fr)}.nexus-mods-image{width:88px}}

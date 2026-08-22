@@ -5,6 +5,70 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.194] — 2026-08-22
+
+### Changed
+
+- **Conventional thumbnail placement** — Nexus mod title images now appear on the left side of each card, with the title and existing metadata retained to their right.
+- **Compact adult-content label** — the Adult badge now appears before the mod title on the same row instead of consuming a separate content row.
+
+### Validation
+
+- Added layout regression coverage for left-hand image ordering, responsive image columns, and Adult-badge placement before the title. All 39 JavaScript test files passed (306 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.193] — 2026-08-22
+
+### Added
+
+- **Nexus mod title images** — mod cards now show the provider’s primary title image on the right with the existing title, author, version, date, endorsement/download counts, badges, and optional summary retained in a left-hand text rail. Images are lazy-loaded, restricted to HTTPS Nexus Mods hosts, and collapse cleanly when missing or unavailable.
+
+### Changed
+
+- **Scrollable 30-mod feeds** — each tab now caches up to 30 mods. **Mods displayed** controls a fixed 5- or 10-row viewport while the scrollbar exposes the remaining results instead of truncating the feed.
+- **Read-only recent-mod query** — Recently added uses Nexus Mods’ read-only GraphQL listing query to move beyond the legacy ten-item REST feed, with the legacy endpoint retained as a fallback. Recently updated keeps the confirmed file-update ordering and resolves up to 30 visible detail records from the stable REST API.
+
+### Validation
+
+- Added regression coverage for Nexus-hosted image normalization, GraphQL request boundaries and sorting, 30-item feed limits, viewport-height calculation, more-than-ten-item recent and updated feeds, REST updated-order preservation, image layout, and lazy image behavior. All 39 JavaScript test files passed (306 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, the provider GraphQL CORS preflight accepted the required read-only POST headers, and diff checks passed. The in-app browser had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.192] — 2026-08-22
+
+### Changed
+
+- **Single-game Nexus trackers** — each Nexus Mods Tracker now retains one selected game, uses that game as its default widget heading, replaces the current selection when another game is chosen, and removes the redundant game badge from every mod row. Existing multi-game widgets retain their first configured game.
+- **Scrollable mod feeds** — Recently added and Recently updated results now scroll inside a bounded list while the heading, tabs, quota, and attribution remain visible. The existing 5/10 selector is now labelled **Mods displayed**.
+
+### Validation
+
+- Added regression coverage for single-game normalization, default and custom headings, one-game request/cache behavior, the renamed display setting, and scroll-container styling. All 39 JavaScript test files passed (306 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.191] — 2026-08-22
+
+### Fixed
+
+- **Nexus Mods feed accuracy** — removed inaccessible, hidden, and deleted mods instead of rendering “Unavailable” placeholders, and aligned the Updated tab with Nexus Mods file-update activity rather than the separate latest-mod-metadata feed.
+- **Nexus Mods update ordering** — update records are now ordered by `latest_file_update`, with visible mod details resolved from the read-only API so the widget follows the site’s Updated ordering more closely.
+
+### Validation
+
+- Added regression coverage for file-update ordering, update-period query construction, detail lookup, and omission of unavailable or missing mods. All 39 JavaScript test files passed (306 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser still had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.190] — 2026-08-22
+
+### Added
+
+- **Nexus Mods Tracker** — added a read-only Gaming widget for selecting up to eight games and browsing compact recently added or recently updated mod feeds, with direct Nexus Mods page links, adult-content filtering, locally remembered feed selection, and configurable result limits.
+- **Provider-aware game picker** — added a cached, searchable Nexus Mods game catalogue with exact-domain fallback entry so widgets can still be configured while the provider is unavailable.
+
+### Changed
+
+- **Secure Nexus Mods credential** — added a stable global Nexus Mods API key entry to the shared secure-credential flow and documented the provider requirement that personal keys remain limited to personal/testing use until a public-facing release is registered.
+- **Conservative provider access** — bounded catalogues and feed responses, defaulted automatic refresh to three hours, enforced a five-minute manual-refresh floor, retained stale results across partial failures, and added explicit handling for rejected keys, unavailable games, removed mods, rate limits, and provider outages. The tracker exposes no download, install, tracking, endorsement, or other mutation path.
+
+### Tests
+
+- Added Nexus payload normalization, multi-game request/header, browser-local cache, refresh-floor, stale-fallback, read-only-boundary, global-secret, and Gaming-category coverage. All 39 JavaScript test files passed (305 tests), all 17 native-host tests passed, syntax checks passed for 48 Hub and extension JavaScript files, the widget manifest example and extension manifest JSON validated, Hub `0.11.190` version fallbacks aligned, the provider CORS preflight accepted every required request header, and diff checks passed. The in-app browser had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
 ## [0.11.189] — 2026-08-22
 
 ### Changed

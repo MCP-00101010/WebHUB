@@ -9,7 +9,8 @@ const SERVICE_SECRET_UI = Object.freeze({
   tmdb: Object.freeze({ inputId: 'stgApiKeyTmdb', statusId: 'stgApiKeyTmdbStatus', usage: 'every Media Watchlist widget' }),
   footballData: Object.freeze({ inputId: 'stgApiKeyFootballData', statusId: 'stgApiKeyFootballDataStatus', usage: 'Calendar football sources and supported Football Tracker competitions' }),
   sportmonks: Object.freeze({ inputId: 'stgApiKeySportmonks', statusId: 'stgApiKeySportmonksStatus', usage: 'Sportmonks Football Tracker competitions' }),
-  apiFootball: Object.freeze({ inputId: 'stgApiKeyApiFootball', statusId: 'stgApiKeyApiFootballStatus', usage: 'Football Tracker competitions unavailable from its preferred free providers' })
+  apiFootball: Object.freeze({ inputId: 'stgApiKeyApiFootball', statusId: 'stgApiKeyApiFootballStatus', usage: 'Football Tracker competitions unavailable from its preferred free providers' }),
+  nexusMods: Object.freeze({ inputId: 'stgApiKeyNexusMods', statusId: 'stgApiKeyNexusModsStatus', usage: 'every Nexus Mods Tracker widget' })
 });
 
 function updateSidebarOpacitySettingsUi() {

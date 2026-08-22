@@ -11,15 +11,17 @@ const settingsSource = fs.readFileSync(path.join(root, 'source', 'settings.js'),
 const mediaSource = fs.readFileSync(path.join(root, 'source', 'media-watchlist-widget.js'), 'utf8');
 const calendarSource = fs.readFileSync(path.join(root, 'source', 'calendar-widget.js'), 'utf8');
 const footballSource = fs.readFileSync(path.join(root, 'source', 'football-tracker-widget.js'), 'utf8');
+const nexusSource = fs.readFileSync(path.join(root, 'source', 'nexus-mods-tracker-widget.js'), 'utf8');
 
 test('all provider API keys are presented in the central API Keys settings page', () => {
-  for (const id of ['stgApiKeyNasa', 'stgApiKeyTmdb', 'stgApiKeyFootballData', 'stgApiKeySportmonks', 'stgApiKeyApiFootball']) {
+  for (const id of ['stgApiKeyNasa', 'stgApiKeyTmdb', 'stgApiKeyFootballData', 'stgApiKeySportmonks', 'stgApiKeyApiFootball', 'stgApiKeyNexusMods']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(stateSource, /tmdb:\s*'service\.tmdb\.readAccessToken'/);
   assert.match(stateSource, /footballData:\s*'service\.footballData\.apiToken'/);
   assert.match(stateSource, /sportmonks:\s*'service\.sportmonks\.apiToken'/);
   assert.match(stateSource, /apiFootball:\s*'service\.apiFootball\.apiKey'/);
+  assert.match(stateSource, /nexusMods:\s*'service\.nexusMods\.apiKey'/);
   assert.match(settingsSource, /_serviceSecretSaveTimers\.get\(serviceName\)/);
   assert.doesNotMatch(mediaSource, /media-watchlist-token|WidgetSDK\.credentials/);
   assert.doesNotMatch(calendarSource, /football-data\.org API token[^\n]*type="password"/);
@@ -28,6 +30,8 @@ test('all provider API keys are presented in the central API Keys settings page'
   assert.match(footballSource, /secret:\s*'apiFootball'/);
   assert.match(footballSource, /getServiceSecret\(provider\.secret\)/);
   assert.doesNotMatch(footballSource, /data-cfg="apiToken"|type="password"/);
+  assert.match(nexusSource, /getServiceSecret\('nexusMods'\)/);
+  assert.doesNotMatch(nexusSource, /type="password"|WidgetSDK\.credentials/);
 });
 
 test('legacy widget credential keys are discovered and migrated to global service entries', async () => {
@@ -41,7 +45,7 @@ test('legacy widget credential keys are discovered and migrated to global servic
   let saved = 0;
   let canScrub = false;
   const state = {
-    settings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '' } },
+    settings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '', nexusMods: '' } },
     essentials: [],
     navItems: [],
     boards: [{ tabs: [{ columns: [{ items: [
@@ -59,13 +63,14 @@ test('legacy widget credential keys are discovered and migrated to global servic
     setTimeout,
     clearTimeout,
     state,
-    defaultSettings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '' } },
+    defaultSettings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '', nexusMods: '' } },
     SERVICE_SECRET_KEYS: {
       nasa: 'service.nasa.apiKey',
       tmdb: 'service.tmdb.readAccessToken',
       footballData: 'service.footballData.apiToken',
       sportmonks: 'service.sportmonks.apiToken',
-      apiFootball: 'service.apiFootball.apiKey'
+      apiFootball: 'service.apiFootball.apiKey',
+      nexusMods: 'service.nexusMods.apiKey'
     },
     bridge: {
       whenReady: Promise.resolve(),

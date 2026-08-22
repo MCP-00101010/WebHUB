@@ -115,6 +115,13 @@ const WIDGET_BUILTIN_MANIFEST = Object.freeze({
   universalSearch: {
     capabilities: { localCache: { quotaBytes: 128 * 1024 } },
     responsive: { minWidth: 240, preferredWidth: 600, compactBelow: 340 }
+  },
+  nexusModsTracker: {
+    capabilities: {
+      network: { domains: ['api.nexusmods.com'] }, secureCredentials: { optional: true },
+      timers: true, localCache: { quotaBytes: 768 * 1024 }
+    },
+    responsive: { minWidth: 260, preferredWidth: 620, compactBelow: 360 }
   }
 });
 
@@ -577,6 +584,7 @@ function _widgetSdkResolveNetworkWidget(options = {}) {
   if (key.startsWith('apod:')) return 'nasaApod';
   if (key.startsWith('weather:')) return 'weather';
   if (key.startsWith('rss:')) return 'rssReader';
+  if (key.startsWith('nexus-mods:')) return 'nexusModsTracker';
   if (key === 'iss-tle') return 'issTracker';
   return '';
 }

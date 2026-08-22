@@ -28,63 +28,17 @@ This file tracks outstanding work only. Completed changes and their validation b
 
 - Revisit a per-item “ignore inheritance” option after the current tag-inheritance system has had enough real-world use to reveal its edge cases.
 
-## Product Feature Roadmap
+### Widget movement between tabs and boards
 
-Implement these in phases so the shared indexing, activity, bridge, and widget infrastructure can be reused by later work.
-
-### Phase 2 — Workflow automation, sessions, and recovery
-
-Status: completed in Hub 0.11.135 / Firefox extension 1.0.26, with the guided Automation builder and capture-to-Set handoff refined in Hub 0.11.136.
-
-#### Inbox Automation Rules
-
-- [x] Define ordered rules with conditions for hostname, URL/path text, title, source, tags, and duplicate state, plus actions for tagging, renaming, routing, URL normalization, and rejecting duplicates.
-- [x] Reuse the same rule evaluator for per-tab Inbox deliveries and Import Manager batches while preserving Inbox as the universal external intake path.
-- [x] Add a dry-run view showing matched rules, proposed actions, conflicts, and final destinations before committing a batch.
-- [x] Prevent loops and ambiguous routing with deterministic rule order, one-pass defaults, explicit stop/continue behavior, and validation for missing or locked targets.
-- [x] Add import/export for rule sets and tests covering order, multiple matches, nested destinations, deleted targets, retries, delivery deduplication, and Undo.
-
-#### Browser Session Capture and Launch
-
-- [x] Extend the bridge capability model to query open tabs, windows, tab groups, and recently closed sessions without exposing browser-only IDs to persisted Hub state.
-- [x] Add capture flows for the active tab, current window, selected tabs, or a browser tab group, targeting a Set, a tab Inbox, or a new folder.
-- [x] Add launch actions for a bookmark folder, Set, board tab, or saved session, with deduplication, configurable staggered opening, and confirmation above a safe tab-count threshold.
-- [x] Where supported, recreate named and coloured browser tab groups; degrade to an ordered set of tabs when grouping is unavailable.
-- [x] Add permission/status messaging and tests for missing permissions, private windows, unavailable grouping, duplicate URLs, partial failures, and active-Hub routing.
-
-#### Backup Timeline and Selective Restore
-
-- [x] Add native-host APIs that enumerate managed database backups with timestamp, size, version/hash, and integrity status while keeping paths contained within the configured backup directory.
-- [x] Build a timeline UI that compares backup summaries: boards, tabs, bookmarks, folders, Sets, tags, settings, and schema version.
-- [x] Support previewing and restoring one bookmark, folder subtree, board, Set, or the complete snapshot, with ID/reference repair and collision handling.
-- [x] Create a safety backup before every restore, use the normal conflict-detection and atomic-write path, and never overwrite a newer shared snapshot silently.
-- [x] Test corrupt backups, schema upgrades, missing references, partial restores, ID collisions, concurrent Hub tabs, and full rollback.
-
-#### Scoped Export and Sharing
-
-- [x] Add export scopes for a board, tab, folder, Set, Smart View result, or selected items using a versioned portable bundle format.
-- [x] Allow optional inclusion of tags, referenced Sets, backgrounds, cached favicons, usage statistics, and other dependent assets.
-- [x] Exclude credentials, native paths, browser session IDs, caches, and local-only runtime state by default; show a manifest of included and omitted data.
-- [x] Add import preview with merge/copy/replace choices, ID remapping, duplicate detection, destination selection, and one-step Undo.
-- [x] Test round trips, nested references, dynamic rules, missing dependencies, older bundle versions, and sanitized exports.
-
-### Phase 3 — Extensibility
-
-#### Widget and Integration SDK
-
-Status: SDK foundation completed in Hub 0.11.137; substantial built-in extraction completed in Hub 0.11.143; shared-service migration completed in Hub 0.11.144; initial SDK-backed widget roadmap completed in Hub 0.11.145.
-
-- [x] Move the substantial widgets into their own script/style modules before expanding the catalogue further, while preserving ordered classic-script loading until a supported module strategy is chosen. Calendar, Weather, Weather Map, ISS Tracker, Astronomy, RSS Reader, IP Info, and NASA APOD are now separated.
-- [x] Formalize the widget descriptor contract: ID, name, category, description, allowed locations, defaults, settings schema, render/reload lifecycle, cleanup, migration, and responsive-size hints.
-- [x] Add declared capabilities for network domains, extension relay, native host, secure credentials, filesystem paths, geolocation, notifications, timers, and local cache use.
-- [x] Introduce shared scheduling, visibility-aware refresh, bounded networking, backoff, cache quotas, error states, settings validation, migrations, and teardown, and route the common widget framework seams through them.
-- [x] Move widget-specific direct fetch, relay, secure-credential, animation-timer, and legacy cache paths onto shared SDK services. Existing browser-local caches migrate into SDK namespaces on first use.
-- [x] Provide a development template, validation utility, fixture harness, and contract tests for registration, settings drafts, persistence boundaries, lifecycle cleanup, and unavailable capabilities.
-- [x] Keep third-party integrations opt-in and distinguish trusted built-in widgets from future locally installed packages before supporting external widget code.
+- Allow widgets to be dragged onto a tab name in the tab bar, moving the widget into the target tab's Inbox.
+- Add a widget context-menu action matching bookmark behaviour: **Send to** → target Collection/Board.
+- Preserve the widget's configuration and portable data while moving it, but keep browser-local cache and runtime state scoped safely to the widget instance.
+- Reuse the existing cross-board move, Inbox intake, destination-preview, Undo, and conflict-handling infrastructure rather than introducing a separate transfer path.
+- Test same-tab drops, cross-tab and cross-board moves, unavailable or deleted destinations, duplicate delivery events, active-widget teardown, and Undo restoration.
 
 ## Widget Roadmap
 
-Build network- and native-dependent widgets on the shared SDK, cache, scheduler, and capability layers above; lightweight local widgets may land while that extraction is underway. Runtime samples, histories, and view preferences should remain local unless users explicitly choose to share them.
+Future network- and native-dependent widgets should use the existing shared SDK, cache, scheduler, and capability layers. Runtime samples, histories, and view preferences should remain local unless users explicitly choose to share them.
 
 ### Application Launcher and application shortcuts
 
@@ -93,13 +47,6 @@ Build network- and native-dependent widgets on the shared SDK, cache, scheduler,
 - Keep executable discovery and launches behind narrow native-host capabilities with explicit path approval, fixed open/reveal actions, missing-application handling, and platform-neutral page-side contracts.
 - Define portable import/export behaviour that excludes unsafe machine-local paths by default and provides clear placeholders when a shortcut is unavailable on another system.
 
-### Nexus Mods Tracker
-
-- Confirm Nexus Mods API availability, authentication terms, rate limits, and redistribution constraints before implementation.
-- Let users select one or more games and browse recently added and recently updated mods with compact metadata and direct Nexus Mods page links.
-- Store the API key through the shared secure-credential flow, cache bounded provider responses locally, refresh conservatively, and handle unavailable games, deleted mods, rate limits, and provider outages.
-- Keep the tracker read-only: do not download, install, endorse, or otherwise mutate Nexus Mods data.
-
 ### Universal Search settings and provider catalogue
 
 - Replace the crowded inline provider editor with a compact provider list and an Add/Edit Provider sub-modal.
@@ -107,113 +54,119 @@ Build network- and native-dependent widgets on the shared SDK, cache, scheduler,
 - Group or filter provider templates by purpose, keep custom HTTPS templates available, and preserve aliases, ordering, default-provider selection, and existing local recent-search privacy rules.
 - Add usability and migration tests for the simplified modal, built-in catalogue additions, custom providers, duplicate aliases, and existing saved configurations.
 
-### Focus Session
+### Daily Briefing
 
-Status: completed in Hub 0.11.141.
+- Combine today's Calendar events, Weather, Global Hazards, Football Tracker matches, Media Watchlist releases, RSS headlines, tasks, and service warnings in one configurable summary.
+- Read from existing widget caches and shared services instead of repeating provider requests, and degrade cleanly when a source widget or credential is unavailable.
+- Allow users to choose sections, ordering, item limits, and notification timing while keeping private source data browser-local where required.
 
-- [x] Add Pomodoro and custom work/break sequences with pause, resume, skip, reset, and optional daily totals.
-- [x] Allow a focus preset to open a chosen Set or folder at session start and optionally show upcoming Calendar conflicts without modifying calendar sources.
-- [x] Keep active timers and history browser-local, recover an interrupted timer after reload, and avoid background throttling drift by calculating from absolute timestamps.
-- [x] Add optional notifications behind an explicit permission and test reload recovery, sleep/wake, overdue timers, disabled notifications, and multiple widget instances.
+### Widget presets and templates
 
-### Service Monitor
+- Let users save a configured widget as a reusable preset, create new instances from presets, and duplicate presets into another board or tab.
+- Define whether portable configuration, local-only preferences, credentials, caches, and runtime state are copied, referenced, or omitted.
+- Include optional presets in scoped exports with migration, naming-conflict, unavailable-capability, and Undo coverage.
 
-Status: completed in Hub 0.11.145.
+### Shared profiles and variables
 
-- [x] Support user-defined HTTPS endpoints with expected status, timeout, check interval, and optional text/JSON assertion using bounded relay requests.
-- [x] Show current state, response time, last success, recent failures, and a compact local uptime history with manual refresh.
-- [x] Add conservative schedules, exponential backoff, visibility awareness, and optional notifications without persisting monitoring samples to the shared database.
-- [x] Test CORS fallback, redirects, certificates/network errors, rate limiting, offline state, secret-free configuration, and widget teardown.
+- Add reusable profiles for values such as Home/Work location, favourite team, timezone, units, and other settings shared by multiple widgets.
+- Let widget settings reference a profile value or override it locally, with a clear preview of which widgets will be affected by profile edits.
+- Keep credentials and machine-local paths outside ordinary shared variables and define safe import/export behaviour for missing profiles.
 
-### System Monitor
+### Clipboard and Snippet Shelf
 
-Status: completed in Hub 0.11.145.
+- Store pinned text, links, code snippets, and explicitly pasted clipboard entries with search, tags, copy actions, and optional expiry.
+- Keep clipboard content browser-local by default; require explicit opt-in for any automatic capture supported by the extension or native host.
+- Bound history size and retention, exclude sensitive fields where detectable, and test clipboard-permission denial, rich-text sanitisation, and widget teardown.
 
-- [x] Add narrowly scoped native-host endpoints for CPU, memory, disk, network, uptime, battery, and platform metadata, returning only requested metrics.
-- [x] Provide configurable metric cards, warning thresholds, refresh intervals, and compact history graphs stored locally with bounded retention.
-- [x] Gate the widget on native capability detection and clearly explain unavailable or permission-restricted metrics.
-- [x] Test platform-specific omissions, multiple disks/adapters, sleep/wake, high-frequency refresh limits, native disconnects, and privacy boundaries.
+### Habit and Routine Tracker
 
-### Git Workspace
+- Support daily and weekly habits, target counts, streaks, compact history, and optional reminders using the existing notification service.
+- Allow routines to link to a Set, saved session, Focus preset, Calendar view, or fixed Hub command without duplicating those features.
+- Keep completion history local by default and test timezone changes, missed days, reminder recovery, duplicate notifications, and data export.
 
-Status: completed in Hub 0.11.145.
+### Local transport departures
 
-- [x] Let users explicitly approve local repository paths through the native picker and store only the selected configuration required to reopen them.
-- [x] Expose branch, clean/dirty state, ahead/behind counts, last commit, staged/unstaged totals, and optional repository links without running arbitrary shell text.
-- [x] Add actions to open the repository folder, configured terminal, or remote page through fixed native capabilities.
-- [x] Test non-repositories, worktrees, detached HEAD, unavailable Git, large repositories, inaccessible paths, and containment of approved paths.
+- Show favourite stops, upcoming bus/train departures, platform information, and disruption notices where a suitable regional API or GTFS feed is available.
+- Design a provider-neutral adapter because coverage, authentication, live-data quality, and rate limits vary substantially by region.
+- Cache conservatively, make location use optional, and provide clear scheduled-versus-live data and provider attribution.
 
-### Media Watchlist
+### Offline Reading Queue
 
-Status: completed in Hub 0.11.145; episode-level series tracking added in Hub 0.11.150, tabbed season navigation in Hub 0.11.151, settings-based title management in Hub 0.11.152, multi-community Fandom links in Hub 0.11.153, episode wiki lookup in Hub 0.11.154, localized episode lookup in Hub 0.11.155, canonical wiki-language resolution in Hub 0.11.156, and persistent local view state in Hub 0.11.157.
+- Capture articles through the extension into a sanitised reading view with source URL, metadata, reading progress, and bounded optional offline content.
+- Keep captured content and reading state local by default, enforce storage quotas, and provide per-item removal plus cache management.
+- Test page-permission failures, paywalls, dynamic pages, unsafe markup, duplicate captures, unavailable images, and restoration after reload.
 
-- [x] Define provider-neutral watchlist records for films and series, including provider ID, watched state, progress, rating, notes, and notification preference.
-- [x] Add an optional metadata provider through the shared credential/network layer with local caching, rate-limit handling, bounded payloads, and manual matching.
-- [x] Surface upcoming seasons, episodes, and releases through both the widget and an optional read-only Calendar source.
-- [x] Support import/export independently of provider availability and test remakes/duplicate titles, timezone boundaries, missing metadata, provider outages, and cache expiry.
-- [x] Add lazy-loaded TMDB season and episode browsing, aired-episode checkboxes, season-wide watched controls, specials visibility, progress summaries, and next-episode guidance while keeping provider metadata in the local cache.
-- [x] Link each title to multiple Fandom communities, including language-specific editions, with verified community URLs, per-community article search, labels, ordering, a preferred source, and a compact card menu.
-- [x] Add episode-row context menus that search every linked wiki using the episode title or a season/episode identifier.
-- [x] Localize episode lookup terms through TMDB for each wiki language, cache only compact translated names locally, and fall back to a language-neutral episode identifier when no translation exists.
-- [x] Restore expanded title details, selected season tabs, and Specials visibility after Hub reloads using bounded browser-local view state.
+### Kiosk and display mode
 
-### Recent Downloads and Files
-
-Status: completed in Hub 0.11.145.
-
-- [x] Add native capabilities for user-approved directories with bounded recent-file enumeration, safe metadata, and fixed open/reveal actions.
-- [x] Provide filters for directory, file type, age, and result count, with clear missing-path and permission states.
-- [x] Keep recent-file results local, avoid recursively indexing unapproved locations, and never execute files through arbitrary command strings.
-- [x] Test renamed/deleted files, inaccessible directories, multiple roots, network drives, large folders, path containment, and native disconnects.
-
-### Calculator and Converter
-
-Status: completed in Hub 0.11.139; astronomical distance and bit conversion added in Hub 0.11.140.
-
-- [x] Implement a local expression parser without `eval`, covering arithmetic, percentages, memory/history, and copyable results.
-- [x] Add unit, date/duration, storage, temperature, angle, and time-zone conversions with explicit source and target units.
-- [x] Support column and sidebar layouts plus optional command-palette evaluation using the same parser.
-- [x] Test precedence, invalid input, locale decimal handling, precision, extreme values, daylight-saving transitions, and copy behavior.
-
-### Saved Sessions
-
-Status: completed in Hub 0.11.142.
-
-- [x] Build on Browser Session Capture and Launch to list named sessions with tab count, group colour, last launched time, and a small favicon preview.
-- [x] Add create, replace, rename, duplicate, launch, append-current-tabs, and delete actions with safe large-session confirmation.
-- [x] Store portable URL/title/group metadata in the Hub while keeping transient browser tab/window IDs local to the extension runtime.
-- [x] Test stale favicons, duplicate URLs, unsupported grouping, missing permissions, partial launch failure, and cross-browser degradation.
-
-### Universal Search Launcher
-
-Status: completed in Hub 0.11.145.
-
-- [x] Add configurable search providers with name, keyword alias, query URL template, icon, and default-provider selection.
-- [x] Match Hub bookmarks, boards, tabs, folders, Sets, tags, and command-palette actions locally before offering an external search.
-- [x] Support aliases such as `g`, `yt`, or `imdb`, URL detection, direct navigation, keyboard-only operation, and optional recent searches stored locally.
-- [x] Sanitize templates and queries, require HTTPS by default, and test reserved aliases, duplicate providers, malformed templates, encoded characters, and empty input.
-
-### Translator
-
-Status: completed in Hub 0.11.158; strict Firefox `file://` startup was moved to lazy in-page execution in Hub 0.11.161 after worker fallbacks remained unreliable, and text interaction was corrected in Hub 0.11.162.
-
-- [x] Add English-to-German and German-to-English translation with Mozilla's Bergamot WASM engine, running entirely in a dedicated local worker.
-- [x] Download each language model only on demand through a fixed Firefox-extension allowlist, verify every asset with SHA-256, and store it in a quota-limited browser-local IndexedDB cache.
-- [x] Keep translation text and history out of the shared Hub database, default to no local text retention, and expose remembered text and recent history only as explicit per-widget options.
-- [x] Add responsive board/sidebar layouts, direction swapping, copy/clear controls, keyboard translation, model install/remove management, download progress, and offline/privacy status.
-- [x] Test model manifests and relay boundaries, WASM integrity, binary cache isolation/quota handling, persistence privacy defaults, responsive integration, and a real English-to-German Bergamot inference.
-
-## Suggested Delivery Order
-
-1. Saved Sessions completed in Hub 0.11.142.
-2. Focus Session completed in Hub 0.11.141. Calculator and Converter completed in Hub 0.11.139 and expanded in Hub 0.11.140.
-3. Widget and Integration SDK extraction plus Service Monitor, System Monitor, Git Workspace, Media Watchlist, Recent Downloads and Files, and Universal Search Launcher completed in Hub 0.11.145.
-4. Private local Bergamot translation completed in Hub 0.11.158.
+- Add a full-screen read-only presentation mode for one board or a rotating set of boards, with optional schedules and hidden editing controls.
+- Pause or reduce expensive refresh and animation work when a board is not visible, and offer subtle movement options for burn-in mitigation.
+- Provide an immediate secure exit, prevent accidental destructive actions, and test full-screen permission loss, sleep/wake, offline operation, and multi-monitor use.
 
 ## Browser and Bridge Backlog
 
 - Keep Firefox/Zen plus the native host as the active browser-integration and persistence target.
 - Prefer generic extension/native-host service capabilities so future widgets do not require frequent AMO re-signing for one-off integrations.
+
+### Extension-required Hub migration
+
+Make the current Firefox/Zen extension a required Hub component. The extension must become the sole authority for loading and saving the shared Hub database; the native host remains optional for disk-backed storage and native-only integrations. Removing browser-only operation must not remove or migrate intentionally browser-local widget data.
+
+#### Target architecture
+
+- Route every main-database load, save, import, reload, Inbox delivery, and recovery operation through the authenticated extension bridge.
+- Use the native shared database when the native host and a database path are available; otherwise use a versioned extension-owned storage record rather than page `localStorage`.
+- Add revision and content-hash metadata, compare-and-swap writes, an extension-wide serialized save queue, and change broadcasts to every registered Hub tab for both authoritative storage modes.
+- Require each save to include the revision it loaded. Never report success until the authoritative target has accepted the snapshot.
+- Keep platform-specific disk, credentials, filesystem, Git, and system-monitoring capabilities behind the optional native-host boundary.
+
+#### Protected local widget and UI storage
+
+- Retire only the full Hub snapshot key `morpheus-webhub-state` and its recovery metadata after migration; never use `localStorage.clear()` or broadly delete Morpheus-prefixed records.
+- Preserve `morpheus-widget-sdk-cache:v1:*`, widget view state, histories, provider caches, local notification data, command recents, modal positions, explicit local opt-ins, and other intentionally browser-local records.
+- Preserve the `morpheus-widget-sdk-assets-v1` IndexedDB database, including installed Translator models and other bounded binary assets.
+- Keep widget cache ownership, quotas, expiry, instance cleanup, privacy boundaries, and the global meaningful-view-state persistence rule unchanged.
+- Add migration tests that snapshot representative widget `localStorage` and IndexedDB data before cutover and prove it remains intact and usable afterward.
+
+#### Secrets and credentials
+
+- Preserve the existing stable global credential names, including NASA, TMDB, football-data.org, Sportmonks, API-Football, and Nexus Mods entries, and continue using Windows Credential Manager through the native host when available.
+- Load and initialise secrets only after the authoritative Hub database has been loaded. Do not clear a legacy database or per-widget key until writing and rereading its secure credential succeeds.
+- If the native host is unavailable, retain existing in-memory and legacy values without clearing or overwriting stored credentials. Rehydrate secrets and refresh affected widgets when the native host reconnects.
+- Continue excluding secrets from ordinary exports, extension storage, diagnostics, caches, and migration summaries.
+- Test existing secure keys, legacy shared-database keys, old per-widget keys, failed secure writes, native-host loss during startup, reconnection, and export sanitisation.
+
+#### Preparation and migration release
+
+- Ship an intermediate release that adds the authoritative extension-storage protocol while browser-only startup is still temporarily available, and warn that the following release will require the extension.
+- Detect legacy page snapshots. If no authoritative snapshot exists, copy the legacy data through the extension and verify its stored hash before marking migration complete.
+- When page, extension, and native-disk snapshots differ, show bounded summaries and require an explicit choice; never silently overwrite divergent data.
+- Create a native safety backup or downloadable recovery export before replacing authoritative data, and store a migration receipt with source, destination, revision/hash, and completion time but no private content.
+- Retain the legacy page snapshot temporarily as read-only recovery data after successful migration, then remove it only in the later enforcement release.
+- Test local-only, extension-only, disk-only, identical, divergent, corrupt, over-quota, interrupted, retried, and already-completed migrations.
+
+#### Required-extension startup and runtime behaviour
+
+- Before loading or rendering Hub data, wait for an authenticated extension handshake and verify the minimum extension version and baseline capabilities.
+- When the extension is missing, outdated, disabled, or unable to access the local Hub file, show a dedicated blocking setup screen with Retry, precise installation/permission guidance, diagnostics, and a legacy-data export rescue action. Do not initialise an empty Hub behind it.
+- If the extension disconnects during a session, keep the last rendered Hub available read-only, block mutations/imports/deliveries, preserve any in-flight unsaved snapshot in memory, and retry the connection automatically.
+- On reconnection, compare authoritative revisions before retrying a save or reloading. Never silently fall back to page-database storage.
+- Keep non-mutating actions such as opening an ordinary bookmark available where safe, and show a clear persistent connection/save state rather than transient notices alone.
+
+#### Enforcement and cleanup release
+
+- Remove browser-only startup, load, reload, save, local-cache promotion, and cache-versus-shared recovery paths after the migration release has been validated.
+- Make `saveState()` always use the extension authority, route JSON import through the extension, and remove direct main-database writes from Settings and other page modules.
+- Move authoritative external-change detection and multi-tab revision broadcasts into the extension; retain explicit conflict handling for in-flight local edits and native files changed by external tools.
+- Replace browser-only/manual-fallback wording in Settings, About, setup guidance, project documentation, bridge comments, and architectural rules.
+- Keep bridge-availability checks as runtime failure assertions and reconnect handling. Native-host-dependent features must remain individually capability-gated.
+
+#### Cutover validation
+
+- Test missing, disabled, outdated, late-installed, reloaded, and permission-restricted extensions, including Firefox local-file access changes.
+- Test rapid edits, simultaneous Hub tabs, extension Inbox deliveries, extension/background restart during saves, stale revisions, duplicate requests, and reconnection with pending work.
+- Test native-host disconnect/recovery, path changes, external disk edits, compare-and-swap conflicts, corrupt files, storage quota exhaustion, and backup restoration.
+- Prove after cutover that the main Hub database is never loaded from or saved to page `localStorage`, while all intended widget-local storage and stored secrets continue to work.
+- Run the complete JavaScript and native-host suites, migration fixtures, syntax checks, version alignment, extension manifest validation, and `web-ext lint` before each rollout release.
 
 ### Deferred compatibility — Chromium bridge
 
@@ -222,7 +175,7 @@ This is a low-priority compatibility update for a possible future need, not part
 - Revisit only when Chromium support is requested or there is a concrete Chrome/Edge use case to validate.
 - Define a browser-neutral storage capability interface matching the existing load, version/hash, conflict, backup, and atomic-save semantics.
 - Add a Chromium implementation using the File System Access API where available, with user-activation-aware file selection and clear handling when a file handle cannot be retained.
-- Preserve the Firefox/Zen extension plus native-host path and the browser-only/manual fallback rather than making Chromium capabilities a universal assumption.
+- Preserve the Firefox/Zen extension plus optional native-host path. Any future Chromium implementation must provide an equivalent authenticated, versioned storage authority rather than restoring browser-only/manual operation.
 - Test Chrome and Edge startup, permission loss, external file changes, concurrent tabs, large chunked snapshots, recovery prompts, and migration between bridge implementations before any release.
 
 ## Known Platform Limitations
@@ -270,7 +223,7 @@ Use spacing rather than decorative divider lines between these tag fields.
 
 ## Architectural Constraints
 
-- **Browser and OS agnosticism:** keep platform-specific work behind the page-side bridge. Firefox/Zen plus the native host is the current target; possible future Chromium support may use the File System Access API, while other environments retain manual fallback.
-- **Disk persistence baseline:** large Hubs depend on the extension and native host. Browser storage is only a small fallback or emergency cache.
-- **Bridge-gated enhancements:** gate extension-dependent actions on `bridge.isAvailable()` or `bridge.nativeIsAvailable()` and clearly warn when disk-backed storage is unavailable.
+- **Browser and OS boundaries:** keep platform-specific work behind the page-side bridge. Firefox/Zen is the active target and the extension is planned to become mandatory; the native host remains an optional capability boundary for disk, credentials, files, Git, and system integrations.
+- **Authoritative persistence baseline:** after the extension-required migration, all main Hub database access must pass through the authenticated extension. Native disk is preferred for large Hubs; versioned extension storage may serve smaller non-native setups. Page storage remains reserved for explicitly local widget/UI data and migration recovery only.
+- **Bridge-gated operation:** after cutover, the Hub must block database-backed operation without the required extension. Continue gating native-host-dependent features on `bridge.nativeIsAvailable()` and declared capabilities, with clear recovery guidance.
 - **Inbox as universal intake:** every external delivery path should target a per-tab Inbox, including cross-board moves, extension sends, and Import Manager transfers.

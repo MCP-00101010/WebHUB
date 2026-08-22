@@ -43,7 +43,8 @@ test('widget library is grouped into ordered categories for board and sidebar me
     fs.readFileSync(path.join(root, 'source/git-workspace-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/media-watchlist-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/recent-files-widget.js'), 'utf8'),
-    fs.readFileSync(path.join(root, 'source/universal-search-widget.js'), 'utf8')
+    fs.readFileSync(path.join(root, 'source/universal-search-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/nexus-mods-tracker-widget.js'), 'utf8')
   ].join('\n');
   const contextSource = fs.readFileSync(path.join(root, 'source/context.js'), 'utf8');
   const definitions = readWidgetDefinitions(widgets);
@@ -51,7 +52,7 @@ test('widget library is grouped into ordered categories for board and sidebar me
     widgets.slice(widgets.indexOf('const WIDGET_CATEGORY_ORDER'), widgets.indexOf('];', widgets.indexOf('const WIDGET_CATEGORY_ORDER')) + 2)
       .replace('const WIDGET_CATEGORY_ORDER =', '')
   );
-  assert.equal(Object.keys(definitions).length, 25);
+  assert.equal(Object.keys(definitions).length, 26);
   Object.values(definitions).forEach(definition => assert.ok(categoryOrder.includes(definition.category)));
 
   const helperStart = contextSource.indexOf('function _buildWidgetSubmenu');
@@ -62,13 +63,17 @@ test('widget library is grouped into ordered categories for board and sidebar me
   const boardMenu = vm.runInContext("_buildWidgetSubmenu('column', 'addWidget')", context);
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu.map(group => group.label))),
-    ['Personal & Productivity', 'Utilities', 'Weather & Hazards', 'System & Network', 'Sports', 'Content & Feeds', 'Space & Astronomy', 'Coding & Development']
+    ['Personal & Productivity', 'Utilities', 'Weather & Hazards', 'System & Network', 'Sports', 'Content & Feeds', 'Gaming', 'Space & Astronomy', 'Coding & Development']
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu[0].submenu.map(item => item.label))),
     ['Calendar', 'Clock', 'Countdown', 'Focus Session', 'Notes', 'Saved Sessions', 'To-do List', 'Universal Search Launcher']
   );
-  assert.equal(boardMenu.flatMap(group => group.submenu).length, 25);
+  assert.equal(boardMenu.flatMap(group => group.submenu).length, 26);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(boardMenu.find(group => group.label === 'Gaming').submenu.map(item => item.label))),
+    ['Nexus Mods Tracker']
+  );
 
   const sidebarMenu = vm.runInContext("_buildWidgetSubmenu('navpane', 'addNavWidget')", context);
   assert.deepEqual(

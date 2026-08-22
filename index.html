@@ -29,6 +29,7 @@
     <link rel="stylesheet" href="source/media-watchlist-widget.css" />
     <link rel="stylesheet" href="source/recent-files-widget.css" />
     <link rel="stylesheet" href="source/universal-search-widget.css" />
+    <link rel="stylesheet" href="source/nexus-mods-tracker-widget.css" />
     <link rel="stylesheet" href="source/widget-action-layout.css" />
   <link rel="stylesheet" href="source/bookmark-tools.css" />
   <link rel="stylesheet" href="source/phase2-tools.css" />
@@ -275,7 +276,7 @@
 
           <div class="sidebar-meta-row">
             <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.189</button>
+            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.194</button>
           </div>
         </section>
 
@@ -991,6 +992,17 @@
               </div>
             </div>
           </div>
+          <div class="settings-row settings-row--top">
+            <span>Nexus Mods</span>
+            <div class="tz-picker-group">
+              <input id="stgApiKeyNexusMods" type="password" class="settings-text-input" placeholder="Paste your personal Nexus Mods API key" autocomplete="off" />
+              <div class="tz-hint-row">
+                <span id="stgApiKeyNexusModsStatus" class="tz-hint">Used by every Nexus Mods Tracker widget. Personal keys are for personal/testing use; public releases require Nexus Mods registration.</span>
+                <a href="https://www.nexusmods.com/users/myaccount?tab=api+access" target="_blank" rel="noreferrer noopener" class="widget-apod-settings-link">Get key</a>
+              </div>
+            </div>
+          </div>
+          <div class="settings-help">Nexus Mods permits personal API keys for personal or testing use. Register a public-facing release with Nexus Mods before distributing it to end users.</div>
         </div>
 
         <div class="settings-section span-full" data-tab="general">
@@ -1142,7 +1154,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.189</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.194</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Browser extension</span>
@@ -1541,6 +1553,7 @@
     <script src="source/media-watchlist-widget.js" defer></script>
     <script src="source/recent-files-widget.js" defer></script>
     <script src="source/universal-search-widget.js" defer></script>
+    <script src="source/nexus-mods-tracker-widget.js" defer></script>
   <script src="source/icons.js" defer></script>
   <script src="source/state-schema.js" defer></script>
   <script src="source/state.js" defer></script>

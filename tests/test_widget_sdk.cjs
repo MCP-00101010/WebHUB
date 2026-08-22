@@ -438,7 +438,8 @@ test('substantial built-ins live in ordered standalone script and style modules'
     ['astronomy', 'astronomy'],
     ['rss-reader', 'rssReader'],
     ['ip-info', 'ipInfo'],
-    ['football-tracker', 'footballTracker']
+    ['football-tracker', 'footballTracker'],
+    ['nexus-mods-tracker', 'nexusModsTracker']
   ];
 
   let previousScriptIndex = html.indexOf('source/widget-sdk.js');
