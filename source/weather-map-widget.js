@@ -598,7 +598,7 @@ function _weatherMapCurrentHourIndex(cache, now = Date.now()) {
 
 WIDGET_REGISTRY['weatherMap'] = {
   name: 'Weather Map',
-  category: 'Weather & Network',
+  category: 'Weather & Hazards',
   description: 'Regional wind, rain, temperature and cloud forecasts on an interactive map',
   allowedIn: ['column'],
   defaultConfig: {
@@ -739,7 +739,13 @@ WIDGET_REGISTRY['weatherMap'] = {
     else if (runtime.status === 'error') status.textContent = `Showing saved forecast. ${runtime.error}`;
     else status.classList.add('hidden');
     if (runtime.status === 'error') status.classList.add('is-error');
-    mapShell.append(mapContainer, status);
+    const focusLocation = document.createElement('button');
+    focusLocation.type = 'button';
+    focusLocation.className = 'widget-weather-map-focus-location widget-interactive-surface';
+    focusLocation.setAttribute('aria-label', 'Focus map on settings location');
+    focusLocation.title = `Focus on ${c.locationName || 'settings location'}`;
+    focusLocation.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>';
+    mapShell.append(mapContainer, status, focusLocation);
     el.appendChild(mapShell);
 
     const timeline = document.createElement('div');
@@ -884,6 +890,33 @@ WIDGET_REGISTRY['weatherMap'] = {
         applyLayers();
       }, 900);
     };
+
+    focusLocation.addEventListener('click', event => {
+      event.stopPropagation();
+      setPlayback(false);
+      instance.locationDragPending = false;
+      const camera = {
+        longitude: Number(c.longitude), latitude: Number(c.latitude),
+        zoom: _normalizeWeatherMapOriginZoom(c.originZoom)
+      };
+      _writeWeatherMapView(widget, { forecastCenter: null, camera });
+      runtime = _getWeatherMapRuntime(widget);
+      runtime.camera = camera;
+      instance.runtime = runtime;
+      location.textContent = c.locationName || 'Regional weather';
+      map.easeTo({ center: [camera.longitude, camera.latitude], zoom: camera.zoom, duration: 650 });
+      const originCache = _readWeatherMapCache(widget);
+      if (_isWeatherMapCacheFresh(originCache)) {
+        cache = originCache;
+        status.classList.add('hidden');
+        status.classList.remove('is-error');
+        applyLayers();
+      } else {
+        status.classList.remove('hidden', 'is-error');
+        status.textContent = 'Loading forecast for the settings location...';
+        _ensureWeatherMapData(widget);
+      }
+    });
 
     map.on('load', () => {
       if (_weatherMapInstances.get(widget.id) !== instance) return;
@@ -1056,7 +1089,7 @@ WIDGET_REGISTRY['weatherMap'] = {
           <label class="board-fit-label"><input type="radio" name="weatherMapStyle" data-cfg="mapStyle" value="liberty" ${_normalizeWeatherMapStyle(c.mapStyle) === 'liberty' ? 'checked' : ''}/><span>Liberty</span></label>
         </div>
       </div>
-      <div class="settings-help">Drag the live map to change its browser-local current centre and zoom. Use the reload icon on the widget to return to this origin. Rain is forecast precipitation, not live radar.</div>`;
+      <div class="settings-help">Drag the live map to change its browser-local current centre and zoom. Use the target button on the map or the widget reload icon to return to this origin. Rain is forecast precipitation, not live radar.</div>`;
 
     const input = container.querySelector('.weather-map-location-search');
     const searchBtn = container.querySelector('.weather-map-location-search-btn');

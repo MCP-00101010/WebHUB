@@ -339,7 +339,7 @@ function _formatIpInfoSpeedMetric(value, unit) {
 
 WIDGET_REGISTRY['ipInfo'] = {
   name: 'IP Info',
-  category: 'Weather & Network',
+  category: 'System & Network',
   description: 'Current public IP address and approximate country for checking VPN connections',
   allowedIn: ['column', 'navpane'],
   defaultConfig: {

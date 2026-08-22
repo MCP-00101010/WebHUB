@@ -10,7 +10,7 @@ Every widget declares:
 - `defaultConfig`, `defaultData`, and an object-shaped `settingsSchema`
 - `render(widget, element, context)` and optional `reload`, `cleanup`, and `migrate` hooks
 - `responsive` width/height hints
-- `capabilities` selected from `network`, `extensionRelay`, `nativeHost`, `secureCredentials`, `filesystemPaths`, `geolocation`, `notifications`, `timers`, and `localCache`
+- `capabilities` selected from `network`, `extensionRelay`, `nativeHost`, `secureCredentials`, `filesystemPaths`, `geolocation`, `notifications`, `timers`, `localCache`, and `assetCache`
 
 Network capabilities list exact hostnames. Use `user-configured` only when the URL is part of the user's widget configuration. Mark a capability `{ optional: true }` when the widget can still provide a useful reduced experience without it.
 
@@ -19,14 +19,17 @@ Network capabilities list exact hostnames. Use `user-configured` only when the U
 - `WidgetSDK.runtime.schedule(key, task, intervalMs)` provides one visibility-aware schedule per key, error backoff, and cancellation.
 - `WidgetSDK.runtime.requestFrame(key, callback)` provides a cancellable animation frame that is included in widget teardown.
 - `WidgetSDK.network.request(...)` is used by the Hub network helper to enforce declared domains, concurrency, timeouts, and response-size bounds.
-- `WidgetSDK.cache.get/set/remove(widgetType, widgetId, key)` stores browser-local, expiring values within a per-widget quota; `migrateLegacy(...)` moves an older local-storage entry into that namespace once.
+- `WidgetSDK.cache.get/set/remove(widgetType, widgetId, key)` stores small browser-local, expiring values within a per-widget quota; `migrateLegacy(...)` moves an older local-storage entry into that namespace once.
+- `WidgetSDK.assets.metadata/list/get/set/remove/clear(widgetType, key)` stores explicitly declared large binary assets in IndexedDB, outside portable Hub state and the small local-storage cache.
 - `WidgetSDK.extensionRelay.invoke(widgetType, method, ...args)` and `supports(...)` gate optional extension operations behind the descriptor capability.
 - `WidgetSDK.nativeHost.invoke(widgetType, method, ...args)` and `supports(...)` gate fixed-purpose native operations behind the descriptor capability and native availability.
 - `WidgetSDK.credentials.status/get/set/remove(...)` provides the secure-credential boundary without exposing the bridge to widget implementations.
 - `WidgetSDK.settings.validateDraft(descriptor, widget)` validates configuration before persistence.
 - `WidgetSDK.runtime.teardown(widget)` cancels schedules and requests, then invokes cleanup exactly once.
 
-View preferences, samples, and caches belong in `WidgetSDK.cache`; portable configuration belongs in `widget.config`; user content belongs in `widget.data`. Never place credentials, filesystem paths, browser tab IDs, or cache payloads in shared widget state.
+View preferences and small samples belong in `WidgetSDK.cache`; downloaded binary resources belong in `WidgetSDK.assets`; portable configuration belongs in `widget.config`; user content belongs in `widget.data`. Never place credentials, filesystem paths, browser tab IDs, or cache payloads in shared widget state.
+
+Meaningful UI state is restorable by default. A widget should save selected tabs, filters, pages/items, expanded or collapsed details and attribution, map/globe cameras, focus modes, and meaningful scroll positions as bounded per-instance `view` data in `WidgetSDK.cache`. Restore it after widget and Hub reloads, keep it out of portable configuration and content, and remove it from the widget's `dispose` hook. State that is intentionally transient should be documented and covered by a test. Universal Search's unfinished query and keyboard-highlighted result are deliberate transient exceptions; completed recent searches may still be remembered locally when enabled.
 
 ## Develop locally
 

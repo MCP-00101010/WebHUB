@@ -21,6 +21,7 @@ const bridge = (() => {
   const ASSET_WRITE_TIMEOUT_MS = 60000;
   const FAVICON_FETCH_TIMEOUT_MS = 30000;
   const FEED_FETCH_TIMEOUT_MS = 30000;
+  const TRANSLATOR_ASSET_TIMEOUT_MS = 60000;
   const URL_HEALTH_TIMEOUT_MS = 20000;
   const DIRECTORY_APPROVAL_TIMEOUT_MS = 305000;
 
@@ -205,6 +206,18 @@ const bridge = (() => {
       }));
       return;
     }
+    if (e.data._push && e.data.type === 'MW_NOTIFICATION_EVENT') {
+      window.dispatchEvent(new CustomEvent('morpheus:notification-event', {
+        detail: { pushRequestId: e.data.pushRequestId || '', event: e.data.event || null }
+      }));
+      return;
+    }
+    if (e.data._push && e.data.type === 'MW_OPEN_NOTIFICATION_TARGET') {
+      window.dispatchEvent(new CustomEvent('morpheus:open-notification-target', {
+        detail: { pushRequestId: e.data.pushRequestId || '', event: e.data.event || null }
+      }));
+      return;
+    }
 
     // Response to one of our _send() calls.
     if (!e.data._res) return;
@@ -260,6 +273,34 @@ const bridge = (() => {
         _lastError = 'Storage information request failed';
         return { nativeAvailable: false, databasePath: null };
       }
+    },
+
+    async scheduleNotification(job) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('notificationScheduler')) return { ok: false, available: false };
+      return _send('MW_NOTIFICATION_SCHEDULE', { job });
+    },
+
+    async cancelNotification(id) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('notificationScheduler')) return { ok: false, available: false };
+      return _send('MW_NOTIFICATION_CANCEL', { id });
+    },
+
+    async listNotifications() {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('notificationScheduler')) return { ok: false, available: false, events: [], jobs: [] };
+      return _send('MW_NOTIFICATION_LIST');
+    },
+
+    async markNotificationsRead(ids = []) {
+      if (!_available || !_capabilities.has('notificationScheduler')) return { ok: false, available: false };
+      return _send('MW_NOTIFICATION_MARK_READ', { ids });
+    },
+
+    async clearNotifications() {
+      if (!_available || !_capabilities.has('notificationScheduler')) return { ok: false, available: false };
+      return _send('MW_NOTIFICATION_CLEAR');
     },
 
     async saveState(json, options = {}) {
@@ -498,6 +539,23 @@ const bridge = (() => {
       }
     },
 
+    async fetchTranslationAssetChunk(assetId, offset, length) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_capabilities.has('translationModels')) {
+        throw new Error(`Local translation models require the current Firefox extension${_extensionVersion ? `; detected ${_extensionVersion}` : ''}.`);
+      }
+      try {
+        return await _send('MW_FETCH_TRANSLATOR_ASSET_CHUNK', {
+          assetId: String(assetId || ''),
+          offset: Math.max(0, Math.floor(Number(offset) || 0)),
+          length: Math.max(1, Math.floor(Number(length) || 0))
+        }, { timeoutMs: TRANSLATOR_ASSET_TIMEOUT_MS });
+      } catch (error) {
+        if (error?.message === 'timeout') throw new Error('Translation model download timed out.');
+        throw error;
+      }
+    },
+
     async checkUrl(url) {
       if (!_available) await _connect({ retries: 1, delayMs: 200 });
       if (!_available) return { available: false, reachable: false, status: 0, finalUrl: url || '', error: 'Extension relay unavailable' };
@@ -539,6 +597,8 @@ const bridge = (() => {
       const safeHeaders = {};
       if (typeof headers.Accept === 'string') safeHeaders.Accept = headers.Accept.slice(0, 256);
       if (typeof headers['X-Auth-Token'] === 'string') safeHeaders['X-Auth-Token'] = headers['X-Auth-Token'].slice(0, 512);
+      if (typeof headers.Authorization === 'string') safeHeaders.Authorization = headers.Authorization.slice(0, 512);
+      if (typeof headers['x-apisports-key'] === 'string') safeHeaders['x-apisports-key'] = headers['x-apisports-key'].slice(0, 512);
       try {
         const res = await _send('MW_FETCH_CALENDAR', { url: calendarUrl, headers: safeHeaders }, { timeoutMs: FEED_FETCH_TIMEOUT_MS });
         return res.ok && typeof res.text === 'string' ? {
@@ -546,7 +606,7 @@ const bridge = (() => {
           finalUrl: res.finalUrl || calendarUrl,
           contentType: res.contentType || '',
           bytes: Number(res.bytes || 0)
-        } : null;
+        } : { error: res.error || 'Extension request failed', status: Number(res.status || 0) };
       } catch (error) {
         console.warn('Morpheus: extension calendar fetch failed', error);
         return null;

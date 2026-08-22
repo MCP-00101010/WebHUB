@@ -15,7 +15,7 @@ Morpheus WebHub is a local-first bookmark workspace built with HTML, CSS, and Ja
 
 Implemented areas include multi-tab boards, configurable columns and backgrounds, speed dials, sets and dynamic folders, nested navigation, tag inheritance, Inbox and Import Manager workflows, trash plus Undo/Redo, responsive sidebar sizing, multi-item selection and drag previews, themes, extension relay, atomic shared-database persistence, and a categorized widget library.
 
-The widget library currently includes clocks, countdowns, notes, to-do lists, images, NASA APOD, basic and mapped weather forecasts, astronomy/night-sky information, an interactive ISS tracker, RSS feeds, a unified read-only Calendar, and IP/VPN information with an optional Cloudflare speed test.
+The widget library currently includes clocks, countdowns, notes, to-do lists, images, Calculator and Converter, local Bergamot translation, Focus Sessions, a multi-provider Football Tracker for leagues, domestic cups and international tournaments, Global Hazards, Saved Sessions, service and system monitoring, approved Git and recent-file views, Media Watchlist, Universal Search, NASA APOD, basic and mapped weather forecasts, astronomy/night-sky information, an interactive ISS tracker, RSS feeds, a unified read-only Calendar, and IP/VPN information with an optional Cloudflare speed test.
 
 Outstanding product and platform work is tracked only in `TODO.md`; completed work belongs in `CHANGELOG.md`.
 
@@ -33,9 +33,9 @@ Outstanding product and platform work is tracked only in `TODO.md`; completed wo
 - `source/state.js`: normalized state, selectors, mutations, recovery cache, and shared-save coordination.
 - `source/render.js` and `source/render-items.js`: page composition, search, navigation, boards, and item rendering.
 - `source/widgets.js`: shared widget framework plus lightweight built-ins; substantial widgets live in paired standalone `*-widget.js` / `*-widget.css` modules.
-- `source/widget-sdk.js`: descriptor normalization, capability gates, bounded networking, extension and credential gateways, local cache quotas/migration, scheduling, managed animation frames, and teardown.
+- `source/widget-sdk.js`: descriptor normalization, capability gates, bounded networking, extension and credential gateways, small local-cache quotas, large IndexedDB asset caches, scheduling, managed animation frames, and teardown.
 - `source/calendar-widget.js` / `source/calendar-widget.css`: unified private/public calendar sources, ICS parsing, secure credentials, and agenda/month presentation.
-- `source/*-widget.js` / `source/*-widget.css`: standalone built-ins, including service/system monitoring, approved Git/file views, media tracking, and universal local/web search.
+- `source/*-widget.js` / `source/*-widget.css`: standalone built-ins, including service/system monitoring, approved Git/file views, media tracking, local Bergamot translation, and universal local/web search.
 - `source/widget-network.js`: SDK-routed widget requests and shared Open-Meteo geocoding UI.
 - `source/dnd.js`: navigation, board, sidebar, set, and Import Manager drag/drop adapters.
 - `source/bridge.js`: page-side extension transport.
@@ -53,3 +53,4 @@ Scripts run as ordered classic scripts to retain direct local-file operation. To
 - Keep platform-specific behavior behind the bridge/native-host boundary.
 - Preserve consistent drag/drop semantics and the existing folder-depth limit.
 - Prefer targeted rendering for small changes and preserve expensive map/globe instances when their widget state has not changed.
+- Treat meaningful widget UI state as restorable by default. Selected tabs, filters, pages/items, expanded or collapsed panels and provider attribution, map/globe cameras, focus modes, and meaningful scroll positions must survive Hub reloads through bounded per-instance `WidgetSDK.cache` view state. Keep that state browser-local and out of portable `widget.config` / `widget.data`; clear it when the widget is deleted. Only deliberately transient interactions may reset, and that exception should be explicit and tested. Universal Search's unfinished query and keyboard-highlighted result are deliberate transient exceptions; completed recent searches may still be remembered locally when enabled.

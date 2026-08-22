@@ -36,7 +36,26 @@ const URL_HEALTH_TIMEOUT_MS = 15000;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 const NATIVE_REQUEST_TIMEOUT_MS = 15000;
 const DIRECTORY_APPROVAL_TIMEOUT_MS = 300000;
+const TRANSLATOR_ASSET_TIMEOUT_MS = 45000;
+const TRANSLATOR_ASSET_MAX_CHUNK_BYTES = 1024 * 1024;
 const NATIVE_RETRY_COOLDOWN_MS = 5000;
+const NOTIFICATION_JOBS_KEY = 'morpheusNotificationJobsV1';
+const NOTIFICATION_EVENTS_KEY = 'morpheusNotificationEventsV1';
+const NOTIFICATION_PENDING_ACTION_KEY = 'morpheusNotificationPendingActionV1';
+const LAST_HUB_URL_KEY = 'morpheusLastHubUrlV1';
+const NOTIFICATION_ALARM_PREFIX = 'morpheus-notification:';
+const MAX_NOTIFICATION_JOBS = 256;
+const MAX_NOTIFICATION_EVENTS = 200;
+let notificationMutation = Promise.resolve();
+const TRANSLATOR_ASSET_ROOT = 'https://firefox-settings-attachments.cdn.mozilla.net/';
+const TRANSLATOR_ASSETS = Object.freeze({
+  'ende:model:2.1': { location: 'main-workspace/translations-models/23db71e7-b6d9-45eb-a47d-0290d7d8ef63.bin', size: 31561787, hash: '8df29d9494d19f47fd5d97c6a73474c6f657e9f81c1a607c431d02befdf3810f' },
+  'ende:lex:2.1': { location: 'main-workspace/translations-models/bc072b1a-7749-43f7-9fe0-34a6dff10c4a.bin', size: 4347672, hash: '7ed39f1cffbd68a27ddf05bbfe068de2060f1d7e69f1a20e27ae923551dd7393' },
+  'ende:vocab:2.1': { location: 'main-workspace/translations-models/261225ea-5a52-455b-981c-7d09c6e6da3c.spm', size: 810073, hash: '69f730becafa48e3bb2c244eab66456877c08959a02f2bd5519b5a3088b62f9c' },
+  'deen:model:2.0': { location: 'main-workspace/translations-models/f44b1b1b-9df6-4ece-971e-0e5ce96fae54.bin', size: 31561787, hash: '3e6f7c2c2425d10824797270b382bee718ff34af2cab9308841c82ca46dc6f20' },
+  'deen:lex:2.0': { location: 'main-workspace/translations-models/d0e4efcb-6145-43db-a69e-568904cc2925.bin', size: 4945796, hash: '113b98460468360cca68c042e1cddf49c4e1931cbb975ed04349c9a3bd607010' },
+  'deen:vocab:2.0': { location: 'main-workspace/translations-models/8ad4d93e-21e6-4862-81d5-c1c3a7d0767b.spm', size: 810073, hash: '69f730becafa48e3bb2c244eab66456877c08959a02f2bd5519b5a3088b62f9c' }
+});
 const HUB_PAGE_REQUEST_TYPES = new Set([
   'MW_PING', 'MW_GET_STORAGE_INFO', 'MW_SET_DATABASE_PATH', 'MW_PICK_DATABASE_PATH',
   'MW_SAVE', 'MW_LOAD', 'MW_LOAD_SHARED_CHUNK', 'MW_GET_DATABASE_FILE_INFO',
@@ -47,7 +66,9 @@ const HUB_PAGE_REQUEST_TYPES = new Set([
   'MW_WRITE_THEME', 'MW_CAPTURE_BROWSER_SESSION', 'MW_LAUNCH_BROWSER_SESSION',
   'MW_LIST_DATABASE_BACKUPS', 'MW_READ_DATABASE_BACKUP', 'MW_CREATE_DATABASE_BACKUP',
   'MW_MONITOR_SERVICE', 'MW_SYSTEM_METRICS', 'MW_APPROVE_DIRECTORY',
-  'MW_GIT_WORKSPACE_STATUS', 'MW_OPEN_APPROVED_DIRECTORY', 'MW_LIST_RECENT_FILES', 'MW_OPEN_APPROVED_FILE'
+  'MW_GIT_WORKSPACE_STATUS', 'MW_OPEN_APPROVED_DIRECTORY', 'MW_LIST_RECENT_FILES', 'MW_OPEN_APPROVED_FILE',
+  'MW_FETCH_TRANSLATOR_ASSET_CHUNK', 'MW_NOTIFICATION_SCHEDULE', 'MW_NOTIFICATION_CANCEL',
+  'MW_NOTIFICATION_LIST', 'MW_NOTIFICATION_MARK_READ', 'MW_NOTIFICATION_CLEAR'
 ]);
 
 
@@ -331,6 +352,7 @@ function rememberMorpheusTab(tab, pageUrl = '', options = {}) {
     sessionToken: options.sessionToken || existing?.sessionToken || createHubSessionToken()
   };
   hubRegistrations.set(tab.id, registration);
+  void browser.storage.local.set({ [LAST_HUB_URL_KEY]: url }).catch(() => {});
   selectRegisteredHub();
   hubRelayError = '';
   return registration;
@@ -480,8 +502,151 @@ function getStorageInfo() {
     fileSchemeAccess,
     fileSchemeAccessRequired,
     extensionId: browser.runtime.id || '',
-    capabilities: ['urlHealth', 'serviceMonitor', 'systemMetrics', 'approvedDirectories', 'gitWorkspace', 'recentFiles', 'commandPalette', 'browserSessions', 'backupTimeline', 'portableBundles']
+    capabilities: ['urlHealth', 'serviceMonitor', 'systemMetrics', 'approvedDirectories', 'gitWorkspace', 'recentFiles', 'commandPalette', 'browserSessions', 'backupTimeline', 'portableBundles', 'translationModels', 'notificationScheduler']
   };
+}
+
+function notificationAlarmName(id) { return `${NOTIFICATION_ALARM_PREFIX}${id}`; }
+function notificationId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+function sanitizeNotificationSource(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return {
+    widgetType: String(source.widgetType || '').slice(0, 80),
+    widgetId: String(source.widgetId || '').slice(0, 120),
+    label: String(source.label || '').slice(0, 120)
+  };
+}
+function sanitizeNotificationJob(value) {
+  const id = String(value?.id || '').trim().replace(/[^a-zA-Z0-9:_-]/g, '').slice(0, 160);
+  const when = Number(value?.when);
+  if (!id || !Number.isFinite(when) || when > Date.now() + 10 * 365 * 24 * 60 * 60 * 1000) throw new Error('Invalid notification schedule');
+  const title = String(value?.title || 'Morpheus WebHub').trim().slice(0, 100) || 'Morpheus WebHub';
+  const message = String(value?.message || '').trim().slice(0, 500);
+  if (!message) throw new Error('A notification message is required');
+  return {
+    id, title, message, when: Math.max(Date.now(), when),
+    expiresAt: Math.max(when, Number(value?.expiresAt) || when + 24 * 60 * 60 * 1000),
+    createdAt: Number(value?.createdAt) || Date.now(),
+    dedupeKey: String(value?.dedupeKey || id).slice(0, 180),
+    source: sanitizeNotificationSource(value?.source)
+  };
+}
+async function readNotificationStorage(key, fallback) {
+  const stored = await browser.storage.local.get(key);
+  return stored && Object.prototype.hasOwnProperty.call(stored, key) ? stored[key] : fallback;
+}
+function mutateNotifications(task) {
+  const next = notificationMutation.then(task, task);
+  notificationMutation = next.catch(() => {});
+  return next;
+}
+function scheduleHubNotification(value) {
+  return mutateNotifications(async () => {
+    const job = sanitizeNotificationJob(value);
+    const storedJobs = await readNotificationStorage(NOTIFICATION_JOBS_KEY, []);
+    const jobs = Array.isArray(storedJobs) ? storedJobs : [];
+    const nextJobs = [job, ...jobs.filter(item => item?.id !== job.id)].slice(0, MAX_NOTIFICATION_JOBS);
+    await browser.storage.local.set({ [NOTIFICATION_JOBS_KEY]: nextJobs });
+    await Promise.resolve(browser.alarms.clear(notificationAlarmName(job.id))).catch(() => {});
+    browser.alarms.create(notificationAlarmName(job.id), { when: job.when });
+    return { ok: true, job };
+  });
+}
+function cancelHubNotification(id) {
+  return mutateNotifications(async () => {
+    const safeId = String(id || '').slice(0, 160);
+    const jobs = await readNotificationStorage(NOTIFICATION_JOBS_KEY, []);
+    await browser.storage.local.set({ [NOTIFICATION_JOBS_KEY]: (Array.isArray(jobs) ? jobs : []).filter(job => job?.id !== safeId) });
+    await Promise.resolve(browser.alarms.clear(notificationAlarmName(safeId))).catch(() => {});
+    return { ok: true };
+  });
+}
+function fireHubNotification(jobValue) {
+  return mutateNotifications(async () => {
+    const job = sanitizeNotificationJob(jobValue);
+    const now = Date.now();
+    const jobs = await readNotificationStorage(NOTIFICATION_JOBS_KEY, []);
+    await browser.storage.local.set({ [NOTIFICATION_JOBS_KEY]: (Array.isArray(jobs) ? jobs : []).filter(item => item?.id !== job.id) });
+    if (job.expiresAt < now) return { ok: true, expired: true };
+    const notificationIdValue = `morpheus:${job.id}:${job.when}`;
+    const events = await readNotificationStorage(NOTIFICATION_EVENTS_KEY, []);
+    const event = { id: notificationId(), jobId: job.id, notificationId: notificationIdValue, title: job.title, message: job.message, createdAt: now, read: false, dedupeKey: job.dedupeKey, source: job.source };
+    const nextEvents = [event, ...(Array.isArray(events) ? events : []).filter(item => item?.dedupeKey !== event.dedupeKey)].slice(0, MAX_NOTIFICATION_EVENTS);
+    await browser.storage.local.set({ [NOTIFICATION_EVENTS_KEY]: nextEvents });
+    await browser.notifications.create(notificationIdValue, { type: 'basic', iconUrl: browser.runtime.getURL('icons/icon-96.svg'), title: job.title, message: job.message });
+    void sendToMorpheus({ type: 'MW_NOTIFICATION_EVENT', event }).catch(() => {});
+    return { ok: true, event };
+  });
+}
+function listHubNotifications() {
+  return mutateNotifications(async () => {
+    const jobs = await readNotificationStorage(NOTIFICATION_JOBS_KEY, []);
+    const events = await readNotificationStorage(NOTIFICATION_EVENTS_KEY, []);
+    const pendingAction = await readNotificationStorage(NOTIFICATION_PENDING_ACTION_KEY, null);
+    if (pendingAction) await browser.storage.local.remove(NOTIFICATION_PENDING_ACTION_KEY);
+    return { ok: true, jobs: Array.isArray(jobs) ? jobs : [], events: Array.isArray(events) ? events : [], pendingAction };
+  });
+}
+function markHubNotificationsRead(ids) {
+  return mutateNotifications(async () => {
+    const selected = new Set((Array.isArray(ids) ? ids : []).map(String));
+    const events = await readNotificationStorage(NOTIFICATION_EVENTS_KEY, []);
+    const next = (Array.isArray(events) ? events : []).map(event => !selected.size || selected.has(String(event?.id)) ? { ...event, read: true } : event);
+    await browser.storage.local.set({ [NOTIFICATION_EVENTS_KEY]: next });
+    return { ok: true, events: next };
+  });
+}
+function clearHubNotifications() {
+  return mutateNotifications(async () => { await browser.storage.local.set({ [NOTIFICATION_EVENTS_KEY]: [] }); return { ok: true }; });
+}
+async function rehydrateNotificationAlarms() {
+  if (!browser.alarms?.create) return;
+  const jobs = await readNotificationStorage(NOTIFICATION_JOBS_KEY, []);
+  const now = Date.now();
+  for (const rawJob of Array.isArray(jobs) ? jobs : []) {
+    try {
+      const job = sanitizeNotificationJob(rawJob);
+      if (job.expiresAt < now) { await cancelHubNotification(job.id); continue; }
+      if (job.when <= now) await fireHubNotification(job);
+      else browser.alarms.create(notificationAlarmName(job.id), { when: job.when });
+    } catch {}
+  }
+}
+
+if (browser.alarms?.onAlarm) {
+  browser.alarms.onAlarm.addListener(alarm => {
+    if (!String(alarm?.name || '').startsWith(NOTIFICATION_ALARM_PREFIX)) return;
+    const id = alarm.name.slice(NOTIFICATION_ALARM_PREFIX.length);
+    void readNotificationStorage(NOTIFICATION_JOBS_KEY, []).then(jobs => {
+      const job = (Array.isArray(jobs) ? jobs : []).find(item => item?.id === id);
+      return job ? fireHubNotification(job) : null;
+    }).catch(error => console.warn('Morpheus: notification alarm failed', error));
+  });
+  void rehydrateNotificationAlarms().catch(error => console.warn('Morpheus: notification rehydration failed', error));
+}
+
+if (browser.notifications?.onClicked) {
+  browser.notifications.onClicked.addListener(clickedId => {
+    void (async () => {
+      const events = await readNotificationStorage(NOTIFICATION_EVENTS_KEY, []);
+      const event = (Array.isArray(events) ? events : []).find(item => item?.notificationId === clickedId);
+      if (!event) return;
+      await markHubNotificationsRead([event.id]);
+      const tab = await ensureMorpheusTab().catch(() => null);
+      if (tab) {
+        await browser.tabs.update(tab.id, { active: true }).catch(() => {});
+        if (tab.windowId !== undefined && browser.windows?.update) await browser.windows.update(tab.windowId, { focused: true }).catch(() => {});
+        await sendToMorpheus({ type: 'MW_OPEN_NOTIFICATION_TARGET', event }).catch(() => {});
+        return;
+      }
+      await browser.storage.local.set({ [NOTIFICATION_PENDING_ACTION_KEY]: event });
+      const lastUrl = await readNotificationStorage(LAST_HUB_URL_KEY, '');
+      if (isPotentialHubUrl(lastUrl) && browser.tabs.create) await browser.tabs.create({ url: lastUrl, active: true });
+    })().catch(error => console.warn('Morpheus: notification click failed', error));
+  });
 }
 
 function sanitizeSessionTab(tab, group = null) {
@@ -970,6 +1135,55 @@ async function fetchFeedText(options = {}) {
   }
 }
 
+function translatorBytesToBase64(bytes) {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + 0x8000)));
+  }
+  return btoa(binary);
+}
+
+async function fetchTranslatorAssetChunk(options = {}) {
+  const assetId = String(options.assetId || '');
+  const asset = TRANSLATOR_ASSETS[assetId];
+  if (!asset) return { ok: false, error: 'Unknown translation model asset' };
+  const offset = Math.max(0, Math.floor(Number(options.offset) || 0));
+  if (offset >= asset.size) return { ok: false, error: 'Translation model offset is out of range' };
+  const requestedLength = Math.max(1, Math.min(
+    TRANSLATOR_ASSET_MAX_CHUNK_BYTES,
+    Math.floor(Number(options.length) || TRANSLATOR_ASSET_MAX_CHUNK_BYTES),
+    asset.size - offset
+  ));
+  const end = offset + requestedLength - 1;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TRANSLATOR_ASSET_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${TRANSLATOR_ASSET_ROOT}${asset.location}`, {
+      method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal,
+      headers: { Accept: 'application/octet-stream', Range: `bytes=${offset}-${end}` }
+    });
+    if (response.status !== 206) return { ok: false, error: `Mozilla model server returned ${response.status}; partial content was required` };
+    const contentRange = String(response.headers?.get?.('content-range') || '');
+    const rangeMatch = contentRange.match(/^bytes\s+(\d+)-(\d+)\/(\d+)$/i);
+    if (!rangeMatch || Number(rangeMatch[1]) !== offset || Number(rangeMatch[3]) !== asset.size) {
+      return { ok: false, error: 'Mozilla model server returned an invalid byte range' };
+    }
+    const buffer = await response.arrayBuffer();
+    if (!buffer.byteLength || buffer.byteLength > requestedLength || Number(rangeMatch[2]) !== offset + buffer.byteLength - 1) {
+      return { ok: false, error: 'Mozilla model server returned an invalid chunk size' };
+    }
+    const nextOffset = offset + buffer.byteLength;
+    return {
+      ok: true, assetId, offset, nextOffset, totalSize: asset.size, hash: asset.hash,
+      done: nextOffset >= asset.size, chunk: translatorBytesToBase64(new Uint8Array(buffer))
+    };
+  } catch (error) {
+    return { ok: false, error: error?.name === 'AbortError' ? 'Translation model download timed out' : (error?.message || 'Translation model download failed') };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function checkUrlHealth(options = {}) {
   const url = typeof options.url === 'string' ? options.url.trim() : '';
   if (!/^https?:\/\//i.test(url) || url.length > 4096) {
@@ -1076,13 +1290,36 @@ async function fetchCalendarText(options = {}) {
       && typeof requested['X-Auth-Token'] === 'string' && requested['X-Auth-Token'].length <= 512) {
     headers['X-Auth-Token'] = requested['X-Auth-Token'];
   }
+  if (parsedUrl.hostname === 'api.sportmonks.com'
+      && typeof requested.Authorization === 'string' && requested.Authorization.length <= 512) {
+    headers.Authorization = requested.Authorization;
+  }
+  if (parsedUrl.hostname === 'v3.football.api-sports.io'
+      && typeof requested['x-apisports-key'] === 'string' && requested['x-apisports-key'].length <= 512) {
+    headers['x-apisports-key'] = requested['x-apisports-key'];
+  }
+  const hasProviderCredential = !!(headers['X-Auth-Token'] || headers.Authorization || headers['x-apisports-key']);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FEED_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      method: 'GET', credentials: 'omit', redirect: headers['X-Auth-Token'] ? 'error' : 'follow', cache: 'no-store', signal: controller.signal, headers
+      method: 'GET', credentials: 'omit', redirect: hasProviderCredential ? 'error' : 'follow', cache: 'no-store', signal: controller.signal, headers
     });
-    if (!response.ok) return { ok: false, error: `Calendar provider returned ${response.status}` };
+    if (!response.ok) {
+      const declaredLength = Number(response.headers?.get?.('content-length') || 0);
+      let detail = '';
+      if (!declaredLength || declaredLength <= MAX_FEED_RESPONSE_BYTES) {
+        try {
+          const errorBuffer = await response.arrayBuffer();
+          if (errorBuffer.byteLength <= MAX_FEED_RESPONSE_BYTES) {
+            const errorText = new TextDecoder('utf-8').decode(errorBuffer);
+            try { const payload = JSON.parse(errorText); detail = String(payload?.message || payload?.error || ''); }
+            catch { detail = errorText.replace(/\s+/g, ' ').trim().slice(0, 300); }
+          }
+        } catch {}
+      }
+      return { ok: false, status: response.status, error: `${parsedUrl.hostname} returned ${response.status}${detail ? `: ${detail}` : ''}` };
+    }
     const declaredLength = Number(response.headers?.get?.('content-length') || 0);
     if (declaredLength > MAX_FEED_RESPONSE_BYTES) return { ok: false, error: 'Calendar response exceeds the 2 MiB limit' };
     const buffer = await response.arrayBuffer();
@@ -1393,6 +1630,36 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .catch(() => sendResponse({ ok: true, nativeAvailable: false, databasePath: null }));
       return true;
 
+    case 'MW_NOTIFICATION_SCHEDULE':
+      scheduleHubNotification(msg.job)
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, error: error?.message || 'Could not schedule notification' }));
+      return true;
+
+    case 'MW_NOTIFICATION_CANCEL':
+      cancelHubNotification(msg.id)
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, error: error?.message || 'Could not cancel notification' }));
+      return true;
+
+    case 'MW_NOTIFICATION_LIST':
+      listHubNotifications()
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, events: [], jobs: [], error: error?.message || 'Could not load notifications' }));
+      return true;
+
+    case 'MW_NOTIFICATION_MARK_READ':
+      markHubNotificationsRead(msg.ids)
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, error: error?.message || 'Could not update notifications' }));
+      return true;
+
+    case 'MW_NOTIFICATION_CLEAR':
+      clearHubNotifications()
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, error: error?.message || 'Could not clear notifications' }));
+      return true;
+
     case 'MW_SET_DATABASE_PATH':
       setDatabasePath(msg.path || '')
         .then(ok => ok
@@ -1479,6 +1746,12 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'MW_FETCH_FEED':
       fetchFeedText(msg)
         .then(res => sendResponse(res || { ok: false, error: 'Feed request failed' }))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_FETCH_TRANSLATOR_ASSET_CHUNK':
+      fetchTranslatorAssetChunk(msg)
+        .then(res => sendResponse(res || { ok: false, error: 'Translation model download failed' }))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 

@@ -11,6 +11,7 @@ const sdkSource = fs.readFileSync(path.join(root, 'source/widget-sdk.js'), 'utf8
 function createContext(extra = {}) {
   const saves = [];
   const undo = [];
+  const storage = new Map();
   const context = vm.createContext({
     WIDGET_REGISTRY: {},
     state: { savedSessions: [] },
@@ -30,16 +31,40 @@ function createContext(extra = {}) {
     structuredClone,
     setTimeout,
     clearTimeout,
-    localStorage: { length: 0, key: () => null, getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage: {
+      get length() { return storage.size; }, key: index => [...storage.keys()][index] ?? null,
+      getItem: key => storage.get(String(key)) ?? null, setItem: (key, value) => storage.set(String(key), String(value)), removeItem: key => storage.delete(String(key))
+    },
     ...extra
   });
   context.__saves = saves;
   context.__undo = undo;
+  context.__storage = storage;
   vm.runInContext(sdkSource, context);
   vm.runInContext(source, context);
   vm.runInContext('WidgetSDK.registry.adoptBuiltins()', context);
   return context;
 }
+
+test('selected session, capture scope and list position survive runtime recreation', () => {
+  const context = createContext();
+  context.state.savedSessions = [
+    { id: 'one', title: 'One', createdAt: '2026-08-17T10:00:00.000Z', updatedAt: '2026-08-17T10:00:00.000Z', tabs: [] },
+    { id: 'two', title: 'Two', createdAt: '2026-08-17T10:00:00.000Z', updatedAt: '2026-08-17T10:00:00.000Z', tabs: [] }
+  ];
+  context.widget = widget();
+  const restored = vm.runInContext(`(() => {
+    const first = _savedSessionsRuntimeFor(widget);
+    first.selectedId = 'two'; first.captureScope = 'highlighted'; first.listScrollTop = 96;
+    _savedSessionsWriteView(widget, first);
+    _savedSessionsRuntime.clear(); _savedSessionsViewMemory.clear();
+    const next = _savedSessionsRuntimeFor(widget);
+    return { selectedId: next.selectedId, captureScope: next.captureScope, listScrollTop: next.listScrollTop };
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored)), { selectedId: 'two', captureScope: 'highlighted', listScrollTop: 96 });
+  assert.equal(context.__storage.has('morpheus-widget-sdk-cache:v1:savedSessions:saved-widget-1:view'), true);
+  assert.deepEqual(context.widget.data, {});
+});
 
 function widget(config = {}) {
   return {

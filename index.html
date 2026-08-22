@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css" />
   <link rel="stylesheet" href="source/styles.css" />
   <link rel="stylesheet" href="source/widget-sdk.css" />
+  <link rel="stylesheet" href="source/notification-center.css" />
   <link rel="stylesheet" href="source/nasa-apod-widget.css" />
   <link rel="stylesheet" href="source/weather-widget.css" />
   <link rel="stylesheet" href="source/weather-map-widget.css" />
@@ -17,7 +18,10 @@
   <link rel="stylesheet" href="source/ip-info-widget.css" />
   <link rel="stylesheet" href="source/calendar-widget.css" />
   <link rel="stylesheet" href="source/calculator-widget.css" />
+  <link rel="stylesheet" href="source/translator-widget.css" />
   <link rel="stylesheet" href="source/focus-session-widget.css" />
+  <link rel="stylesheet" href="source/football-tracker-widget.css" />
+  <link rel="stylesheet" href="source/global-hazards-widget.css" />
     <link rel="stylesheet" href="source/saved-sessions-widget.css" />
     <link rel="stylesheet" href="source/service-monitor-widget.css" />
     <link rel="stylesheet" href="source/system-monitor-widget.css" />
@@ -178,6 +182,11 @@
         <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 17.76 4H6.24a2 2 0 0 0-1.79 1.11z"/>
       </symbol>
 
+      <symbol id="icon-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </symbol>
+
       <symbol id="icon-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
         <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
       </symbol>
@@ -250,6 +259,10 @@
                 <svg width="18" height="18" aria-hidden="true"><use href="#icon-inbox"/></svg>
                 <span id="quickImportManagerBadge" class="sidebar-action-badge hidden">0</span>
               </button>
+              <button type="button" id="quickNotificationsBtn" class="icon-btn sidebar-action-btn" title="Notifications" aria-label="Notifications">
+                <svg width="18" height="18" aria-hidden="true"><use href="#icon-bell"/></svg>
+                <span id="quickNotificationsBadge" class="sidebar-action-badge hidden">0</span>
+              </button>
               <button type="button" id="quickHubToolsBtn" class="icon-btn sidebar-action-btn" title="Smart Views and Maintenance" aria-label="Smart Views and Maintenance">
                 <svg width="18" height="18" aria-hidden="true"><use href="#icon-filter"/></svg>
               </button>
@@ -262,7 +275,7 @@
 
           <div class="sidebar-meta-row">
             <span id="sidebarExtensionStatus" class="sidebar-extension-status">Checking extension…</span>
-            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.157</button>
+            <button type="button" id="aboutBtn" class="sidebar-version-btn" title="Settings">v0.11.189</button>
           </div>
         </section>
 
@@ -958,6 +971,26 @@
               </div>
             </div>
           </div>
+          <div class="settings-row settings-row--top">
+            <span>Sportmonks</span>
+            <div class="tz-picker-group">
+              <input id="stgApiKeySportmonks" type="password" class="settings-text-input" placeholder="Paste your Sportmonks API token" autocomplete="off" />
+              <div class="tz-hint-row">
+                <span id="stgApiKeySportmonksStatus" class="tz-hint">Used for Scottish Premiership data in Football Tracker widgets.</span>
+                <a href="https://my.sportmonks.com/register" target="_blank" rel="noreferrer noopener" class="widget-apod-settings-link">Get token</a>
+              </div>
+            </div>
+          </div>
+          <div class="settings-row settings-row--top">
+            <span>API-Football</span>
+            <div class="tz-picker-group">
+              <input id="stgApiKeyApiFootball" type="password" class="settings-text-input" placeholder="Paste your API-Football key" autocomplete="off" />
+              <div class="tz-hint-row">
+                <span id="stgApiKeyApiFootballStatus" class="tz-hint">Used only for competitions unavailable from Football Data and Sportmonks.</span>
+                <a href="https://dashboard.api-football.com/register" target="_blank" rel="noreferrer noopener" class="widget-apod-settings-link">Get key</a>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="settings-section span-full" data-tab="general">
@@ -1109,7 +1142,7 @@
         </div>
 
         <div class="settings-section span-full" data-tab="about">
-          <div class="about-version" id="aboutVersionLine">Version 0.11.157</div>
+          <div class="about-version" id="aboutVersionLine">Version 0.11.189</div>
           <p>A local-first bookmark manager. Runs entirely in your browser — no dependencies, no server, no telemetry.</p>
           <div class="settings-row">
             <span>Browser extension</span>
@@ -1347,6 +1380,23 @@
     </div>
   </div>
 
+  <div id="notificationCenterPanel" class="utility-modal-panel notification-center-panel hidden" role="dialog" aria-modal="false" aria-labelledby="notificationCenterTitle">
+    <div id="notificationCenterHeader" class="utility-panel-header notification-center-header">
+      <div>
+        <span id="notificationCenterTitle" class="panel-display-title">Notifications</span>
+        <span id="notificationCenterStatus" class="notification-center-status">Stored on this device</span>
+      </div>
+      <div class="utility-panel-header-actions">
+        <button type="button" id="notificationCenterMarkReadBtn" class="secondary-btn">Mark all read</button>
+        <button type="button" id="notificationCenterClearBtn" class="secondary-btn">Clear</button>
+      </div>
+    </div>
+    <div id="notificationCenterList" class="notification-center-list" aria-live="polite"></div>
+    <div class="form-actions utility-panel-footer">
+      <button type="button" id="notificationCenterDoneBtn" class="primary-btn">Done</button>
+    </div>
+  </div>
+
   <div id="setsManagerPanel" class="sets-panel hidden">
     <div id="setsManagerHeader" class="utility-panel-header sets-panel-header">
       <span class="panel-display-title">Sets Manager</span>
@@ -1480,7 +1530,10 @@
   <script src="source/ip-info-widget.js" defer></script>
   <script src="source/calendar-widget.js" defer></script>
   <script src="source/calculator-widget.js" defer></script>
+  <script src="source/translator-widget.js" defer></script>
   <script src="source/focus-session-widget.js" defer></script>
+  <script src="source/football-tracker-widget.js" defer></script>
+  <script src="source/global-hazards-widget.js" defer></script>
     <script src="source/saved-sessions-widget.js" defer></script>
     <script src="source/service-monitor-widget.js" defer></script>
     <script src="source/system-monitor-widget.js" defer></script>
@@ -1503,6 +1556,7 @@
   <script src="source/bookmark-tools.js" defer></script>
   <script src="source/phase2-tools.js" defer></script>
   <script src="source/command-palette.js" defer></script>
+  <script src="source/notification-center.js" defer></script>
   <script src="source/app.js" defer></script>
 </body>
 </html>

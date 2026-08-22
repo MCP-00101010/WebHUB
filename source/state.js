@@ -87,7 +87,9 @@ const defaultSettings = {
   serviceApiKeys: {
     nasa: '',
     tmdb: '',
-    footballData: ''
+    footballData: '',
+    sportmonks: '',
+    apiFootball: ''
   },
   activeThemeName: 'default-dark',
   customThemes: [],
@@ -484,7 +486,9 @@ const DYNAMIC_SORT_LABELS = Object.freeze({
 const SERVICE_SECRET_KEYS = Object.freeze({
   nasa: 'service.nasa.apiKey',
   tmdb: 'service.tmdb.readAccessToken',
-  footballData: 'service.footballData.apiToken'
+  footballData: 'service.footballData.apiToken',
+  sportmonks: 'service.sportmonks.apiToken',
+  apiFootball: 'service.apiFootball.apiKey'
 });
 
 let serviceSecretCache = Object.fromEntries(Object.keys(SERVICE_SECRET_KEYS).map(key => [key, '']));

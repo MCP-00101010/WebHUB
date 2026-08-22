@@ -2,6 +2,19 @@
 
 const _apodRuntime = new Map();
 const APOD_CACHE_KEY = 'daily';
+const APOD_VIEW_CACHE_KEY = 'view';
+
+function _getApodView(widgetId) {
+  let stored = null;
+  try { stored = WidgetSDK.cache.get('nasaApod', widgetId, APOD_VIEW_CACHE_KEY); } catch {}
+  return { explanationOpen: stored?.explanationOpen === true };
+}
+
+function _setApodView(widgetId, updates = {}) {
+  const view = { ..._getApodView(widgetId), ...updates, explanationOpen: updates.explanationOpen === true };
+  try { WidgetSDK.cache.set('nasaApod', widgetId, APOD_VIEW_CACHE_KEY, view); } catch {}
+  return view;
+}
 
 function _todayIsoKey() {
   return new Date().toISOString().slice(0, 10);
@@ -118,6 +131,7 @@ WIDGET_REGISTRY['nasaApod'] = {
   dispose(widget) {
     _apodRuntime.delete(widget.id);
     WidgetSDK.cache.remove('nasaApod', widget.id, APOD_CACHE_KEY);
+    WidgetSDK.cache.remove('nasaApod', widget.id, APOD_VIEW_CACHE_KEY);
   },
 
   render(widget, el, context) {
@@ -248,6 +262,8 @@ WIDGET_REGISTRY['nasaApod'] = {
     if (c.showExplanation && cache.explanation) {
       const details = document.createElement('details');
       details.className = 'widget-apod-details';
+      details.open = _getApodView(widget.id).explanationOpen;
+      details.addEventListener('toggle', () => _setApodView(widget.id, { explanationOpen: details.open }));
       const summary = document.createElement('summary');
       summary.textContent = 'About this image';
       const text = document.createElement('div');

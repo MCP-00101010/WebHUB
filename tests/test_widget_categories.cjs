@@ -33,7 +33,10 @@ test('widget library is grouped into ordered categories for board and sidebar me
     fs.readFileSync(path.join(root, 'source/ip-info-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/calendar-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/calculator-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/translator-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/focus-session-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/football-tracker-widget.js'), 'utf8'),
+    fs.readFileSync(path.join(root, 'source/global-hazards-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/saved-sessions-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/service-monitor-widget.js'), 'utf8'),
     fs.readFileSync(path.join(root, 'source/system-monitor-widget.js'), 'utf8'),
@@ -48,7 +51,7 @@ test('widget library is grouped into ordered categories for board and sidebar me
     widgets.slice(widgets.indexOf('const WIDGET_CATEGORY_ORDER'), widgets.indexOf('];', widgets.indexOf('const WIDGET_CATEGORY_ORDER')) + 2)
       .replace('const WIDGET_CATEGORY_ORDER =', '')
   );
-  assert.equal(Object.keys(definitions).length, 22);
+  assert.equal(Object.keys(definitions).length, 25);
   Object.values(definitions).forEach(definition => assert.ok(categoryOrder.includes(definition.category)));
 
   const helperStart = contextSource.indexOf('function _buildWidgetSubmenu');
@@ -59,22 +62,22 @@ test('widget library is grouped into ordered categories for board and sidebar me
   const boardMenu = vm.runInContext("_buildWidgetSubmenu('column', 'addWidget')", context);
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu.map(group => group.label))),
-    ['Personal & Productivity', 'Weather & Network', 'Space & Astronomy', 'Content & Feeds', 'Other']
+    ['Personal & Productivity', 'Utilities', 'Weather & Hazards', 'System & Network', 'Sports', 'Content & Feeds', 'Space & Astronomy', 'Coding & Development']
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(boardMenu[0].submenu.map(item => item.label))),
-    ['Calculator & Converter', 'Calendar', 'Clock', 'Countdown', 'Focus Session', 'Git Workspace', 'Notes', 'Recent Downloads & Files', 'Saved Sessions', 'To-do List', 'Universal Search Launcher']
+    ['Calendar', 'Clock', 'Countdown', 'Focus Session', 'Notes', 'Saved Sessions', 'To-do List', 'Universal Search Launcher']
   );
-  assert.equal(boardMenu.flatMap(group => group.submenu).length, 22);
+  assert.equal(boardMenu.flatMap(group => group.submenu).length, 25);
 
   const sidebarMenu = vm.runInContext("_buildWidgetSubmenu('navpane', 'addNavWidget')", context);
   assert.deepEqual(
     JSON.parse(JSON.stringify(sidebarMenu.map(group => group.label))),
-    ['Personal & Productivity', 'Weather & Network', 'Content & Feeds', 'Other']
+    ['Personal & Productivity', 'Utilities', 'System & Network', 'Sports', 'Content & Feeds', 'Coding & Development']
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(sidebarMenu.flatMap(group => group.submenu).map(item => item.action))),
-    ['addNavWidget:calculatorConverter', 'addNavWidget:clock', 'addNavWidget:countdown', 'addNavWidget:focusSession', 'addNavWidget:gitWorkspace', 'addNavWidget:recentFiles', 'addNavWidget:savedSessions', 'addNavWidget:universalSearch', 'addNavWidget:ipInfo', 'addNavWidget:serviceMonitor', 'addNavWidget:mediaWatchlist', 'addNavWidget:systemMonitor']
+    ['addNavWidget:clock', 'addNavWidget:countdown', 'addNavWidget:focusSession', 'addNavWidget:savedSessions', 'addNavWidget:universalSearch', 'addNavWidget:calculatorConverter', 'addNavWidget:translator', 'addNavWidget:ipInfo', 'addNavWidget:recentFiles', 'addNavWidget:serviceMonitor', 'addNavWidget:systemMonitor', 'addNavWidget:footballTracker', 'addNavWidget:mediaWatchlist', 'addNavWidget:gitWorkspace']
   );
 });
 

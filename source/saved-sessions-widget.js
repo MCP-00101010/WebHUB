@@ -9,6 +9,7 @@ const SAVED_SESSIONS_GROUP_COLORS = Object.freeze({
 
 const _savedSessionsRuntime = new Map();
 const _savedSessionsRenderers = new Map();
+const _savedSessionsViewMemory = new Map();
 
 function _savedSessionsId() {
   return `session-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`}`;
@@ -70,15 +71,38 @@ function _savedSessionsBridgeAvailable() {
   return WidgetSDK.extensionRelay.supports('savedSessions', 'browserSessions');
 }
 
+function _savedSessionsReadView(widget) {
+  if (_savedSessionsViewMemory.has(widget.id)) return _savedSessionsViewMemory.get(widget.id);
+  const source = WidgetSDK.cache.get('savedSessions', widget.id, 'view') || {};
+  const view = {
+    selectedId: String(source.selectedId || '').slice(0, 120),
+    captureScope: ['active-tab', 'window', 'highlighted', 'group', 'recent'].includes(source.captureScope) ? source.captureScope : '',
+    listScrollTop: Math.max(0, Math.min(100000, Number(source.listScrollTop) || 0))
+  };
+  _savedSessionsViewMemory.set(widget.id, view); return view;
+}
+
+function _savedSessionsWriteView(widget, runtime) {
+  const view = {
+    selectedId: String(runtime?.selectedId || '').slice(0, 120),
+    captureScope: ['active-tab', 'window', 'highlighted', 'group', 'recent'].includes(runtime?.captureScope) ? runtime.captureScope : 'window',
+    listScrollTop: Math.max(0, Math.min(100000, Number(runtime?.listScrollTop) || 0))
+  };
+  _savedSessionsViewMemory.set(widget.id, view);
+  try { WidgetSDK.cache.set('savedSessions', widget.id, 'view', view); } catch {}
+  return view;
+}
+
 function _savedSessionsRuntimeFor(widget) {
   let runtime = _savedSessionsRuntime.get(widget.id);
   if (!runtime) {
-    const sessions = _savedSessionsAll();
+    const sessions = _savedSessionsAll(); const view = _savedSessionsReadView(widget);
     runtime = {
-      selectedId: sessions[0]?.id || '',
+      selectedId: sessions.some(session => session.id === view.selectedId) ? view.selectedId : (sessions[0]?.id || ''),
       editingId: '',
-      captureScope: ['active-tab', 'window', 'highlighted', 'group', 'recent'].includes(widget.config?.defaultCaptureScope)
-        ? widget.config.defaultCaptureScope : 'window',
+      captureScope: view.captureScope || (['active-tab', 'window', 'highlighted', 'group', 'recent'].includes(widget.config?.defaultCaptureScope)
+        ? widget.config.defaultCaptureScope : 'window'),
+      listScrollTop: view.listScrollTop,
       status: '',
       busy: false
     };
@@ -242,7 +266,7 @@ async function _savedSessionsCaptureMutation(widget, runtime, mode, session, tit
     if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot();
     if (mode === 'create') {
       _savedSessionsAll().unshift(captured);
-      runtime.selectedId = captured.id;
+      runtime.selectedId = captured.id; _savedSessionsWriteView(widget, runtime);
       _savedSessionsFinish(runtime, `Saved ${captured.tabs.length} tab${captured.tabs.length === 1 ? '' : 's'}.`);
       return captured;
     }
@@ -266,7 +290,7 @@ async function _savedSessionsCaptureMutation(widget, runtime, mode, session, tit
 function _savedSessionsRenderWidget(widget, element, context = 'column') {
   const runtime = _savedSessionsRuntimeFor(widget);
   const sessions = _savedSessionsAll();
-  if (!sessions.some(session => session.id === runtime.selectedId)) runtime.selectedId = sessions[0]?.id || '';
+  if (!sessions.some(session => session.id === runtime.selectedId)) { runtime.selectedId = sessions[0]?.id || ''; _savedSessionsWriteView(widget, runtime); }
   const selected = sessions.find(session => session.id === runtime.selectedId) || null;
   const rendererKey = `${widget.id}:${context}`;
   _savedSessionsRenderers.set(rendererKey, { element, render: () => _savedSessionsRenderWidget(widget, element, context) });
@@ -296,7 +320,7 @@ function _savedSessionsRenderWidget(widget, element, context = 'column') {
     option.selected = runtime.captureScope === value;
     scope.appendChild(option);
   });
-  scope.addEventListener('change', () => { runtime.captureScope = scope.value; });
+  scope.addEventListener('change', () => { runtime.captureScope = scope.value; _savedSessionsWriteView(widget, runtime); });
   const save = _savedSessionsButton(runtime.busy ? 'Working…' : 'Save Session', 'saved-sessions-save');
   save.disabled = runtime.busy || !_savedSessionsBridgeAvailable();
   save.addEventListener('click', () => { runtime.captureScope = scope.value; void _savedSessionsCaptureMutation(widget, runtime, 'create', null, name.value); });
@@ -317,11 +341,15 @@ function _savedSessionsRenderWidget(widget, element, context = 'column') {
     session.tabs.slice(0, previewCount).forEach(tab => icons.appendChild(_savedSessionsFavicon(tab)));
     if (session.tabs.length > previewCount) icons.appendChild(_savedSessionsElement('span', 'saved-sessions-favicon-more', `+${session.tabs.length - previewCount}`));
     card.append(copy, icons);
-    card.addEventListener('click', () => { runtime.selectedId = session.id; runtime.editingId = ''; runtime.status = ''; _savedSessionsRenderWidget(widget, element, context); });
+    card.addEventListener('click', () => { runtime.selectedId = session.id; runtime.editingId = ''; runtime.status = ''; _savedSessionsWriteView(widget, runtime); _savedSessionsRenderWidget(widget, element, context); });
     list.appendChild(card);
   });
   if (!sessions.length) list.appendChild(_savedSessionsElement('div', 'saved-sessions-empty', 'No saved sessions yet. Capture the active tab, current window, selected tabs, a group, or recently closed tabs.'));
-  element.appendChild(list);
+  element.appendChild(list); list.scrollTop = runtime.listScrollTop;
+  list.addEventListener('scroll', () => {
+    runtime.listScrollTop = list.scrollTop;
+    WidgetSDK.runtime.requestFrame(`${widget.id}:saved-sessions-list-view`, () => _savedSessionsWriteView(widget, runtime));
+  }, { passive: true });
 
   if (selected) {
     const detail = _savedSessionsElement('div', 'saved-sessions-detail');
@@ -400,7 +428,7 @@ function _savedSessionsRenderWidget(widget, element, context = 'column') {
       const copy = _savedSessionsClone(selected);
       const index = _savedSessionsAll().indexOf(selected);
       state.savedSessions.splice(index + 1, 0, copy);
-      runtime.selectedId = copy.id;
+      runtime.selectedId = copy.id; _savedSessionsWriteView(widget, runtime);
       _savedSessionsFinish(runtime, 'Session duplicated.');
     });
     const remove = _savedSessionsButton('Delete', 'is-danger');
@@ -410,7 +438,7 @@ function _savedSessionsRenderWidget(widget, element, context = 'column') {
         if (typeof pushUndoSnapshot === 'function') pushUndoSnapshot();
         const index = _savedSessionsAll().indexOf(selected);
         if (index !== -1) state.savedSessions.splice(index, 1);
-        runtime.selectedId = state.savedSessions[index]?.id || state.savedSessions[index - 1]?.id || '';
+        runtime.selectedId = state.savedSessions[index]?.id || state.savedSessions[index - 1]?.id || ''; _savedSessionsWriteView(widget, runtime);
         runtime.editingId = '';
         _savedSessionsFinish(runtime, 'Session deleted.');
       };
@@ -446,7 +474,7 @@ WIDGET_REGISTRY['savedSessions'] = {
     },
     additionalProperties: false
   },
-  capabilities: { extensionRelay: { optional: true } },
+  capabilities: { extensionRelay: { optional: true }, localCache: { quotaBytes: 64 * 1024 } },
   responsive: { minWidth: 200, preferredWidth: 460, compactBelow: 300 },
   migrate(widget) {
     widget.config = { ...this.defaultConfig, ...(widget.config || {}) };
@@ -455,10 +483,14 @@ WIDGET_REGISTRY['savedSessions'] = {
   },
   onSettingsCommit(widget, previousConfig) {
     const runtime = _savedSessionsRuntimeFor(widget);
-    if (widget.config.defaultCaptureScope !== previousConfig?.defaultCaptureScope) runtime.captureScope = widget.config.defaultCaptureScope;
+    if (widget.config.defaultCaptureScope !== previousConfig?.defaultCaptureScope) { runtime.captureScope = widget.config.defaultCaptureScope; _savedSessionsWriteView(widget, runtime); }
+  },
+  dispose(widget) {
+    _savedSessionsRuntime.delete(widget.id); _savedSessionsViewMemory.delete(widget.id); WidgetSDK.cache.remove('savedSessions', widget.id, 'view');
+    for (const key of _savedSessionsRenderers.keys()) if (key.startsWith(`${widget.id}:`)) _savedSessionsRenderers.delete(key);
   },
   cleanup(widget) {
-    _savedSessionsRuntime.delete(widget.id);
+    _savedSessionsRuntime.delete(widget.id); _savedSessionsViewMemory.delete(widget.id);
     for (const key of _savedSessionsRenderers.keys()) if (key.startsWith(`${widget.id}:`)) _savedSessionsRenderers.delete(key);
   },
   render(widget, element, context) { _savedSessionsRenderWidget(widget, element, context); },

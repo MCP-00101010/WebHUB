@@ -9,6 +9,7 @@ const source = fs.readFileSync(path.join(root, 'source/focus-session-widget.js')
 
 function createContext(extra = {}) {
   const cache = new Map();
+  const notificationCalls = { scheduled: [], cancelled: [], published: [], permission: true };
   const context = vm.createContext({
     WIDGET_REGISTRY: {},
     WidgetSDK: {
@@ -17,7 +18,13 @@ function createContext(extra = {}) {
         set: (type, id, key, value) => cache.set(`${type}:${id}:${key}`, JSON.parse(JSON.stringify(value))),
         remove: (type, id, key) => cache.delete(`${type}:${id}:${key}`)
       },
-      runtime: { schedule: () => {}, cancelSchedule: () => {} }
+      runtime: { schedule: () => {}, cancelSchedule: () => {} },
+      notifications: {
+        schedule: async job => { notificationCalls.scheduled.push(job); return true; },
+        cancel: async id => { notificationCalls.cancelled.push(id); return true; },
+        publish: async event => { notificationCalls.published.push(event); return event; },
+        requestPermission: async () => notificationCalls.permission
+      }
     },
     state: { boards: [], navItems: [], sets: [] },
     getBoardTabs: board => board.tabs || [],
@@ -34,6 +41,7 @@ function createContext(extra = {}) {
     ...extra
   });
   context.__cache = cache;
+  context.__notificationCalls = notificationCalls;
   vm.runInContext(source, context);
   return context;
 }
@@ -133,25 +141,19 @@ test('calendar warnings find timed overlaps and ignore all-day entries', () => {
   assert.equal(vm.runInContext('_focusFindCalendarConflict(50000, 60000)', context), null);
 });
 
-test('phase notifications require explicit granted browser permission', () => {
-  const notifications = [];
-  class FakeNotification {
-    static permission = 'granted';
-    constructor(title, options) { notifications.push({ title, options }); }
-  }
-  const context = createContext({ Notification: FakeNotification, window: { focus() {} } });
+test('phase notifications publish through the shared notification service', async () => {
+  const context = createContext();
   context.widget = makeWidget({ notifications: true });
-  assert.equal(vm.runInContext("_focusNotify(widget, 'work', 'break')", context), true);
-  assert.equal(notifications.length, 1);
-  FakeNotification.permission = 'denied';
-  assert.equal(vm.runInContext("_focusNotify(widget, 'break', 'work')", context), false);
-  assert.equal(notifications.length, 1);
+  assert.equal(vm.runInContext("_focusNotify(widget, 'work', 'break', 61000)", context), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(context.__notificationCalls.published.length, 1);
+  assert.equal(context.__notificationCalls.published[0].dedupeKey, 'focus:focus-1:61000');
 });
 
 test('notification opt-in requests permission and disables itself when denied', async () => {
   const notices = [];
-  const Notification = { permission: 'default', requestPermission: async () => 'denied' };
-  const context = createContext({ Notification, showNotice: message => notices.push(message) });
+  const context = createContext({ showNotice: message => notices.push(message) });
+  context.__notificationCalls.permission = false;
   context.widget = makeWidget({ notifications: true });
   assert.equal(await vm.runInContext('_focusRequestNotificationPermission(widget)', context), true);
   assert.equal(context.widget.config.notifications, false);
@@ -204,6 +206,13 @@ test('focus runtime and history remain in local SDK cache rather than widget dat
   assert.deepEqual(context.widget.data, {});
   assert.ok(context.__cache.has('focusSession:focus-1:runtime'));
   assert.deepEqual(JSON.parse(JSON.stringify(context.WIDGET_REGISTRY.focusSession.defaultData)), {});
+});
+
+test('focus history disclosure survives runtime recreation', () => {
+  const context = createContext();
+  context.widget = makeWidget();
+  vm.runInContext('runtime = _focusDefaultRuntime(widget); runtime.historyOpen = true; _focusPersistRuntime(widget, runtime); _focusSessionRuntimeMemory.clear();', context);
+  assert.equal(vm.runInContext('_focusReadRuntime(widget).historyOpen', context), true);
 });
 
 test('multiple Focus widget instances keep independent timer state', () => {

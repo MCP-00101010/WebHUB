@@ -50,7 +50,8 @@ function _focusDefaultRuntime(widget) {
     phaseStartedAt: 0,
     completedWorkSessions: 0,
     sessionActive: false,
-    history: []
+    history: [],
+    historyOpen: false
   };
 }
 
@@ -80,6 +81,7 @@ function _focusReadRuntime(widget) {
   runtime.completedWorkSessions = Math.max(0, Math.round(Number(runtime.completedWorkSessions) || 0));
   runtime.sessionActive = runtime.sessionActive === true;
   runtime.history = _focusSanitizeHistory(runtime.history);
+  runtime.historyOpen = runtime.historyOpen === true;
   if (runtime.status === 'running' && !runtime.endsAt) runtime.status = 'paused';
   _focusSessionRuntimeMemory.set(widget.id, runtime);
   return runtime;
@@ -89,6 +91,7 @@ function _focusPersistRuntime(widget, runtime) {
   runtime.history = _focusSanitizeHistory(runtime.history);
   _focusSessionRuntimeMemory.set(widget.id, runtime);
   try { if (typeof WidgetSDK !== 'undefined') WidgetSDK.cache.set('focusSession', widget.id, FOCUS_SESSION_CACHE_KEY, runtime); } catch {}
+  void _focusSyncNotification(widget, runtime);
   return runtime;
 }
 
@@ -132,15 +135,29 @@ function _focusRecordPhase(widget, runtime, phase, endedAt, skipped = false) {
   if (phase === 'work' && !skipped) runtime.completedWorkSessions += 1;
 }
 
-function _focusNotify(widget, completedPhase, nextPhase) {
-  if (!_focusNormalizedConfig(widget).notifications || typeof Notification === 'undefined' || Notification.permission !== 'granted') return false;
+function _focusNotificationId(widget) { return `focus:${widget.id}`; }
+function _focusNotificationEvent(widget, phase, endsAt) {
+  const runtime = _focusReadRuntime(widget);
+  const projectedRuntime = phase === 'work' ? { ...runtime, completedWorkSessions: runtime.completedWorkSessions + 1 } : runtime;
+  const nextPhase = _focusNextPhase(widget, projectedRuntime, phase);
+  return {
+    id: _focusNotificationId(widget), title: phase === 'work' ? 'Focus complete' : 'Break complete',
+    message: `Next: ${_focusPhaseLabel(nextPhase)}.`, when: endsAt, expiresAt: endsAt + 24 * 60 * 60 * 1000,
+    dedupeKey: `${_focusNotificationId(widget)}:${endsAt}`,
+    source: { widgetType: 'focusSession', widgetId: widget.id, label: 'Focus Session' }
+  };
+}
+function _focusSyncNotification(widget, runtime = _focusReadRuntime(widget)) {
+  if (typeof WidgetSDK === 'undefined') return false;
+  if (!_focusNormalizedConfig(widget).notifications || runtime.status !== 'running' || !runtime.endsAt) return WidgetSDK.notifications.cancel(_focusNotificationId(widget));
+  return WidgetSDK.notifications.schedule(_focusNotificationEvent(widget, runtime.phase, runtime.endsAt));
+}
+function _focusNotify(widget, completedPhase, nextPhase, completedAt) {
+  if (!_focusNormalizedConfig(widget).notifications || typeof WidgetSDK === 'undefined') return false;
   const title = completedPhase === 'work' ? 'Focus complete' : 'Break complete';
   const body = `Next: ${_focusPhaseLabel(nextPhase)}.`;
-  try {
-    const notification = new Notification(title, { body, tag: `morpheus-focus-${widget.id}`, renotify: true });
-    notification.onclick = () => { try { window.focus(); } catch {} notification.close?.(); };
-    return true;
-  } catch { return false; }
+  void WidgetSDK.notifications.publish({ id: _focusNotificationId(widget), title, message: body, createdAt: Date.now(), dedupeKey: `${_focusNotificationId(widget)}:${completedAt}`, source: { widgetType: 'focusSession', widgetId: widget.id, label: 'Focus Session' } }, { system: true });
+  return true;
 }
 
 function _focusAdvanceExpired(widget, runtime, now = Date.now()) {
@@ -159,7 +176,7 @@ function _focusAdvanceExpired(widget, runtime, now = Date.now()) {
     runtime.endsAt = 0;
     changed = true;
     recovered += 1;
-    lastTransition = { completedPhase, nextPhase: runtime.phase };
+    lastTransition = { completedPhase, nextPhase: runtime.phase, completedAt };
     if (!autoStart) {
       runtime.status = 'paused';
       break;
@@ -174,7 +191,7 @@ function _focusAdvanceExpired(widget, runtime, now = Date.now()) {
     runtime.phaseStartedAt = 0;
     runtime.remainingMs = _focusPhaseDurationMs(widget, runtime.phase);
   }
-  if (lastTransition) _focusNotify(widget, lastTransition.completedPhase, lastTransition.nextPhase);
+  if (lastTransition) _focusNotify(widget, lastTransition.completedPhase, lastTransition.nextPhase, lastTransition.completedAt);
   return changed;
 }
 
@@ -395,6 +412,7 @@ function _focusUpdateLiveElements(widget, runtime, element, now = Date.now()) {
 function _focusRenderWidget(widget, element, context = 'column') {
   const runtime = _focusReadRuntime(widget);
   if (_focusAdvanceExpired(widget, runtime)) _focusPersistRuntime(widget, runtime);
+  else void _focusSyncNotification(widget, runtime);
   if (typeof WidgetSDK !== 'undefined') WidgetSDK.runtime.cancelSchedule(`${widget.id}:${context}`);
   element.innerHTML = '';
   element.classList.remove('focus-session--column', 'focus-session--navpane');
@@ -473,6 +491,11 @@ function _focusRenderWidget(widget, element, context = 'column') {
 
   if (context !== 'navpane' && runtime.history.length) {
     const history = _focusElement('details', 'focus-session-history');
+    history.open = runtime.historyOpen;
+    history.addEventListener('toggle', () => {
+      runtime.historyOpen = history.open;
+      _focusPersistRuntime(widget, runtime);
+    });
     const summary = _focusElement('summary', '', 'Recent phases');
     history.appendChild(summary);
     runtime.history.slice(0, 5).forEach(entry => {
@@ -505,16 +528,8 @@ function _focusRenderWidget(widget, element, context = 'column') {
 
 async function _focusRequestNotificationPermission(widget) {
   if (!_focusNormalizedConfig(widget).notifications) return true;
-  if (typeof Notification === 'undefined') {
-    widget.config.notifications = false;
-    if (typeof showNotice === 'function') showNotice('Notifications are not available in this browser. Other Focus settings were saved.');
-    return true;
-  }
-  let permission = Notification.permission;
-  if (permission === 'default') {
-    try { permission = await Notification.requestPermission(); } catch { permission = 'denied'; }
-  }
-  if (permission !== 'granted') {
+  const permissionGranted = typeof WidgetSDK !== 'undefined' && await WidgetSDK.notifications.requestPermission();
+  if (!permissionGranted) {
     widget.config.notifications = false;
     if (typeof showNotice === 'function') showNotice('Notification permission was not granted. Other Focus settings were saved.');
   }
@@ -559,6 +574,7 @@ WIDGET_REGISTRY['focusSession'] = {
   },
   cleanup(widget) {
     _focusSessionRuntimeMemory.delete(widget.id);
+    try { void WidgetSDK.notifications.cancel(_focusNotificationId(widget)); } catch {}
     try { if (typeof WidgetSDK !== 'undefined') WidgetSDK.cache.remove('focusSession', widget.id, FOCUS_SESSION_CACHE_KEY); } catch {}
   },
   render(widget, element, context) { _focusRenderWidget(widget, element, context); },

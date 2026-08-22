@@ -41,3 +41,32 @@ test('search recents stay behind local SDK cache', () => {
   assert.match(source, /WidgetSDK\.cache\.set\('universalSearch'/);
   assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext(`WIDGET_REGISTRY.universalSearch.defaultData`, context()))), {});
 });
+
+test('unfinished queries and keyboard selection are explicit transient state', () => {
+  assert.match(source, /Unfinished queries and the keyboard-highlighted result are deliberately transient/);
+  assert.match(source, /_universalSearchRuntime\.get\(widget\.id\) \|\| \{ query: '', selected: 0 \}/);
+  assert.doesNotMatch(source, /WidgetSDK\.cache\.set\('universalSearch', widget\.id, (?!UNIVERSAL_SEARCH_RECENTS_KEY)/);
+});
+
+test('provider presets cover common general, knowledge, development, shopping, gaming, and media searches', () => {
+  const sandbox = context();
+  const presets = vm.runInContext('UNIVERSAL_SEARCH_PROVIDER_PRESETS.map(({ group, id }) => ({ group, id }))', sandbox);
+  const groups = new Set([...presets].map(preset => preset.group));
+  assert.deepEqual([...groups], ['General', 'Knowledge', 'Development', 'Shopping', 'Gaming', 'Media']);
+  assert.ok([...presets].some(preset => preset.id === 'duckduckgo'));
+  assert.ok([...presets].some(preset => preset.id === 'github'));
+  assert.ok([...presets].some(preset => preset.id === 'steam'));
+  assert.ok([...presets].every(preset => preset.id !== 'spotify'));
+});
+
+test('new widgets receive a small balanced default provider set', () => {
+  const sandbox = context();
+  const defaults = vm.runInContext(`(() => { const widget = { config: {} }; return _universalSearchProviders(widget).map(provider => provider.id); })()`, sandbox);
+  assert.deepEqual([...defaults], ['google', 'duckduckgo', 'youtube', 'wikipedia']);
+});
+
+test('provider configuration uses a focused editor rather than exposed inline fields', () => {
+  assert.match(source, /universal-search-provider-editor/);
+  assert.match(source, /Start from a preset/);
+  assert.doesNotMatch(source, /universal-search-settings-grid/);
+});

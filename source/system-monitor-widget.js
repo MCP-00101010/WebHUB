@@ -148,7 +148,7 @@ function _systemMonitorRenderSettings(widget, container) {
 }
 
 WIDGET_REGISTRY['systemMonitor'] = {
-  id: 'systemMonitor', name: 'System Monitor', category: 'Other', description: 'Aggregate CPU, memory, disk, network, uptime, battery, and platform metrics from the native host.',
+  id: 'systemMonitor', name: 'System Monitor', category: 'System & Network', description: 'Aggregate CPU, memory, disk, network, uptime, battery, and platform metrics from the native host.',
   allowedIn: ['column', 'navpane'], liveSettingsPreview: false, reloadLabel: 'Refresh system metrics',
   defaultConfig: { metrics: ['cpu','memory','disk','network','uptime'], refreshSeconds: 15, cpuWarning: 85, memoryWarning: 85, diskWarning: 90 }, defaultData: {},
   settingsSchema: { type: 'object', properties: { metrics: { type: 'array' }, refreshSeconds: { type: 'number' }, cpuWarning: { type: 'number' }, memoryWarning: { type: 'number' }, diskWarning: { type: 'number' } }, additionalProperties: false },

@@ -74,3 +74,12 @@ test('NASA APOD migrates legacy portable cache data into SDK-local storage', () 
   assert.equal(envelope.value.title, 'Legacy image');
   assert.deepEqual(JSON.parse(JSON.stringify(context.widget.data)), {});
 });
+
+test('NASA APOD explanation disclosure survives runtime recreation', () => {
+  const { context, storage } = loadApod(async () => { throw new Error('Unexpected fetch'); });
+  context.widgetId = 'apod-view-state';
+  vm.runInContext('_setApodView(widgetId, { explanationOpen: true })', context);
+  assert.equal(vm.runInContext('_getApodView(widgetId).explanationOpen', context), true);
+  const envelope = JSON.parse(storage.get('morpheus-widget-sdk-cache:v1:nasaApod:apod-view-state:view'));
+  assert.equal(envelope.value.explanationOpen, true);
+});

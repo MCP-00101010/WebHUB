@@ -134,6 +134,39 @@
 .widget-weather-map-status.is-error {
   color: var(--danger);
 }
+
+.widget-weather-map-focus-location {
+  position: absolute;
+  z-index: 4;
+  top: 9px;
+  left: 9px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel, #211418) 94%, transparent);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.widget-weather-map-focus-location:hover,
+.widget-weather-map-focus-location:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 64%, var(--border));
+  color: var(--accent);
+}
+
+.widget-weather-map-focus-location svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
 .widget-weather-map-timeline {
   display: grid;
   grid-template-columns: auto minmax(86px, auto) minmax(0, 1fr);

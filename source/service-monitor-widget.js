@@ -277,7 +277,7 @@ function _serviceMonitorRenderSettings(widget, container) {
 }
 
 WIDGET_REGISTRY['serviceMonitor'] = {
-  id: 'serviceMonitor', name: 'Service Monitor', category: 'Weather & Network',
+  id: 'serviceMonitor', name: 'Service Monitor', category: 'System & Network',
   description: 'Watch HTTPS endpoints with bounded checks, assertions, local uptime history, and optional outage notifications.',
   allowedIn: ['column', 'navpane'], liveSettingsPreview: false, reloadLabel: 'Check all services',
   defaultConfig: { endpoints: [], notifications: false }, defaultData: {},

@@ -5,6 +5,414 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.189] — 2026-08-22
+
+### Changed
+
+- **Consolidated future roadmap** — moved the remaining application-launcher, Nexus Mods tracker, and Universal Search settings/catalogue work from the temporary widget-ideas list into the maintained project TODO with implementation, security, portability, and validation considerations.
+- **Retired completed ideas list** — removed the temporary widget-ideas document after confirming that football tracking, Global Hazards, notifications, and widget categorisation are delivered, while the previously dropped Spotify and equalizer ideas remain out of scope.
+
+### Tests
+
+- Audited the consolidated release against the Hub and extension release checklist. All 38 JavaScript test files and all 17 native-host tests passed; syntax checks passed for 46 Hub and extension JavaScript files; the widget manifest example validated; Hub `0.11.189` and extension `1.0.33` versions aligned; and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories.
+
+## [0.11.188] — 2026-08-21
+
+### Added
+
+- **Weather Map origin control** — added the same compact top-left target button used by Global Hazards. It returns the camera, browser-local forecast centre, location label, and regional forecast data to the configured origin and origin zoom without changing shared widget settings.
+
+### Changed
+
+- **Consistent map styling** — Global Hazards now uses Weather Map's normalized Dark and Liberty basemaps, matching radio-style Basemap settings, complete OpenFreeMap/OpenMapTiles/OpenStreetMap attribution, panel-backed navigation controls, visible hover states, and high-contrast drawn zoom icons.
+- **Readable map attribution** — removed the hazards-only dark attribution treatment and adopted Weather Map's legible compact and expanded attribution colours and sizing.
+
+### Tests
+
+- Added shared-basemap, hazard control-contrast, attribution, Weather Map target-button layout, and origin-reset flow coverage. All 38 JavaScript test files, syntax checks across all 44 source JavaScript files, version alignment, and diff checks passed. The in-app browser had no active target for an automated visual comparison.
+
+## [0.11.187] — 2026-08-21
+
+### Fixed
+
+- **Hazard filter scrollbar clearance** — increased the filter strip's lower inset so category pills no longer overlap its horizontal scrollbar.
+
+### Tests
+
+- Added a layout regression assertion for the filter-strip padding and horizontal overflow. The focused Global Hazards suite, JavaScript syntax, version alignment, and diff checks passed. The in-app browser had no active target for an automated visual pass.
+
+## [0.11.186] — 2026-08-21
+
+### Added
+
+- **Temperature extremes** — Global Hazards now retains NASA EONET heat and cold events as filterable map hazards. Existing widget instances receive the new category once while preserving later user choices.
+- **Fireballs and airbursts** — added geolocated NASA/JPL CNEOS detections with estimated impact energy, altitude, bounded event-window queries, energy-based severity, map markers, details, filters, and regional notification compatibility.
+- **Space-weather status** — added an optional NOAA SWPC panel with current geomagnetic-storm, solar-radiation-storm, and radio-blackout scales plus recent scaled alerts. The panel can be disabled in widget settings and is deliberately presented as global status rather than artificial Earth-map markers.
+
+### Changed
+
+- **Expanded provider coverage** — Global Hazards now declares and attributes EONET, USGS, GDACS, NASA/JPL, and NOAA endpoints. Its cache schema was advanced so older cached event sets are refreshed for the new sources.
+
+### Tests
+
+- Added migration, temperature-event, fireball coordinate/severity, NOAA status/alert, provider URL, capability-domain, and status-panel asset coverage. All 38 JavaScript test files, syntax checks across all 44 source JavaScript files, and diff checks passed. The in-app browser had no active target for an automated visual pass.
+
+## [0.11.185] — 2026-08-21
+
+### Added
+
+- **Hazard-map location control** — added a compact target button in the map's top-left corner. It returns the camera to the widget's configured watch location, including an inherited Weather location, and is disabled with guidance when no location is available.
+- **Today-only event window** — Global Hazards settings now offer a one-day window. EONET and USGS requests begin on the current UTC date, and the combined provider results exclude events that were neither reported nor updated today.
+
+### Fixed
+
+- **Browser-safe storm reports** — EONET source links ending in download-only tracking formats such as `.tcw` are no longer opened as reports. The widget prefers a browser-readable source and otherwise falls back to EONET's per-event endpoint. The hazard cache schema was advanced so previously cached download links are discarded immediately.
+
+### Tests
+
+- Added download-link rejection and fallback, cache invalidation, today-only request/filtering, and location-control layout coverage. All 38 JavaScript test files, syntax checks, and diff checks passed. The in-app browser had no active target for an automated interaction pass.
+
+## [0.11.184] — 2026-08-21
+
+### Changed
+
+- **Full-width Global Hazards map** — the map now spans the complete widget column instead of sharing a narrow horizontal split with the event panel. The selected-event details and event list sit below the map in a cleaner vertical flow.
+- **Bounded event list** — up to ten event rows are displayed without scrolling; longer results use an independent vertical scrollbar while retaining the saved list position.
+
+### Tests
+
+- Added layout-contract coverage for the full-width vertical map, responsive sizing, fixed event-row height, and ten-row scroll boundary. All 38 JavaScript test files, syntax checks, and diff checks passed. The in-app browser had no active target for an automated screenshot pass.
+
+## [0.11.183] — 2026-08-21
+
+### Fixed
+
+- **Restorable widget interaction state** — Football Tracker now restores its competition view, round, selected team and team-history competition; Saved Sessions restores its selected session, capture scope and list position; Calendar restores expanded agenda events and per-mode content positions; RSS Reader restores tab-strip and per-feed article positions; Weather restores the 24-hour strip position; and Notes restores its scroll and caret selection. Calculator, Translator and Focus Session history disclosures plus NASA APOD's explanation disclosure now also retain their expanded/collapsed state.
+- **Prompt Notes durability** — inline note edits are saved shortly after input as well as on blur, preventing typed content from being lost when the Hub reloads before focus leaves the note.
+
+### Changed
+
+- **Explicit Universal Search exception** — unfinished queries and keyboard-highlighted results remain intentionally transient. The project and SDK rules now name and test that exception while completed recent searches continue to use local cache only when enabled.
+
+### Tests
+
+- Added runtime-recreation coverage for all newly persistent view records and disclosure states, plus rule-contract and Universal Search exception coverage. All targeted widget and SDK suites passed; the complete JavaScript regression suite and final diff checks were run for release. The in-app browser had no active target for an automated interaction pass.
+
+## [0.11.182] — 2026-08-21
+
+### Fixed
+
+- **Persistent Global Hazards view** — each hazard widget now restores its active hazard filters, selected event, event-list position, map camera, and expanded/collapsed MapLibre provider attribution after widget recreation or a Hub reload. The bounded view record remains browser-local in the Widget SDK cache, never enters the shared Hub database, and is removed when the widget is deleted.
+
+### Changed
+
+- **Global widget UI-state rule** — meaningful interaction state is now explicitly restorable by default across all widgets. Project and SDK rules cover selected tabs, filters, pages/items, expanded or collapsed details and attribution, map/globe cameras, focus modes, and meaningful scroll positions; deliberately transient exceptions must be explicit and tested.
+
+### Tests
+
+- Added hazard runtime-recreation, camera/attribution capture, local persistence-boundary, and project/SDK rule-contract coverage. All 38 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.181] — 2026-08-21
+
+### Added
+
+- **Global Hazards widget** — added an interactive MapLibre world map for earthquakes, wildfires, tropical cyclones, volcanoes, floods, tsunamis, landslides, and droughts. The column widget combines current NASA EONET, USGS, and GDACS data into clustered category markers, storm tracks, a filterable event list, and a detail view with source attribution and official links.
+- **Regional hazard alerts** — an optional watch location can inherit the first configured Weather widget or use a searched custom location. Explicitly enabled notifications fire only for newly observed events inside the configured radius and at or above the selected severity while the Hub is running.
+
+### Changed
+
+- **Bounded multi-provider refresh** — hazard requests use configurable 7–60 day windows, a configurable earthquake threshold, managed 15–60 minute scheduling, partial-provider fallback, and a 24-hour local SDK cache. Duplicate low-severity GDACS events are suppressed where EONET or USGS provides the primary record; GDACS remains authoritative for tsunamis and tropical cyclones and contributes orange/red alerts for other types.
+- **Privacy and portability** — provider responses, seen-event IDs, map view state, and alert state remain browser-local and outside the shared Hub database. No API key is required.
+
+### Tests
+
+- Added normalization, severity, storm-track, source-priority, bounded-request, partial-provider, regional-notification, asset-order, responsive-style, category-registration, and script-symbol coverage. All 38 JavaScript test files, syntax checks, diff checks, and extension lint passed; lint retained the existing native-host packaging notice/warning. The in-app browser had no active preview target for an automated visual pass.
+
+## [0.11.180] — 2026-08-21
+
+### Fixed
+
+- **Expanded current Champions League matchdays** — TheSportsDB fallback now expands the latest and next league events through their competition-and-date feeds, then merges and deduplicates the results. The 19 August tracker therefore includes Celtic–LASK alongside Slovan Bratislava–Celje and the other returned play-off fixtures instead of showing only one league-level event. A revised feed-cache key bypasses already-saved incomplete fallback data after reload.
+
+### Changed
+
+- **Bounded matchday enrichment** — fallback refreshes use at most four public calls: recent event, next event, and their two distinct match dates. Responses remain current-season filtered, date/manual cached, and comfortably within TheSportsDB's free 30-request-per-minute allowance.
+
+### Tests
+
+- Added date-feed enrichment, Celtic–LASK inclusion, duplicate suppression, old-season filtering, and bounded-endpoint coverage. Verified the live 19 August feed returns Celtic–LASK; all 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.179] — 2026-08-21
+
+### Fixed
+
+- **Champions League network fallback** — when football-data.org rejects the explicit current-season request, the main tracker now falls back to TheSportsDB's current 2026–27 recent and next competition feeds instead of displaying a network error or reverting to last season. An unavailable qualifying-stage table resolves to an empty state rather than an error.
+
+### Changed
+
+- **Accurate live attribution** — the main tracker footer now switches to TheSportsDB whenever its Champions League fallback data is displayed. Fallback calls retain the existing daily/manual refresh cadence.
+
+### Tests
+
+- Added current-season Champions League fallback, old-season filtering, graceful table handling, and active-provider attribution coverage. Verified both live TheSportsDB competition endpoints; all 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.178] — 2026-08-21
+
+### Fixed
+
+- **Current national-league seasons** — Premier League, Championship, Bundesliga, La Liga, Serie A, Ligue 1, Eredivisie, and Primeira Liga requests now explicitly select the calculated current season. Their fixture/table cache keys also include the season, preventing stale previous-season data during provider rollover delays.
+
+### Changed
+
+- **Tournament-aware season routing** — annual football-data.org club competitions use explicit season years; the World Cup and European Championship retain provider-managed editions because they are not annual August-to-May competitions. Sportmonks continues to use its current-season metadata and API-Football its `current=true` league resolution.
+
+### Tests
+
+- Added parameterized season-request/cache coverage for every football-data.org national championship and guards for the non-annual international tournaments. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.177] — 2026-08-21
+
+### Fixed
+
+- **Current Champions League tracker season** — the main Champions League fixtures and table requests now explicitly select the calculated 2026–27 season instead of using football-data.org's stale default active season. Season-aware cache keys prevent an already-saved 2025–26 response from continuing to appear after reload.
+
+### Tests
+
+- Added regression coverage for the main Champions League request season, shared-load separation, and cache isolation. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.176] — 2026-08-21
+
+### Fixed
+
+- **Single Scottish Premiership history** — TheSportsDB's legacy “Scottish Premier League” label and “Scottish Premiership” now canonicalize to the current Premiership competition. Domestic fallback results merge under `SCO-PL` instead of creating a second obsolete tab, while Sportmonks remains the preferred source for its fuller history. The revised history-cache key bypasses already-saved duplicate tabs after reload.
+
+### Tests
+
+- Added regression coverage for legacy Scottish competition-name canonicalization. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.175] — 2026-08-21
+
+### Added
+
+- **Verified missing-competition fallback** — team histories now use TheSportsDB's free team lookup and latest-result feed to fill competitions absent from Sportmonks, football-data.org, and API-Football. Celtic's verified 3–0 result against LASK therefore creates a 2026–27 Champions League tab even though football-data.org omits the qualifying/play-off fixture.
+
+### Changed
+
+- **Conservative public-data calls** — configured providers remain authoritative for complete histories. TheSportsDB team links are retained for 180 days, recent results are accumulated for the current season, and network checks still occur only on the date change or manual refresh schedule.
+
+### Tests
+
+- Added TheSportsDB normalization, team resolution, missing-tab integration, cache accumulation, and declared-domain coverage. Verified the live free API response for Celtic–LASK; all 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.174] — 2026-08-21
+
+### Fixed
+
+- **Early-season Champions League tabs** — cross-provider team history now explicitly requests the calculated football-data.org season instead of relying on the provider's default active season. Season-specific request and cache keys prevent a previous/default Champions League campaign from hiding current qualifying and play-off matches such as Celtic–LASK.
+
+### Tests
+
+- Added regression coverage for the explicit Champions League season query and isolation from the generic competition cache. All 37 JavaScript test files, syntax checks, and diff checks passed; no in-app browser target was available for automated UI verification.
+
+## [0.11.173] — 2026-08-21
+
+### Fixed
+
+- **Cross-provider Champions League history** — teams originating from Sportmonks or API-Football are now matched against football-data.org's free current-season Champions League schedule. Celtic history can therefore show its Champions League tab and results even when API-Football rejects current-season access.
+
+### Changed
+
+- **Call-efficient UEFA expansion** — the Champions League season is requested only when a non-football-data.org team history is opened, cached until the local date changes, shared with the normal Champions League fixture load, and filtered locally for subsequent teams. Team-history cache keys now include the available provider set so newly available coverage is not hidden by an older partial cache.
+
+### Tests
+
+- Added Sportmonks-to-football-data.org team matching, Champions League tab construction, API-Football failure tolerance, and daily competition-cache reuse coverage. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.172] — 2026-08-21
+
+### Changed
+
+- **Quiet team-history fallbacks** — provider-specific failures are no longer shown when another provider successfully returns the requested team and season. This keeps an inaccessible API-Football expansion from obscuring valid Sportmonks or football-data.org history, including history already cached earlier in the day.
+
+### Fixed
+
+- **Useful total-failure warning** — when every available provider fails, the team view now shows one concise generic warning instead of exposing subscription, relay, or provider diagnostics to the end user.
+
+### Tests
+
+- Added partial-provider-success and total-provider-failure coverage for team history. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.171] — 2026-08-21
+
+### Added
+
+- **Clickable team histories** — selecting a team in a Football Tracker table or fixture now opens its current-season results with a dedicated tab for every official competition returned by the configured providers. Match rows show date, home/away venue, opponent, score, and win/draw/loss form, with an accessible back action.
+- **Provider-aware competition expansion** — football-data.org and Sportmonks remain the primary sources while API-Football lazily fills competitions they do not supply. Cross-provider team IDs are resolved and retained for 180 days; team histories remain cached only until the local date changes and manual refresh updates the open team view.
+
+### Tests
+
+- Added season-boundary, competition grouping, provider-priority, cross-provider team resolution, API-Football fallback, interaction contract, and responsive history-layout coverage. All 37 JavaScript test files, syntax checks, and diff checks passed. The in-app browser exposed no target for automated visual verification.
+
+## [0.11.170] — 2026-08-21
+
+### Added
+
+- **Goals for and against columns** — Football Tracker tables now show GF and GA alongside matches played, goal difference, and points for every data provider. The table grid remains readable in narrow board and sidebar layouts.
+
+### Tests
+
+- Added standings presentation coverage for the new GF and GA columns. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.169] — 2026-08-21
+
+### Fixed
+
+- **Sportmonks table statistics** — decode matches played, wins, draws, losses, goals for, goals conceded, and goal difference from Sportmonks' stable standing type IDs. This also tolerates the provider's legacy “Overall Matched Played” label typo and uses the explicit goal-difference record when supplied.
+
+### Changed
+
+- **Smaller standings responses** — request standing details without their repeated type metadata now that the documented IDs are decoded locally.
+
+### Tests
+
+- Added ID-only Sportmonks standings coverage for matches played and goal difference. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.168] — 2026-08-21
+
+### Fixed
+
+- **Sportmonks relay diagnostics** — preserved bounded provider error responses through the extension bridge instead of replacing a relay-side authentication failure with the browser's generic CORS network error. Scottish Premiership failures now explain when Firefox extension 1.0.33 must be reloaded and distinguish that from an invalid Sportmonks token.
+
+### Tests
+
+- Added Sportmonks CORS/relay guidance and bounded provider-error propagation coverage. All 37 JavaScript test files and all 17 native-host tests passed; syntax and diff checks passed. `web-ext lint` reported zero errors with the existing native-host Python notice and installer shell-file warning.
+
+## [0.11.167] — 2026-08-21
+
+### Added
+
+- **Multi-provider Football Tracker** — added Sportmonks support for the Scottish Premiership and Danish Superliga, plus API-Football support for the FA Cup, English League Cup, Scottish Cup, Scottish League Cup, DFB-Pokal, Copa del Rey, Coppa Italia, Coupe de France, KNVB Beker, Taça de Portugal, Europa League, and Conference League.
+- **International tournaments** — added the FIFA World Cup and UEFA European Championship through football-data.org's free Tier One coverage.
+- **Global football credentials** — added Sportmonks and API-Football entries to Settings → API Keys with native Credential Manager storage and authenticated extension relay support in Firefox extension 1.0.33.
+
+### Changed
+
+- **Provider-priority routing** — football-data.org remains the first choice, Sportmonks supplies its free Scottish coverage, and API-Football is called only for competitions unavailable on those free routes. Same-day duplicate widgets share provider loads, provider metadata is cached for seven days, and fixtures/tables retain daily/manual refresh behaviour.
+- **Tournament presentation** — knockout cups omit the irrelevant table tab while group-based UEFA and international competitions retain tables where the provider supplies them.
+
+### Tests
+
+- Added provider allocation, authentication-header isolation, metadata/request caching, duplicate-load coalescing, API-Football normalization, Sportmonks normalization, competition catalogue, and global credential coverage. All 37 JavaScript test files and all 17 native-host tests passed; syntax and diff checks passed. `web-ext lint` reported zero errors with the existing native-host Python notice and installer shell-file warning. The in-app browser target was unavailable for automated visual verification.
+
+## [0.11.166] — 2026-08-21
+
+### Changed
+
+- **Date-bound football refreshes** — fixtures and tables now remain cached for the local calendar day, refresh once when the date changes, and otherwise update only through the widget's manual refresh action. This removes unnecessary 15- and 30-minute polling.
+
+### Tests
+
+- Added coverage for local-midnight cache expiry, clearing both cached views on rollover, and deduplicating the date-change refresh. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.165] — 2026-08-21
+
+### Fixed
+
+- **Football Tracker loading completion** — registered each rendered board and sidebar tracker as an async refresh target, so completed fixture and table requests immediately replace the loading state.
+
+### Tests
+
+- Added a regression guard for the Football Tracker's async rerender wiring. All 37 JavaScript test files, syntax checks, and diff checks passed.
+
+## [0.11.164] — 2026-08-21
+
+### Added
+
+- **European Football Tracker** — added a responsive Sports widget for Premier League, Championship, Bundesliga, La Liga, Serie A, Ligue 1, Eredivisie, Primeira Liga, and Champions League. It provides league tables, client-side matchday navigation, Champions League date navigation, live/full-time states, optional team highlighting, and compact sidebar layouts.
+- **Conservative football data service** — the widget reuses the global football-data.org credential, bounded SDK networking, authenticated extension fallback, and browser-local caching. A season's fixtures are fetched once and grouped locally instead of spending an API request for every matchday step.
+
+### Tests
+
+- Added normalization, league/Champions League grouping, current-round selection, standings filtering, credential/network-boundary, SDK contract, responsive asset, and widget-category coverage. All JavaScript tests, syntax checks, and diff checks passed.
+
+## [0.11.163] — 2026-08-21
+
+### Added
+
+- **Hub Notification Centre** — added a device-local notification inbox with unread counts, mark-read and clear actions, source-widget navigation, and a sidebar bell.
+- **Background timer alerts** — Firefox extension 1.0.31 adds authenticated alarm scheduling, durable job/event storage, restart rehydration, native OS notifications, and notification-click routing back to the originating Hub widget. Countdown and Focus Session now use the shared service; alerts can fire with the Hub closed while Firefox remains running.
+- **Universal Search presets** — added curated General, Knowledge, Development, Shopping, Gaming, and Media providers, including DuckDuckGo, Wolfram Alpha, Amazon UK, GitHub, MDN, Steam, and Nexus Mods.
+
+### Changed
+
+- **Widget library organization** — replaced the broad Weather & Network and Other groups with ordered Utilities, Weather & Hazards, System & Network, Sports, Gaming, and Coding & Development categories, while retaining Personal, Content, and Space groupings.
+- **Universal Search settings** — replaced the dense inline provider form with compact provider summaries and a focused preset/custom provider editor. New widgets start with Google, DuckDuckGo, YouTube, and Wikipedia; Spotify is intentionally not included.
+
+### Tests
+
+- Added extension alarm persistence, firing, and restart-recovery coverage; Notification Centre/relay contract checks; Universal Search preset/editor tests; and updated category, Focus, Calculator, and Translator expectations. All JavaScript tests, syntax checks, extension manifest lint, and diff checks passed.
+
+## [0.11.162] — 2026-08-17
+
+### Fixed
+
+- **Translator text interaction** — source and result fields now explicitly preserve pointer, drag-selection, and native context-menu events, restoring text selection, copy, and paste inside draggable widget cards.
+- **Interactive widget drag boundary** — board and sidebar widget hosts now remember whether the initiating mouse press occurred on an input, textarea, button, link, select, label, editable region, or declared interactive surface. A later HTML `dragstart` is cancelled using that original target even when Firefox reports the draggable card itself as the drag source. Native context menus are likewise allowed on controls while the widget context menu remains available elsewhere on the card.
+
+### Tests
+
+- Added regression coverage for Translator text selection styling and protected pointer/context-menu events, plus board/sidebar drag-origin and context-menu guards. All focused Translator, sidebar-widget, and syntax checks passed.
+
+## [0.11.161] — 2026-08-17
+
+### Fixed
+
+- **Reliable Bergamot startup for `file://`** — Firefox could create the inherited-origin blob worker but then remain indefinitely inside its WASM initialization, even after moving decompression outside the worker. Local-file Hubs now initialize Bergamot lazily in the page context and perform translation there; served `localhost` Hubs retain the dedicated-worker route.
+- **Bounded local startup** — page-context WASM initialization has a 45-second failure boundary with an explicit Firefox/Bergamot error. The first translation may briefly pause while its model is constructed, after which the shared engine is reused until its existing idle unload.
+
+### Tests
+
+- Added an exact page-context harness using the production model loader, WASM initializer, aligned-memory construction, Bergamot service, and cleanup path. It completed the pinned English→German inference successfully; all 228 JavaScript tests plus JavaScript syntax and diff checks passed.
+
+## [0.11.160] — 2026-08-17
+
+### Fixed
+
+- **Bergamot initialization timeout** — the blob worker no longer embeds and parses the 2.5 MiB compressed-WASM base64 payload or decompresses it inside Firefox's worker context. The Hub now lazily decompresses the bundled engine once, transfers a fresh 4.7 MiB WASM buffer with the already verified language-model buffers, and keeps the reusable source buffer for later direction changes.
+- **Visible loading stages** — Translator status now distinguishes reading the cached model, starting Bergamot, and constructing the language model instead of appearing inactive during initialization. The bounded initialization allowance is now three minutes, while completed engines continue to be reused and unloaded after five idle minutes.
+
+### Tests
+
+- Updated the exact blob-worker inference harness to use the transferred-WASM path and ignore non-terminal progress events. The optimized worker completed the pinned English→German inference successfully; all 228 JavaScript tests plus JavaScript syntax and diff checks passed.
+
+## [0.11.159] — 2026-08-17
+
+### Fixed
+
+- **Translator startup on local-file Hubs** — Firefox's strict opaque-origin policy could reject `source/translator-worker.js` when the Hub runs directly from `file://`, leaving the widget with “The local translation worker stopped unexpectedly.” The Hub now lazily assembles the bundled Bergamot engine and worker runtime into an inherited-origin blob worker, preserving background translation without weakening Firefox security settings or requiring a localhost server.
+- **Worker cleanup** — generated blob URLs are revoked whenever the shared translation engine unloads or changes direction.
+
+### Tests
+
+- Added regression assertions for the serializable worker bootstrap and blob-worker construction path. The exact generated worker source loaded the pinned Mozilla model and completed English→German inference successfully; focused Translator and global-symbol tests passed, along with JavaScript syntax and diff checks. The in-app browser target remained unavailable for direct Firefox UI automation.
+
+## [0.11.158] — 2026-08-17
+
+### Added
+
+- **Private local Translator** — added a responsive board/sidebar Translator for English↔German using Mozilla's Bergamot WASM engine. It supports direction swapping, copy/clear controls, Ctrl/Cmd+Enter translation, optional recent history, and model management in widget settings.
+- **Verified offline models** — each direction is installed on demand from Mozilla through a fixed Firefox-extension allowlist, downloaded in bounded chunks, verified against pinned SHA-256 hashes, and stored in a quota-limited browser-local IndexedDB asset cache. Once installed, translation runs entirely in a dedicated local worker.
+- **Large SDK asset cache** — added an explicitly declared `assetCache` capability and IndexedDB gateway for sizeable browser-local binary resources that must remain outside portable Hub state and the small local-storage cache.
+
+### Changed
+
+- **Privacy-first persistence** — source text, translated text, history, model binaries, and runtime state never enter the shared Hub database. Text retention and recent history are disabled by default and remain local to the current browser when enabled.
+- **Firefox extension 1.0.30** — added the authenticated, fixed-purpose Mozilla translation-model chunk relay. Arbitrary URLs are not accepted, partial-content responses are validated, and redirects and credentials are disabled.
+
+### Tests
+
+- Added Translator coverage for descriptor/privacy boundaries, pinned model manifests, WASM integrity, optional text retention, responsive/document integration, the fixed authenticated extension relay, and SDK binary-cache ownership, quota, retrieval, and removal. A verified Mozilla English→German model completed a real Bergamot inference locally. All 228 JavaScript tests and all 17 native-host tests passed; JavaScript syntax and diff checks passed. `web-ext lint` reported zero errors with the two existing native-host packaging advisories. The in-app browser target was unavailable for automated visual verification.
+
 ## [0.11.157] — 2026-08-17
 
 ### Added

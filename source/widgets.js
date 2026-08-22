@@ -3,10 +3,14 @@
 const WIDGET_REGISTRY = {};
 const WIDGET_CATEGORY_ORDER = [
   'Personal & Productivity',
-  'Weather & Network',
-  'Space & Astronomy',
+  'Utilities',
+  'Weather & Hazards',
+  'System & Network',
+  'Sports',
   'Content & Feeds',
-  'Other'
+  'Gaming',
+  'Space & Astronomy',
+  'Coding & Development'
 ];
 
 // Timer storage: key = "widgetId:context"
@@ -172,6 +176,10 @@ function _appendWidgetActionButtons(host, widget, body, context, options = {}) {
   host.appendChild(reloadBtn);
 }
 
+function _widgetInteractiveDragTarget(target) {
+  return !!target?.closest?.('input, textarea, button, label, select, a, [contenteditable="true"], .widget-interactive-surface');
+}
+
 // --- Column widget element ---
 
 function createWidgetElement(widget, columnId) {
@@ -192,7 +200,14 @@ function createWidgetElement(widget, columnId) {
   if (typeof WidgetSDK !== 'undefined') WidgetSDK.runtime.render(def, widget, body, 'column');
   else def.render(widget, body, 'column');
 
+  let dragStartedOnInteractiveControl = false;
+  el.addEventListener('mousedown', event => {
+    dragStartedOnInteractiveControl = _widgetInteractiveDragTarget(event.target);
+  }, true);
+  el.addEventListener('mouseup', () => { dragStartedOnInteractiveControl = false; }, true);
+
   el.addEventListener('contextmenu', e => {
+    if (_widgetInteractiveDragTarget(e.target)) { e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();
     contextTarget = { area: 'board-item', itemId: widget.id, columnId, parentId: null, item: widget, depth: 1 };
@@ -203,14 +218,18 @@ function createWidgetElement(widget, columnId) {
   });
 
   el.addEventListener('dragstart', e => {
-    if (e.target.closest('input, textarea, button, label, select, .widget-interactive-surface')) { e.preventDefault(); return; }
+    if (dragStartedOnInteractiveControl || _widgetInteractiveDragTarget(e.target)) {
+      e.preventDefault();
+      dragStartedOnInteractiveControl = false;
+      return;
+    }
     e.stopPropagation();
     dragPayload = { area: 'board', itemId: widget.id, itemType: 'widget', widgetType: widget.widgetType, sourceColumnId: columnId, sourceParentId: null };
     e.dataTransfer.setData('text/plain', widget.id);
     e.dataTransfer.effectAllowed = 'move';
     applyDragImage(e, el);
   });
-  el.addEventListener('dragend', () => { el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
+  el.addEventListener('dragend', () => { dragStartedOnInteractiveControl = false; el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
   el.addEventListener('dragover', e => handleBoardItemDragOver(e, widget, columnId, null, 1));
   el.addEventListener('dragleave', e => {
     if (el.contains(e.relatedTarget)) return;
@@ -526,12 +545,43 @@ WIDGET_REGISTRY['clock'] = {
 
 // ---- Countdown widget ----
 
+const _countdownNotificationSignatures = new Map();
+function _countdownNotificationId(widget) { return `countdown:${widget.id}`; }
+function _countdownNotificationEvent(widget, targetTime = new Date(widget.config?.targetDate || '').getTime()) {
+  const label = String(widget.config?.label || 'Event').trim() || 'Event';
+  return {
+    id: _countdownNotificationId(widget), title: 'Countdown complete', message: `${label} has arrived.`,
+    when: targetTime, expiresAt: targetTime + 24 * 60 * 60 * 1000,
+    dedupeKey: `${_countdownNotificationId(widget)}:${targetTime}`,
+    source: { widgetType: 'countdown', widgetId: widget.id, label }
+  };
+}
+async function _countdownSyncNotification(widget) {
+  if (typeof WidgetSDK === 'undefined') return false;
+  const targetTime = new Date(widget.config?.targetDate || '').getTime();
+  const enabled = widget.config?.notifications === true && Number.isFinite(targetTime) && targetTime > Date.now();
+  const signature = enabled ? `${targetTime}:${widget.config?.label || ''}` : '';
+  if (_countdownNotificationSignatures.get(widget.id) === signature) return enabled;
+  _countdownNotificationSignatures.set(widget.id, signature);
+  if (!enabled) return WidgetSDK.notifications.cancel(_countdownNotificationId(widget));
+  return WidgetSDK.notifications.schedule(_countdownNotificationEvent(widget, targetTime));
+}
+async function _countdownRequestNotificationPermission(widget) {
+  if (widget.config?.notifications !== true || typeof WidgetSDK === 'undefined') return true;
+  const granted = await WidgetSDK.notifications.requestPermission();
+  if (!granted) {
+    widget.config.notifications = false;
+    if (typeof showNotice === 'function') showNotice('Notification permission was not granted. Other Countdown settings were saved.');
+  }
+  return true;
+}
+
 WIDGET_REGISTRY['countdown'] = {
   name: 'Countdown',
   category: 'Personal & Productivity',
   description: 'Days / hours / minutes until a target date',
   allowedIn: ['column', 'navpane'],
-  defaultConfig: { label: 'Event', targetDate: '' },
+  defaultConfig: { label: 'Event', targetDate: '', notifications: false },
   defaultData: {},
 
   render(widget, el, context) {
@@ -540,12 +590,16 @@ WIDGET_REGISTRY['countdown'] = {
     el.innerHTML = '<div class="widget-countdown-label"></div><div class="widget-countdown-value"></div>';
     const labelEl = el.querySelector('.widget-countdown-label');
     const valueEl = el.querySelector('.widget-countdown-value');
+    void _countdownSyncNotification(widget);
     const tick = () => {
       labelEl.textContent = c.label || 'Event';
       if (!c.targetDate) { valueEl.textContent = 'No date set'; return; }
       const diff = new Date(c.targetDate) - Date.now();
       if (diff <= 0) {
         valueEl.textContent = '🎉 Today!';
+        if (c.notifications === true && Number.isFinite(new Date(c.targetDate).getTime())) {
+          void WidgetSDK.notifications.publish({ ..._countdownNotificationEvent(widget), createdAt: Date.now() }, { system: true });
+        }
         _widgetTimers.get(`${widget.id}:${context}`)?.cancel?.();
         clearInterval(_widgetTimers.get(`${widget.id}:${context}`));
         _widgetTimers.delete(`${widget.id}:${context}`);
@@ -568,12 +622,51 @@ WIDGET_REGISTRY['countdown'] = {
         <span>Target date</span>
         <input type="datetime-local" data-cfg="targetDate" value="${_escapeWidgetSettingValue(c.targetDate)}" class="settings-text-input" />
       </div>
+      <div class="settings-row">
+        <span>Notify when complete</span>
+        <label class="settings-toggle"><input type="checkbox" data-cfg="notifications" ${c.notifications ? 'checked' : ''}/><span class="toggle-track"></span></label>
+      </div>
+      <div class="settings-help">With the Firefox extension installed, the alert is scheduled even when the Hub tab is closed. Firefox must still be running.</div>
       <div id="countdownDateError" class="settings-warning hidden">Target date must be in the future.</div>`;
-  }
+  },
+  beforeSettingsCommit(widget) { return _countdownRequestNotificationPermission(widget); },
+  onSettingsCommit(widget) { _countdownNotificationSignatures.delete(widget.id); void _countdownSyncNotification(widget); },
+  cleanup(widget) { _countdownNotificationSignatures.delete(widget.id); try { void WidgetSDK.notifications.cancel(_countdownNotificationId(widget)); } catch {} }
 };
 
 
 // ---- Notes widget ----
+
+const _notesSaveTimers = new Map();
+
+function _notesReadView(widgetId) {
+  let stored = null;
+  try { stored = WidgetSDK.cache.get('notes', widgetId, 'view'); } catch {}
+  const start = Math.max(0, Math.min(1000000, Number(stored?.selectionStart) || 0));
+  return {
+    scrollTop: Math.max(0, Math.min(100000, Number(stored?.scrollTop) || 0)),
+    selectionStart: start,
+    selectionEnd: Math.max(start, Math.min(1000000, Number(stored?.selectionEnd) || start))
+  };
+}
+
+function _notesWriteView(widgetId, textarea) {
+  const view = {
+    scrollTop: Math.max(0, Math.min(100000, Number(textarea?.scrollTop) || 0)),
+    selectionStart: Math.max(0, Math.min(1000000, Number(textarea?.selectionStart) || 0)),
+    selectionEnd: Math.max(0, Math.min(1000000, Number(textarea?.selectionEnd) || 0))
+  };
+  try { WidgetSDK.cache.set('notes', widgetId, 'view', view); } catch {}
+  return view;
+}
+
+function _notesScheduleSave(widgetId) {
+  clearTimeout(_notesSaveTimers.get(widgetId));
+  _notesSaveTimers.set(widgetId, setTimeout(() => {
+    _notesSaveTimers.delete(widgetId);
+    saveState();
+  }, 250));
+}
 
 WIDGET_REGISTRY['notes'] = {
   name: 'Notes',
@@ -582,6 +675,7 @@ WIDGET_REGISTRY['notes'] = {
   allowedIn: ['column'],
   defaultConfig: { content: '' },
   defaultData: {},
+  capabilities: { localCache: { quotaBytes: 32 * 1024 } },
 
   render(widget, el, context) {
     el.className = 'widget-notes';
@@ -589,10 +683,34 @@ WIDGET_REGISTRY['notes'] = {
     ta.className = 'widget-notes-textarea';
     ta.value = widget.config.content || '';
     ta.placeholder = 'Type a note…';
+    const view = _notesReadView(widget.id);
     ta.addEventListener('mousedown', e => e.stopPropagation());
-    ta.addEventListener('input', () => { widget.config.content = ta.value; });
-    ta.addEventListener('blur', () => saveState());
+    const rememberView = () => WidgetSDK.runtime.requestFrame(`${widget.id}:notes-view`, () => _notesWriteView(widget.id, ta));
+    ta.addEventListener('input', () => {
+      widget.config.content = ta.value;
+      rememberView();
+      _notesScheduleSave(widget.id);
+    });
+    ta.addEventListener('scroll', rememberView, { passive: true });
+    ta.addEventListener('select', rememberView);
+    ta.addEventListener('keyup', rememberView);
+    ta.addEventListener('blur', () => {
+      clearTimeout(_notesSaveTimers.get(widget.id));
+      _notesSaveTimers.delete(widget.id);
+      _notesWriteView(widget.id, ta);
+      saveState();
+    });
     el.appendChild(ta);
+    WidgetSDK.runtime.requestFrame(`${widget.id}:notes-restore`, () => {
+      ta.scrollTop = view.scrollTop;
+      try { ta.setSelectionRange(Math.min(view.selectionStart, ta.value.length), Math.min(view.selectionEnd, ta.value.length)); } catch {}
+    });
+  },
+
+  cleanup(widget) {
+    clearTimeout(_notesSaveTimers.get(widget.id));
+    _notesSaveTimers.delete(widget.id);
+    try { WidgetSDK.cache.remove('notes', widget.id, 'view'); } catch {}
   },
 
   renderSettings(widget, container) {

@@ -9,12 +9,15 @@ const WIDGET_SDK_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const WIDGET_SDK_MAX_CONCURRENT_REQUESTS = 6;
 const WIDGET_SDK_CAPABILITIES = Object.freeze([
   'network', 'extensionRelay', 'nativeHost', 'secureCredentials',
-  'filesystemPaths', 'geolocation', 'notifications', 'timers', 'localCache'
+  'filesystemPaths', 'geolocation', 'notifications', 'timers', 'localCache', 'assetCache'
 ]);
+const WIDGET_SDK_ASSET_DB_NAME = 'morpheus-widget-sdk-assets-v1';
+const WIDGET_SDK_ASSET_DB_VERSION = 1;
+const WIDGET_SDK_DEFAULT_ASSET_QUOTA = 64 * 1024 * 1024;
 
 const WIDGET_BUILTIN_MANIFEST = Object.freeze({
   clock: { capabilities: { timers: true }, responsive: { minWidth: 160, preferredWidth: 260, compactBelow: 210 } },
-  countdown: { capabilities: { timers: true }, responsive: { minWidth: 160, preferredWidth: 260, compactBelow: 210 } },
+  countdown: { capabilities: { timers: true, notifications: { optional: true } }, responsive: { minWidth: 160, preferredWidth: 260, compactBelow: 210 } },
   notes: { capabilities: {}, responsive: { minWidth: 180, preferredWidth: 320 } },
   todo: { capabilities: {}, responsive: { minWidth: 200, preferredWidth: 340 } },
   image: {
@@ -60,9 +63,27 @@ const WIDGET_BUILTIN_MANIFEST = Object.freeze({
     capabilities: { localCache: { quotaBytes: 128 * 1024 } },
     responsive: { minWidth: 180, preferredWidth: 420, compactBelow: 260 }
   },
+  translator: {
+    capabilities: {
+      extensionRelay: { optional: true }, timers: true,
+      localCache: { quotaBytes: 256 * 1024 }, assetCache: { quotaBytes: 96 * 1024 * 1024 }
+    },
+    responsive: { minWidth: 220, preferredWidth: 520, compactBelow: 320 }
+  },
   focusSession: {
     capabilities: { timers: true, localCache: { quotaBytes: 128 * 1024 }, notifications: { optional: true } },
     responsive: { minWidth: 180, preferredWidth: 360, compactBelow: 250 }
+  },
+  footballTracker: {
+    capabilities: { network: { domains: ['api.football-data.org', 'crests.football-data.org', 'api.sportmonks.com', 'cdn.sportmonks.com', 'v3.football.api-sports.io', 'media.api-sports.io', 'www.thesportsdb.com', 'r2.thesportsdb.com'] }, extensionRelay: { optional: true }, localCache: { quotaBytes: 2 * 1024 * 1024 }, timers: true },
+    responsive: { minWidth: 240, preferredWidth: 580, compactBelow: 340 }
+  },
+  globalHazards: {
+    capabilities: {
+      network: { domains: ['eonet.gsfc.nasa.gov', 'earthquake.usgs.gov', 'www.gdacs.org', 'ssd-api.jpl.nasa.gov', 'services.swpc.noaa.gov', 'geocoding-api.open-meteo.com', 'tiles.openfreemap.org'] },
+      extensionRelay: { optional: true }, timers: true, localCache: { quotaBytes: 4 * 1024 * 1024 }, notifications: { optional: true }
+    },
+    responsive: { minWidth: 300, preferredWidth: 760, preferredHeight: 520, compactBelow: 480 }
   },
   savedSessions: {
     capabilities: { extensionRelay: { optional: true } },
@@ -128,9 +149,10 @@ function _widgetSdkCapabilityAvailable(name) {
   if (name === 'secureCredentials') return typeof bridge !== 'undefined' && typeof bridge?.secretGet === 'function';
   if (name === 'filesystemPaths') return typeof bridge !== 'undefined' && typeof bridge?.openFilePicker === 'function';
   if (name === 'geolocation') return typeof navigator !== 'undefined' && !!navigator.geolocation;
-  if (name === 'notifications') return typeof Notification !== 'undefined';
+  if (name === 'notifications') return (typeof bridge !== 'undefined' && bridge?.supports?.('notificationScheduler') === true) || typeof Notification !== 'undefined';
   if (name === 'timers') return typeof setTimeout === 'function';
   if (name === 'localCache') return typeof localStorage !== 'undefined';
+  if (name === 'assetCache') return typeof indexedDB !== 'undefined';
   return false;
 }
 
@@ -438,6 +460,115 @@ function _widgetSdkCacheMigrateLegacy(widgetType, widgetId, key, legacyKey) {
   return value;
 }
 
+let _widgetSdkAssetDbPromise = null;
+
+function _widgetSdkAssetId(widgetType, key) {
+  return `${encodeURIComponent(widgetType)}:${encodeURIComponent(key)}`;
+}
+
+function _widgetSdkAssetRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Asset cache request failed.'));
+  });
+}
+
+function _widgetSdkAssetTransaction(transaction) {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = transaction.onerror = () => reject(transaction.error || new Error('Asset cache transaction failed.'));
+  });
+}
+
+function _widgetSdkOpenAssetDb() {
+  if (_widgetSdkAssetDbPromise) return _widgetSdkAssetDbPromise;
+  if (typeof indexedDB === 'undefined') return Promise.reject(new Error('Large browser storage is unavailable.'));
+  _widgetSdkAssetDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(WIDGET_SDK_ASSET_DB_NAME, WIDGET_SDK_ASSET_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains('assets')) database.createObjectStore('assets', { keyPath: 'id' });
+      if (!database.objectStoreNames.contains('metadata')) {
+        const metadata = database.createObjectStore('metadata', { keyPath: 'id' });
+        metadata.createIndex('widgetType', 'widgetType', { unique: false });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      _widgetSdkAssetDbPromise = null;
+      reject(request.error || new Error('Large browser storage could not be opened.'));
+    };
+    request.onblocked = () => {
+      _widgetSdkAssetDbPromise = null;
+      reject(new Error('Large browser storage is blocked by another Hub tab.'));
+    };
+  });
+  return _widgetSdkAssetDbPromise;
+}
+
+async function _widgetSdkAssetMetadata(widgetType, key) {
+  _widgetSdkAssertDeclaredCapability(widgetType, 'assetCache');
+  const database = await _widgetSdkOpenAssetDb();
+  const transaction = database.transaction('metadata', 'readonly');
+  return (await _widgetSdkAssetRequest(transaction.objectStore('metadata').get(_widgetSdkAssetId(widgetType, key)))) || null;
+}
+
+async function _widgetSdkAssetList(widgetType) {
+  _widgetSdkAssertDeclaredCapability(widgetType, 'assetCache');
+  const database = await _widgetSdkOpenAssetDb();
+  const transaction = database.transaction('metadata', 'readonly');
+  return _widgetSdkAssetRequest(transaction.objectStore('metadata').index('widgetType').getAll(widgetType));
+}
+
+async function _widgetSdkAssetGet(widgetType, key) {
+  _widgetSdkAssertDeclaredCapability(widgetType, 'assetCache');
+  const database = await _widgetSdkOpenAssetDb();
+  const transaction = database.transaction(['assets', 'metadata'], 'readonly');
+  const id = _widgetSdkAssetId(widgetType, key);
+  const [asset, metadata] = await Promise.all([
+    _widgetSdkAssetRequest(transaction.objectStore('assets').get(id)),
+    _widgetSdkAssetRequest(transaction.objectStore('metadata').get(id))
+  ]);
+  return asset && metadata ? { ...metadata, payload: asset.payload } : null;
+}
+
+async function _widgetSdkAssetSet(widgetType, key, payload, metadata = {}) {
+  _widgetSdkAssertDeclaredCapability(widgetType, 'assetCache');
+  const descriptor = WIDGET_REGISTRY[widgetType];
+  const quota = Number(descriptor?.capabilities?.assetCache?.quotaBytes) || WIDGET_SDK_DEFAULT_ASSET_QUOTA;
+  const size = Number(payload?.byteLength ?? payload?.size ?? 0);
+  if (!size) throw new Error('Asset cache payload is empty.');
+  const existing = await _widgetSdkAssetMetadata(widgetType, key);
+  const records = await _widgetSdkAssetList(widgetType);
+  const used = records.reduce((total, record) => total + Number(record.size || 0), 0) - Number(existing?.size || 0) + size;
+  if (used > quota) throw new Error(`Widget asset cache quota exceeded (${quota} bytes).`);
+  const database = await _widgetSdkOpenAssetDb();
+  const transaction = database.transaction(['assets', 'metadata'], 'readwrite');
+  const id = _widgetSdkAssetId(widgetType, key);
+  const record = { ...metadata, id, widgetType, key: String(key), size, storedAt: Date.now() };
+  transaction.objectStore('assets').put({ id, payload });
+  transaction.objectStore('metadata').put(record);
+  await _widgetSdkAssetTransaction(transaction);
+  return record;
+}
+
+async function _widgetSdkAssetRemove(widgetType, key) {
+  _widgetSdkAssertDeclaredCapability(widgetType, 'assetCache');
+  const database = await _widgetSdkOpenAssetDb();
+  const transaction = database.transaction(['assets', 'metadata'], 'readwrite');
+  const id = _widgetSdkAssetId(widgetType, key);
+  transaction.objectStore('assets').delete(id);
+  transaction.objectStore('metadata').delete(id);
+  await _widgetSdkAssetTransaction(transaction);
+  return true;
+}
+
+async function _widgetSdkAssetClear(widgetType) {
+  const records = await _widgetSdkAssetList(widgetType);
+  await Promise.all(records.map(record => _widgetSdkAssetRemove(widgetType, record.key)));
+  return records.length;
+}
+
 function _widgetSdkResolveNetworkWidget(options = {}) {
   if (options.widgetType) return options.widgetType;
   const key = String(options.widgetFetchKey || '');
@@ -559,6 +690,40 @@ async function _widgetSdkCredentialRemove(widgetType, key) {
   return bridge.secretDelete(key);
 }
 
+async function _widgetSdkNotificationRequestPermission() {
+  if (typeof bridge !== 'undefined' && bridge?.supports?.('notificationScheduler') === true) return true;
+  if (typeof Notification === 'undefined') return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+  return (await Notification.requestPermission()) === 'granted';
+}
+
+async function _widgetSdkNotificationSchedule(job) {
+  if (typeof bridge !== 'undefined' && bridge?.supports?.('notificationScheduler') === true && typeof bridge.scheduleNotification === 'function') {
+    const result = await bridge.scheduleNotification(job);
+    return result?.ok === true;
+  }
+  if (typeof notificationCenterScheduleFallback === 'function') return notificationCenterScheduleFallback(job);
+  return false;
+}
+
+async function _widgetSdkNotificationCancel(id) {
+  if (typeof bridge !== 'undefined' && bridge?.supports?.('notificationScheduler') === true && typeof bridge.cancelNotification === 'function') {
+    const result = await bridge.cancelNotification(id);
+    return result?.ok === true;
+  }
+  if (typeof notificationCenterCancelFallback === 'function') return notificationCenterCancelFallback(id);
+  return false;
+}
+
+async function _widgetSdkNotificationPublish(event, options = {}) {
+  if (typeof notificationCenterPublish === 'function') return notificationCenterPublish(event, options);
+  if (options.system !== false && await _widgetSdkNotificationRequestPermission()) {
+    new Notification(String(event?.title || 'Morpheus WebHub'), { body: String(event?.message || '') });
+  }
+  return event;
+}
+
 const WidgetSDK = Object.freeze({
   version: WIDGET_SDK_VERSION,
   capabilities: Object.freeze({ names: WIDGET_SDK_CAPABILITIES, available: _widgetSdkCapabilityAvailable, missing: _widgetSdkMissingCapabilities }),
@@ -567,10 +732,12 @@ const WidgetSDK = Object.freeze({
   settings: Object.freeze({ validateDraft: _widgetSdkValidateSettingsDraft }),
   state: Object.freeze({ migrate: _widgetSdkMigrateState }),
   cache: Object.freeze({ get: _widgetSdkCacheGet, set: _widgetSdkCacheSet, remove: _widgetSdkCacheRemove, migrateLegacy: _widgetSdkCacheMigrateLegacy }),
+  assets: Object.freeze({ metadata: _widgetSdkAssetMetadata, list: _widgetSdkAssetList, get: _widgetSdkAssetGet, set: _widgetSdkAssetSet, remove: _widgetSdkAssetRemove, clear: _widgetSdkAssetClear }),
   network: Object.freeze({ request: _widgetSdkNetworkRequest, assertDomain: _widgetSdkAssertNetworkDomain }),
   extensionRelay: Object.freeze({ invoke: _widgetSdkExtensionInvoke, supports: _widgetSdkExtensionSupports }),
   nativeHost: Object.freeze({ invoke: _widgetSdkNativeInvoke, supports: _widgetSdkNativeSupports }),
   credentials: Object.freeze({ status: _widgetSdkCredentialStatus, get: _widgetSdkCredentialGet, set: _widgetSdkCredentialSet, remove: _widgetSdkCredentialRemove }),
+  notifications: Object.freeze({ requestPermission: _widgetSdkNotificationRequestPermission, schedule: _widgetSdkNotificationSchedule, cancel: _widgetSdkNotificationCancel, publish: _widgetSdkNotificationPublish }),
   localPackages: Object.freeze({ enabled: widgetLocalPackagesEnabled, setEnabled: setWidgetLocalPackagesEnabled })
 });
 

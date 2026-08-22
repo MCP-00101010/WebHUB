@@ -187,6 +187,13 @@ test('weather response cache tracks data-affecting options but not display layou
   assert.equal(vm.runInContext("widget.config.units = 'imperial'; !!_readWeatherCache(widget)", context), false);
 });
 
+test('weather hourly position survives runtime recreation', () => {
+  const { context } = loadWidgets();
+  context.widgetId = 'weather-view-state';
+  vm.runInContext('_writeWeatherView(widgetId, { hourlyScrollLeft: 315 }); _weatherViewMemory.clear();', context);
+  assert.equal(vm.runInContext('_readWeatherView(widgetId).hourlyScrollLeft', context), 315);
+});
+
 test('weather hourly helper extracts the next 24 hours with icon inputs', () => {
   const { context } = loadWidgets();
   context.payload = {
@@ -665,6 +672,7 @@ test('weather map assets are pinned locally and unchanged instances survive colu
 
 test('weather map styling covers controls, timeline, legends and wind markers', () => {
   const styles = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-map-widget.css'), 'utf8');
+  const widgets = fs.readFileSync(path.join(__dirname, '..', 'source', 'weather-map-widget.js'), 'utf8');
   assert.match(styles, /\.widget-weather-map-shell\s*\{/);
   assert.match(styles, /\.widget-weather-map-timeline\s*\{/);
   assert.match(styles, /\.widget-weather-map-legend\.is-rain/);
@@ -672,6 +680,7 @@ test('weather map styling covers controls, timeline, legends and wind markers', 
   assert.match(styles, /@keyframes weather-map-wind-flow/);
   assert.match(styles, /\.widget-weather-map-play-btn\s*\{/);
   assert.match(styles, /\.widget-weather-map-now-btn/);
+  assert.match(styles, /\.widget-weather-map-focus-location\s*\{[^}]*top:\s*9px;[^}]*left:\s*9px/s);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(styles, /\.widget-weather-map\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;/);
   const windMarker = styles.match(/\.widget-weather-map-wind-marker\s*\{([\s\S]*?)\}/)?.[1] || '';
@@ -685,4 +694,6 @@ test('weather map styling covers controls, timeline, legends and wind markers', 
   assert.match(styles, /\.widget-weather-map-legend-scale\s*\{[\s\S]*?width:\s*100%[\s\S]*?height:\s*22px/);
   assert.match(styles, /\.widget-weather-map-legend-tick\s*\{/);
   assert.match(styles, /#3288bd 31%[\s\S]*?#fee08b 69%/);
+  assert.match(widgets, /Focus map on settings location/);
+  assert.match(widgets, /focusLocation\.addEventListener\('click',[\s\S]*?forecastCenter:\s*null[\s\S]*?map\.easeTo\(\{ center:\s*\[camera\.longitude, camera\.latitude\]/);
 });

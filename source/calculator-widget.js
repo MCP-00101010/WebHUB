@@ -345,7 +345,7 @@ function _calculatorDefaultRuntime(widget) {
   const localNow = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   return {
     mode: widget?.config?.defaultMode === 'converter' ? 'converter' : 'calculator',
-    expression: '', result: '', error: '', memory: 0, history: [],
+    expression: '', result: '', error: '', memory: 0, history: [], historyOpen: true,
     category, converterInput: category === 'timezone' ? localNow : category === 'date' ? now.toISOString() : '1',
     from: units[0] || 'local', to: units[1] || 'UTC'
   };
@@ -358,6 +358,7 @@ function _calculatorReadRuntime(widget) {
   try { stored = typeof WidgetSDK !== 'undefined' ? WidgetSDK.cache.get('calculatorConverter', widget.id, CALCULATOR_RUNTIME_CACHE_KEY) : null; } catch {}
   const runtime = stored && typeof stored === 'object' ? { ...fallback, ...stored } : fallback;
   runtime.history = Array.isArray(runtime.history) ? runtime.history.slice(0, CALCULATOR_HISTORY_LIMIT) : [];
+  runtime.historyOpen = runtime.historyOpen !== false;
   runtime.memory = Number.isFinite(Number(runtime.memory)) ? Number(runtime.memory) : 0;
   _calculatorRuntimeMemory.set(widget.id, runtime);
   return runtime;
@@ -473,7 +474,11 @@ function _calculatorRenderCalculator(widget, runtime, body, rerender) {
 
   if (widget.config?.showHistory !== false && runtime.history.length) {
     const history = _calculatorElement('details', 'calculator-history');
-    history.open = true;
+    history.open = runtime.historyOpen;
+    history.addEventListener('toggle', () => {
+      runtime.historyOpen = history.open;
+      _calculatorPersistRuntime(widget, runtime);
+    });
     const summary = _calculatorElement('summary', '', `History (${runtime.history.length})`);
     history.appendChild(summary);
     runtime.history.forEach(item => {
@@ -591,7 +596,7 @@ function _calculatorRenderWidget(widget, element, context = 'column', focusExpre
 WIDGET_REGISTRY['calculatorConverter'] = {
   id: 'calculatorConverter',
   name: 'Calculator & Converter',
-  category: 'Personal & Productivity',
+  category: 'Utilities',
   description: 'Calculate expressions and convert common units, dates, storage, and time zones locally.',
   allowedIn: ['column', 'navpane'],
   defaultConfig: { defaultMode: 'calculator', converterCategory: 'length', precision: 10, showHistory: true },

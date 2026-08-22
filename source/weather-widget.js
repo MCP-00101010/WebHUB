@@ -1,6 +1,7 @@
 // --- Weather widget --------------------------------------------------------
 
 const _weatherMemoryCache = new Map();
+const _weatherViewMemory = new Map();
 const _weatherRuntime = new Map();
 
 const WEATHER_CACHE_PREFIX = 'morpheus-webhub-weather:';
@@ -55,6 +56,28 @@ function _writeWeatherCache(widget, payload) {
   _weatherMemoryCache.set(widget.id, cache);
   try { WidgetSDK.cache.set('weather', widget.id, 'forecast', cache); } catch {}
   return cache;
+}
+
+function _readWeatherView(widgetId) {
+  if (_weatherViewMemory.has(widgetId)) return _weatherViewMemory.get(widgetId);
+  const stored = WidgetSDK.cache.get('weather', widgetId, 'view');
+  const view = {
+    hourlyScrollLeft: Math.max(0, Math.min(100000, Number(stored?.hourlyScrollLeft) || 0))
+  };
+  _weatherViewMemory.set(widgetId, view);
+  return view;
+}
+
+function _writeWeatherView(widgetId, updates = {}) {
+  const current = _readWeatherView(widgetId);
+  const view = {
+    ...current,
+    ...updates,
+    hourlyScrollLeft: Math.max(0, Math.min(100000, Number(updates.hourlyScrollLeft ?? current.hourlyScrollLeft) || 0))
+  };
+  _weatherViewMemory.set(widgetId, view);
+  try { WidgetSDK.cache.set('weather', widgetId, 'view', view); } catch {}
+  return view;
 }
 
 function _isWeatherCacheFresh(cache) {
@@ -269,7 +292,7 @@ function _enableWeatherHourlyDragScroll(viewport) {
 
 WIDGET_REGISTRY['weather'] = {
   name: 'Weather',
-  category: 'Weather & Network',
+  category: 'Weather & Hazards',
   description: 'Current conditions and a multi-day forecast from Open-Meteo',
   allowedIn: ['column'],
   defaultConfig: {
@@ -288,7 +311,9 @@ WIDGET_REGISTRY['weather'] = {
     const cacheKey = _weatherCacheKey(widget.id);
     _weatherRuntime.delete(widget.id);
     _weatherMemoryCache.delete(widget.id);
+    _weatherViewMemory.delete(widget.id);
     WidgetSDK.cache.remove('weather', widget.id, 'forecast', { legacyKeys: [cacheKey] });
+    WidgetSDK.cache.remove('weather', widget.id, 'view');
   },
 
   reload(widget) {
@@ -421,9 +446,17 @@ WIDGET_REGISTRY['weather'] = {
           });
 
           hourlyViewport.appendChild(hourlyGrid);
+          hourlyViewport.addEventListener('scroll', () => {
+            WidgetSDK.runtime.requestFrame(`${widget.id}:weather-hourly-scroll`, () => {
+              _writeWeatherView(widget.id, { hourlyScrollLeft: hourlyViewport.scrollLeft });
+            });
+          }, { passive: true });
           _enableWeatherHourlyDragScroll(hourlyViewport);
           hourlySection.append(hourlyTitle, hourlyViewport);
           el.appendChild(hourlySection);
+          WidgetSDK.runtime.requestFrame(`${widget.id}:weather-hourly-restore`, () => {
+            hourlyViewport.scrollLeft = _readWeatherView(widget.id).hourlyScrollLeft;
+          });
         }
       }
 

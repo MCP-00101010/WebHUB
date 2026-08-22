@@ -10,16 +10,24 @@ const stateSource = fs.readFileSync(path.join(root, 'source', 'state.js'), 'utf8
 const settingsSource = fs.readFileSync(path.join(root, 'source', 'settings.js'), 'utf8');
 const mediaSource = fs.readFileSync(path.join(root, 'source', 'media-watchlist-widget.js'), 'utf8');
 const calendarSource = fs.readFileSync(path.join(root, 'source', 'calendar-widget.js'), 'utf8');
+const footballSource = fs.readFileSync(path.join(root, 'source', 'football-tracker-widget.js'), 'utf8');
 
 test('all provider API keys are presented in the central API Keys settings page', () => {
-  for (const id of ['stgApiKeyNasa', 'stgApiKeyTmdb', 'stgApiKeyFootballData']) {
+  for (const id of ['stgApiKeyNasa', 'stgApiKeyTmdb', 'stgApiKeyFootballData', 'stgApiKeySportmonks', 'stgApiKeyApiFootball']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(stateSource, /tmdb:\s*'service\.tmdb\.readAccessToken'/);
   assert.match(stateSource, /footballData:\s*'service\.footballData\.apiToken'/);
+  assert.match(stateSource, /sportmonks:\s*'service\.sportmonks\.apiToken'/);
+  assert.match(stateSource, /apiFootball:\s*'service\.apiFootball\.apiKey'/);
   assert.match(settingsSource, /_serviceSecretSaveTimers\.get\(serviceName\)/);
   assert.doesNotMatch(mediaSource, /media-watchlist-token|WidgetSDK\.credentials/);
   assert.doesNotMatch(calendarSource, /football-data\.org API token[^\n]*type="password"/);
+  assert.match(footballSource, /secret:\s*'footballData'/);
+  assert.match(footballSource, /secret:\s*'sportmonks'/);
+  assert.match(footballSource, /secret:\s*'apiFootball'/);
+  assert.match(footballSource, /getServiceSecret\(provider\.secret\)/);
+  assert.doesNotMatch(footballSource, /data-cfg="apiToken"|type="password"/);
 });
 
 test('legacy widget credential keys are discovered and migrated to global service entries', async () => {
@@ -33,7 +41,7 @@ test('legacy widget credential keys are discovered and migrated to global servic
   let saved = 0;
   let canScrub = false;
   const state = {
-    settings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '' } },
+    settings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '' } },
     essentials: [],
     navItems: [],
     boards: [{ tabs: [{ columns: [{ items: [
@@ -51,11 +59,13 @@ test('legacy widget credential keys are discovered and migrated to global servic
     setTimeout,
     clearTimeout,
     state,
-    defaultSettings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '' } },
+    defaultSettings: { serviceApiKeys: { nasa: '', tmdb: '', footballData: '', sportmonks: '', apiFootball: '' } },
     SERVICE_SECRET_KEYS: {
       nasa: 'service.nasa.apiKey',
       tmdb: 'service.tmdb.readAccessToken',
-      footballData: 'service.footballData.apiToken'
+      footballData: 'service.footballData.apiToken',
+      sportmonks: 'service.sportmonks.apiToken',
+      apiFootball: 'service.apiFootball.apiKey'
     },
     bridge: {
       whenReady: Promise.resolve(),

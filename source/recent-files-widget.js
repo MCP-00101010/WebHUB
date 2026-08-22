@@ -124,7 +124,7 @@ function _recentFilesRenderSettings(widget, container) {
 }
 
 WIDGET_REGISTRY['recentFiles'] = {
-  id: 'recentFiles', name: 'Recent Downloads & Files', category: 'Personal & Productivity', description: 'Browse bounded recent-file metadata from explicitly approved folders with safe Open and Reveal actions.',
+  id: 'recentFiles', name: 'Recent Downloads & Files', category: 'System & Network', description: 'Browse bounded recent-file metadata from explicitly approved folders with safe Open and Reveal actions.',
   allowedIn: ['column', 'navpane'], liveSettingsPreview: false, reloadLabel: 'Refresh recent files',
   defaultConfig: { roots: [], extensions: '', maxAgeHours: 168, resultCount: 30, recursive: false }, defaultData: {},
   settingsSchema: { type: 'object', properties: { roots: { type: 'array' }, extensions: { type: 'string' }, maxAgeHours: { type: 'number' }, resultCount: { type: 'number' }, recursive: { type: 'boolean' } }, additionalProperties: false },

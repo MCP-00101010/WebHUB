@@ -86,6 +86,27 @@ Status: SDK foundation completed in Hub 0.11.137; substantial built-in extractio
 
 Build network- and native-dependent widgets on the shared SDK, cache, scheduler, and capability layers above; lightweight local widgets may land while that extraction is underway. Runtime samples, histories, and view preferences should remain local unless users explicitly choose to share them.
 
+### Application Launcher and application shortcuts
+
+- Decide whether launchable applications should be a first-class Hub item type alongside bookmarks or a dedicated widget, while retaining normal drag, move, tag, search, export, and layout behaviour.
+- Allow users to create an application shortcut by dropping an application, approved executable path, or application link onto the Hub.
+- Keep executable discovery and launches behind narrow native-host capabilities with explicit path approval, fixed open/reveal actions, missing-application handling, and platform-neutral page-side contracts.
+- Define portable import/export behaviour that excludes unsafe machine-local paths by default and provides clear placeholders when a shortcut is unavailable on another system.
+
+### Nexus Mods Tracker
+
+- Confirm Nexus Mods API availability, authentication terms, rate limits, and redistribution constraints before implementation.
+- Let users select one or more games and browse recently added and recently updated mods with compact metadata and direct Nexus Mods page links.
+- Store the API key through the shared secure-credential flow, cache bounded provider responses locally, refresh conservatively, and handle unavailable games, deleted mods, rate limits, and provider outages.
+- Keep the tracker read-only: do not download, install, endorse, or otherwise mutate Nexus Mods data.
+
+### Universal Search settings and provider catalogue
+
+- Replace the crowded inline provider editor with a compact provider list and an Add/Edit Provider sub-modal.
+- Expand the built-in provider catalogue beyond the initial sites, including DuckDuckGo, Amazon, Wolfram Alpha, and other broadly useful search targets.
+- Group or filter provider templates by purpose, keep custom HTTPS templates available, and preserve aliases, ordering, default-provider selection, and existing local recent-search privacy rules.
+- Add usability and migration tests for the simplified modal, built-in catalogue additions, custom providers, duplicate aliases, and existing saved configurations.
+
 ### Focus Session
 
 Status: completed in Hub 0.11.141.
@@ -172,11 +193,22 @@ Status: completed in Hub 0.11.145.
 - [x] Support aliases such as `g`, `yt`, or `imdb`, URL detection, direct navigation, keyboard-only operation, and optional recent searches stored locally.
 - [x] Sanitize templates and queries, require HTTPS by default, and test reserved aliases, duplicate providers, malformed templates, encoded characters, and empty input.
 
+### Translator
+
+Status: completed in Hub 0.11.158; strict Firefox `file://` startup was moved to lazy in-page execution in Hub 0.11.161 after worker fallbacks remained unreliable, and text interaction was corrected in Hub 0.11.162.
+
+- [x] Add English-to-German and German-to-English translation with Mozilla's Bergamot WASM engine, running entirely in a dedicated local worker.
+- [x] Download each language model only on demand through a fixed Firefox-extension allowlist, verify every asset with SHA-256, and store it in a quota-limited browser-local IndexedDB cache.
+- [x] Keep translation text and history out of the shared Hub database, default to no local text retention, and expose remembered text and recent history only as explicit per-widget options.
+- [x] Add responsive board/sidebar layouts, direction swapping, copy/clear controls, keyboard translation, model install/remove management, download progress, and offline/privacy status.
+- [x] Test model manifests and relay boundaries, WASM integrity, binary cache isolation/quota handling, persistence privacy defaults, responsive integration, and a real English-to-German Bergamot inference.
+
 ## Suggested Delivery Order
 
 1. Saved Sessions completed in Hub 0.11.142.
 2. Focus Session completed in Hub 0.11.141. Calculator and Converter completed in Hub 0.11.139 and expanded in Hub 0.11.140.
 3. Widget and Integration SDK extraction plus Service Monitor, System Monitor, Git Workspace, Media Watchlist, Recent Downloads and Files, and Universal Search Launcher completed in Hub 0.11.145.
+4. Private local Bergamot translation completed in Hub 0.11.158.
 
 ## Browser and Bridge Backlog
 

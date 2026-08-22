@@ -23,7 +23,7 @@ try {
 const errors = [];
 const capabilityNames = new Set([
   'network', 'extensionRelay', 'nativeHost', 'secureCredentials',
-  'filesystemPaths', 'geolocation', 'notifications', 'timers', 'localCache'
+  'filesystemPaths', 'geolocation', 'notifications', 'timers', 'localCache', 'assetCache'
 ]);
 if (!/^[a-z][a-zA-Z0-9-]{1,63}$/.test(String(manifest.id || ''))) errors.push('id must be 2-64 URL-safe characters and start with a lowercase letter');
 for (const key of ['name', 'category', 'description']) if (!String(manifest[key] || '').trim()) errors.push(`${key} is required`);

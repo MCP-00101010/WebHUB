@@ -230,6 +230,21 @@ test('source visibility is browser-local view state rather than widget configura
   assert.doesNotMatch(JSON.stringify(context.widget.config), /football/);
 });
 
+test('expanded agenda events and per-mode scroll positions survive view recreation', () => {
+  const { context, storage } = createContext();
+  context.widget = { id: 'calendar-ui-view', config: { defaultView: 'agenda', calendars: [] }, data: {} };
+  const restored = vm.runInContext(`(() => {
+    _calendarWriteView(widget, { openEventIds: ['event-1', 'event-2'], scrollTop: { agenda: 240, month: 36 } });
+    _calendarViewMemory.clear();
+    const view = _calendarReadView(widget);
+    return { openEventIds: view.openEventIds, scrollTop: view.scrollTop };
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(restored)), { openEventIds: ['event-1', 'event-2'], scrollTop: { agenda: 240, month: 36 } });
+  assert.match(storage.get('morpheus-widget-sdk-cache:v1:protonCalendar:calendar-ui-view:view'), /event-2/);
+  assert.deepEqual(context.widget.data, {});
+  assert.match(calendarSource, /_calendarAppendEventDetails\(container, event, widget\)/);
+});
+
 test('astronomy and moon-phase sources calculate their distinct events locally', () => {
   const { context } = createContext();
   vm.runInContext(astronomyEngine, context);

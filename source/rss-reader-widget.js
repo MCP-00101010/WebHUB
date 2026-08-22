@@ -88,11 +88,17 @@ function _readRssView(widgetId) {
   if (_rssViewMemory.has(widgetId)) return _rssViewMemory.get(widgetId);
   let view = WidgetSDK.cache.get('rssReader', widgetId, 'view')
     || WidgetSDK.cache.migrateLegacy('rssReader', widgetId, 'view', _rssViewKey(widgetId));
+  const articleScroll = {};
+  Object.entries(view?.articleScroll && typeof view.articleScroll === 'object' ? view.articleScroll : {}).slice(0, 25).forEach(([key, value]) => {
+    articleScroll[String(key).slice(0, 120)] = Math.max(0, Math.min(100000, Number(value) || 0));
+  });
   view = {
     activeFeedId: String(view?.activeFeedId || 'all'),
     search: String(view?.search || ''),
     readIds: Array.isArray(view?.readIds) ? view.readIds.slice(-2000) : [],
-    starredIds: Array.isArray(view?.starredIds) ? view.starredIds.slice(-1000) : []
+    starredIds: Array.isArray(view?.starredIds) ? view.starredIds.slice(-1000) : [],
+    tabScrollLeft: Math.max(0, Math.min(100000, Number(view?.tabScrollLeft) || 0)),
+    articleScroll
   };
   _rssViewMemory.set(widgetId, view);
   return view;
@@ -104,7 +110,9 @@ function _writeRssView(widgetId, updates = {}) {
     ...current,
     ...updates,
     readIds: Array.isArray(updates.readIds) ? [...new Set(updates.readIds)].slice(-2000) : current.readIds,
-    starredIds: Array.isArray(updates.starredIds) ? [...new Set(updates.starredIds)].slice(-1000) : current.starredIds
+    starredIds: Array.isArray(updates.starredIds) ? [...new Set(updates.starredIds)].slice(-1000) : current.starredIds,
+    tabScrollLeft: updates.tabScrollLeft === undefined ? current.tabScrollLeft : Math.max(0, Math.min(100000, Number(updates.tabScrollLeft) || 0)),
+    articleScroll: updates.articleScroll && typeof updates.articleScroll === 'object' ? updates.articleScroll : current.articleScroll
   };
   _rssViewMemory.set(widgetId, view);
   try { WidgetSDK.cache.set('rssReader', widgetId, 'view', view); } catch {}
@@ -538,6 +546,7 @@ WIDGET_REGISTRY['rssReader'] = {
         });
         tabs.appendChild(button);
       });
+      tabs.scrollLeft = _readRssView(widget.id).tabScrollLeft;
     };
 
     const renderStatus = () => {
@@ -576,6 +585,7 @@ WIDGET_REGISTRY['rssReader'] = {
         empty.className = 'widget-rss-empty';
         empty.textContent = currentView.search ? 'No articles match this search.' : 'No articles are available in this view yet.';
         articles.appendChild(empty);
+        articles.scrollTop = currentView.articleScroll[currentView.activeFeedId] || 0;
         renderStatus();
         return;
       }
@@ -648,6 +658,7 @@ WIDGET_REGISTRY['rssReader'] = {
         article.appendChild(content);
         articles.appendChild(article);
       });
+      articles.scrollTop = currentView.articleScroll[currentView.activeFeedId] || 0;
       renderStatus();
     };
 
@@ -656,8 +667,28 @@ WIDGET_REGISTRY['rssReader'] = {
       tabs.scrollLeft += event.deltaY;
       event.preventDefault();
     }, { passive: false });
+    tabs.addEventListener('scroll', () => {
+      WidgetSDK.runtime.requestFrame(`${widget.id}:rss-tab-scroll`, () => {
+        _writeRssView(widget.id, { tabScrollLeft: tabs.scrollLeft });
+      });
+    }, { passive: true });
+    articles.addEventListener('scroll', () => {
+      const currentView = _readRssView(widget.id);
+      const feedId = currentView.activeFeedId;
+      const scrollTop = articles.scrollTop;
+      WidgetSDK.runtime.requestFrame(`${widget.id}:rss-article-scroll`, () => {
+        const latestView = _readRssView(widget.id);
+        _writeRssView(widget.id, {
+          articleScroll: { ...latestView.articleScroll, [feedId]: scrollTop }
+        });
+      });
+    }, { passive: true });
     search.addEventListener('input', () => {
-      view = _writeRssView(widget.id, { search: search.value });
+      const currentView = _readRssView(widget.id);
+      view = _writeRssView(widget.id, {
+        search: search.value,
+        articleScroll: { ...currentView.articleScroll, [currentView.activeFeedId]: 0 }
+      });
       renderArticles();
     });
     markRead.addEventListener('click', event => {

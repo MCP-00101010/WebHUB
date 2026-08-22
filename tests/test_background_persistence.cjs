@@ -20,9 +20,15 @@ async function loadBackground(options = {}) {
   const createdTabs = [];
   const scheduledTimeouts = [];
   const injectedTabs = new Set();
+  const storageValues = new Map(Object.entries(options.storageValues || {}));
+  if (options.localStorageState) storageValues.set('morpheusState', options.localStorageState);
+  const createdAlarms = new Map();
+  const createdNotifications = [];
   const browser = {
     runtime: {
       id: 'test-extension',
+      getManifest: () => ({ version: '1.0.31' }),
+      getURL: value => `moz-extension://test/${value}`,
       getBrowserInfo: options.browserVersion ? async () => ({ version: options.browserVersion }) : undefined,
       sendNativeMessage: async (_host, message) => {
         if (message.type === 'PING') return options.nativePing?.promise || { ok: true };
@@ -54,11 +60,24 @@ async function loadBackground(options = {}) {
     },
     storage: {
       local: {
-        get: async () => options.localStorageState ? { morpheusState: options.localStorageState } : {},
-        set: async () => {},
-        remove: async () => {}
+        get: async keys => {
+          const selected = typeof keys === 'string' ? [keys] : (Array.isArray(keys) ? keys : [...storageValues.keys()]);
+          return Object.fromEntries(selected.filter(key => storageValues.has(key)).map(key => [key, storageValues.get(key)]));
+        },
+        set: async values => { Object.entries(values || {}).forEach(([key, value]) => storageValues.set(key, value)); },
+        remove: async keys => { (Array.isArray(keys) ? keys : [keys]).forEach(key => storageValues.delete(key)); }
       }
     },
+    alarms: {
+      create: (name, details) => { createdAlarms.set(name, details); },
+      clear: async name => createdAlarms.delete(name),
+      onAlarm: { addListener: listener => { listeners.alarm = listener; } }
+    },
+    notifications: {
+      create: async (id, details) => { createdNotifications.push({ id, details }); return id; },
+      onClicked: { addListener: listener => { listeners.notificationClicked = listener; } }
+    },
+    windows: { update: async () => ({}) },
     tabs: {
       query: async query => typeof options.queryTabs === 'function' ? options.queryTabs(query) : (options.tabs || []),
       get: async tabId => (options.tabs || []).find(tab => tab.id === tabId),
@@ -148,6 +167,7 @@ async function loadBackground(options = {}) {
     TextDecoder,
     Uint8Array,
     atob: value => Buffer.from(value, 'base64').toString('binary'),
+    btoa: value => Buffer.from(value, 'binary').toString('base64'),
     crypto: require('node:crypto').webcrypto,
     setTimeout: (callback, delay, ...args) => {
       scheduledTimeouts.push(delay);
@@ -158,8 +178,41 @@ async function loadBackground(options = {}) {
   const filename = path.join(__dirname, '..', 'extension', 'background.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   await new Promise(resolve => setImmediate(resolve));
-  return { context, listeners, nativeWrites, pendingWrites, sentTabs, nativeConnections, executedScripts, createdTabs, scheduledTimeouts };
+  return { context, listeners, nativeWrites, pendingWrites, sentTabs, nativeConnections, executedScripts, createdTabs, scheduledTimeouts, storageValues, createdAlarms, createdNotifications };
 }
+
+test('extension notification jobs persist, fire once, and enter the Hub notification feed', async () => {
+  const harness = await loadBackground();
+  const when = Date.now() + 60000;
+  const job = { id: 'countdown:one', title: 'Countdown complete', message: 'Tea has arrived.', when, expiresAt: when + 60000, dedupeKey: 'tea:one', source: { widgetType: 'countdown', widgetId: 'one', label: 'Tea' } };
+  const scheduled = await harness.context.scheduleHubNotification(job);
+  assert.equal(scheduled.ok, true);
+  assert.equal(harness.createdAlarms.get('morpheus-notification:countdown:one').when, when);
+  assert.equal(harness.storageValues.get('morpheusNotificationJobsV1').length, 1);
+
+  harness.listeners.alarm({ name: 'morpheus-notification:countdown:one' });
+  await new Promise(resolve => setImmediate(resolve));
+  await harness.context.notificationMutation;
+  assert.equal(harness.createdNotifications.length, 1);
+  assert.equal(harness.createdNotifications[0].details.message, 'Tea has arrived.');
+  assert.equal(harness.storageValues.get('morpheusNotificationJobsV1').length, 0);
+  assert.equal(harness.storageValues.get('morpheusNotificationEventsV1').length, 1);
+});
+
+test('extension recreates future alarms and fires missed unexpired jobs after restart', async () => {
+  const harness = await loadBackground();
+  const future = Date.now() + 90000;
+  const missed = Date.now() - 1000;
+  harness.storageValues.set('morpheusNotificationJobsV1', [
+    { id: 'future', title: 'Future', message: 'Still pending', when: future, expiresAt: future + 60000, dedupeKey: 'future', source: {} },
+    { id: 'missed', title: 'Missed', message: 'Recovered after restart', when: missed, expiresAt: Date.now() + 60000, dedupeKey: 'missed', source: {} }
+  ]);
+  await harness.context.rehydrateNotificationAlarms();
+  await harness.context.notificationMutation;
+  assert.equal(harness.createdAlarms.get('morpheus-notification:future').when, future);
+  assert.equal(harness.createdNotifications.at(-1).details.message, 'Recovered after restart');
+  assert.deepEqual(harness.storageValues.get('morpheusNotificationJobsV1').map(job => job.id), ['future']);
+});
 
 test('directory approval passes a finite interactive timeout to the native request', async () => {
   const harness = await loadBackground();
@@ -278,6 +331,7 @@ test('extension handshake responds before native host startup completes', async 
     resolve
   ));
   assert(registration.capabilities.includes('urlHealth'));
+  assert(registration.capabilities.includes('translationModels'));
   harness.listeners.message(
     { type: 'MW_PING', morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
     { tab: { id: 10, url: 'file:///hub.html' } },
@@ -483,16 +537,60 @@ test('extension feed relay fetches bounded text only for the Hub page', async ()
   assert.match(denied.error, /not authorized/i);
 });
 
+test('translator relay serves only fixed Mozilla model ranges to an authenticated Hub', async () => {
+  const requests = [];
+  const bytes = Uint8Array.from([1, 2, 3, 4]);
+  const harness = await loadBackground({
+    fetchImpl: async (url, options) => {
+      requests.push({ url: String(url), options });
+      return {
+        status: 206,
+        headers: { get: name => name.toLowerCase() === 'content-range' ? 'bytes 0-3/31561787' : null },
+        arrayBuffer: async () => bytes.buffer
+      };
+    }
+  });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub/index.html', active: true },
+    { tab: { id: 27, url: 'file:///hub/index.html' } }, resolve
+  ));
+  const sendPageRequest = message => new Promise(resolve => harness.listeners.message(
+    { ...message, morpheusPage: true, pageUrl: 'file:///hub/index.html', hubSessionToken: registration.hubSessionToken },
+    { tab: { id: 27, url: 'file:///hub/index.html' } }, resolve
+  ));
+  const response = await sendPageRequest({
+    type: 'MW_FETCH_TRANSLATOR_ASSET_CHUNK', assetId: 'ende:model:2.1', offset: 0, length: 4
+  });
+  assert.equal(response.ok, true);
+  assert.deepEqual([...Buffer.from(response.chunk, 'base64')], [1, 2, 3, 4]);
+  assert.equal(response.nextOffset, 4);
+  assert.equal(response.totalSize, 31561787);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /^https:\/\/firefox-settings-attachments\.cdn\.mozilla\.net\//);
+  assert.equal(requests[0].options.headers.Range, 'bytes=0-3');
+  assert.equal(requests[0].options.credentials, 'omit');
+  assert.equal(requests[0].options.redirect, 'error');
+
+  const denied = await sendPageRequest({
+    type: 'MW_FETCH_TRANSLATOR_ASSET_CHUNK', assetId: 'custom:https://example.com/model.bin', offset: 0, length: 4
+  });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /unknown translation model asset/i);
+  assert.equal(requests.length, 1);
+});
+
 test('calendar relay forwards only bounded calendar headers for an authenticated Hub session', async () => {
   const requests = [];
   const body = JSON.stringify({ matches: [] });
   const harness = await loadBackground({
     fetchImpl: async (url, options) => {
       requests.push({ url: String(url), options });
+      const rejected = options?.headers?.Authorization === 'bad-sportmonks-token';
+      const responseBody = rejected ? JSON.stringify({ message: 'Invalid token provided' }) : body;
       return {
-        ok: true, status: 200, url: String(url),
-        headers: { get: name => name === 'content-length' ? String(Buffer.byteLength(body)) : 'application/json' },
-        arrayBuffer: async () => Buffer.from(body)
+        ok: !rejected, status: rejected ? 401 : 200, url: String(url),
+        headers: { get: name => name === 'content-length' ? String(Buffer.byteLength(responseBody)) : 'application/json' },
+        arrayBuffer: async () => Buffer.from(responseBody)
       };
     }
   });
@@ -525,6 +623,42 @@ test('calendar relay forwards only bounded calendar headers for an authenticated
   ));
   assert.equal(requests[1].options.headers['X-Auth-Token'], undefined);
   assert.equal(requests[1].options.redirect, 'follow');
+
+  await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_FETCH_CALENDAR', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: registration.hubSessionToken, url: 'https://api.sportmonks.com/v3/football/leagues/501',
+      headers: { Authorization: 'sportmonks-token', 'x-apisports-key': 'must-not-pass' }
+    },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  assert.equal(requests[2].options.headers.Authorization, 'sportmonks-token');
+  assert.equal(requests[2].options.headers['x-apisports-key'], undefined);
+  assert.equal(requests[2].options.redirect, 'error');
+
+  await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_FETCH_CALENDAR', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: registration.hubSessionToken, url: 'https://v3.football.api-sports.io/fixtures?league=45&season=2026',
+      headers: { 'x-apisports-key': 'api-football-key', Authorization: 'must-not-pass' }
+    },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  assert.equal(requests[3].options.headers['x-apisports-key'], 'api-football-key');
+  assert.equal(requests[3].options.headers.Authorization, undefined);
+  assert.equal(requests[3].options.redirect, 'error');
+
+  const rejected = await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_FETCH_CALENDAR', morpheusPage: true, pageUrl: 'file:///hub/index.html',
+      hubSessionToken: registration.hubSessionToken, url: 'https://api.sportmonks.com/v3/football/leagues/501',
+      headers: { Authorization: 'bad-sportmonks-token' }
+    },
+    { tab: { id: 17, url: 'file:///hub/index.html' } }, resolve
+  ));
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.status, 401);
+  assert.match(rejected.error, /Invalid token provided/);
 });
 
 test('native services require the exact registered Hub session', async () => {

@@ -101,6 +101,12 @@ if (IS_MORPHEUS) {
     if (msg.type === 'MW_OPEN_COMMAND_PALETTE') {
       return relayPushToPage({ type: 'MW_OPEN_COMMAND_PALETTE' });
     }
+    if (msg.type === 'MW_NOTIFICATION_EVENT') {
+      return relayPushToPage({ type: 'MW_NOTIFICATION_EVENT', event: msg.event || null });
+    }
+    if (msg.type === 'MW_OPEN_NOTIFICATION_TARGET') {
+      return relayPushToPage({ type: 'MW_OPEN_NOTIFICATION_TARGET', event: msg.event || null });
+    }
   });
 }
 

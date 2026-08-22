@@ -177,6 +177,26 @@ test('feed refresh caches parsed articles locally without saving the Hub databas
   assert.equal(cached.feeds.one.items[0].title, 'Cached item');
 });
 
+test('RSS tab and per-feed article positions survive runtime recreation', () => {
+  const { context } = loadRssWidgets();
+  context.widgetId = 'rss-view-state';
+  vm.runInContext(`_writeRssView(widgetId, {
+    activeFeedId: 'feed-a',
+    tabScrollLeft: 84,
+    articleScroll: { all: 15, 'feed-a': 240 }
+  }); _rssViewMemory.clear();`, context);
+  const restored = vm.runInContext('_readRssView(widgetId)', context);
+  assert.deepEqual(JSON.parse(JSON.stringify({
+    activeFeedId: restored.activeFeedId,
+    tabScrollLeft: restored.tabScrollLeft,
+    articleScroll: restored.articleScroll
+  })), {
+    activeFeedId: 'feed-a',
+    tabScrollLeft: 84,
+    articleScroll: { all: 15, 'feed-a': 240 }
+  });
+});
+
 test('RSS UI exposes combined, starred and feed tabs with local read state', () => {
   const widgets = fs.readFileSync(path.join(root, 'source/rss-reader-widget.js'), 'utf8');
   const styles = fs.readFileSync(path.join(root, 'source/rss-reader-widget.css'), 'utf8');
@@ -205,5 +225,5 @@ test('RSS UI exposes combined, starred and feed tabs with local read state', () 
   assert.match(background, /MAX_FEED_RESPONSE_BYTES = 2 \* 1024 \* 1024/);
   assert.equal(manifest.permissions.includes('https://*/*'), true);
   assert.equal(manifest.permissions.includes('http://*/*'), true);
-  assert.equal(manifest.version, '1.0.29');
+  assert.equal(manifest.version, '1.0.33');
 });

@@ -34,6 +34,17 @@ test('Countdown uses its full Hub presentation and context timer in the sidebar'
   assert.doesNotMatch(block, /context === 'navpane'|nav-widget-countdown|_fmtCountdownCompact/);
 });
 
+test('Notes persists edits promptly and restores its editing position locally', () => {
+  const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
+  const block = registryBlock(widgets, 'notes', '// ---- To-do list widget ----');
+  assert.match(widgets, /function _notesReadView\(widgetId\)/);
+  assert.match(widgets, /function _notesWriteView\(widgetId, textarea\)/);
+  assert.match(block, /_notesScheduleSave\(widget\.id\)/);
+  assert.match(block, /ta\.scrollTop = view\.scrollTop/);
+  assert.match(block, /ta\.setSelectionRange/);
+  assert.match(block, /capabilities: \{ localCache: \{ quotaBytes: 32 \* 1024 \} \}/);
+});
+
 test('sidebar widget host preserves regular widget width and interactions', () => {
   const widgets = fs.readFileSync(path.join(root, 'source/widgets.js'), 'utf8');
   const styles = fs.readFileSync(path.join(root, 'source/styles.css'), 'utf8');
@@ -41,7 +52,10 @@ test('sidebar widget host preserves regular widget width and interactions', () =
   assert.match(styles, /\.nav-widget-body\s*\{[^}]*display:\s*block;[^}]*width:\s*100%;[^}]*min-width:\s*0/s);
   assert.match(styles, /\.nav-widget-item:hover \.widget-action-btn/);
   assert.doesNotMatch(styles, /\.nav-widget-clock\s*\{|\.nav-widget-countdown\s*\{/);
-  assert.match(render, /input, textarea, button, label, select, \.widget-interactive-surface/);
+  assert.match(widgets, /function _widgetInteractiveDragTarget\(target\)/);
+  assert.match(render, /dragStartedOnInteractiveControl = _widgetInteractiveDragTarget\(event\.target\)/);
+  assert.match(render, /dragStartedOnInteractiveControl \|\| _widgetInteractiveDragTarget\(e\.target\)/);
+  assert.match(render, /if \(_widgetInteractiveDragTarget\(e\.target\)\) \{ e\.stopPropagation\(\); return; \}/);
   assert.match(render, /_appendWidgetActionButtons\(el, item, body, 'navpane'/);
   assert.match(render, /sidebarBottomAvailable: !parent/);
   assert.match(widgets, /function _appendWidgetActionButtons\(host, widget, body, context, options = \{\}\)/);

@@ -18,6 +18,64 @@ function makeStorage() {
   };
 }
 
+function makeIndexedDb() {
+  const databases = new Map();
+  const makeDatabase = () => {
+    const stores = new Map();
+    return {
+      objectStoreNames: { contains: name => stores.has(name) },
+      createObjectStore(name) {
+        stores.set(name, new Map());
+        return { createIndex() {} };
+      },
+      transaction(names) {
+        const transaction = { error: null };
+        let pending = 0;
+        let completionQueued = false;
+        const finish = () => {
+          if (pending || completionQueued) return;
+          completionQueued = true;
+          queueMicrotask(() => { if (!pending) transaction.oncomplete?.(); else completionQueued = false; });
+        };
+        const operation = run => {
+          pending += 1;
+          const value = {};
+          queueMicrotask(() => {
+            try { value.result = run(); value.onsuccess?.(); }
+            catch (error) { value.error = error; transaction.error = error; value.onerror?.(); transaction.onerror?.(); }
+            finally { pending -= 1; finish(); }
+          });
+          return value;
+        };
+        transaction.objectStore = name => {
+          const store = stores.get(name);
+          return {
+            get: id => operation(() => structuredClone(store.get(id))),
+            put: record => operation(() => { store.set(record.id, structuredClone(record)); return record.id; }),
+            delete: id => operation(() => store.delete(id)),
+            index: field => ({ getAll: value => operation(() => [...store.values()].filter(record => record[field] === value).map(record => structuredClone(record))) })
+          };
+        };
+        finish();
+        return transaction;
+      }
+    };
+  };
+  return {
+    open(name) {
+      const openRequest = {};
+      queueMicrotask(() => {
+        const isNew = !databases.has(name);
+        if (isNew) databases.set(name, makeDatabase());
+        openRequest.result = databases.get(name);
+        if (isNew) openRequest.onupgradeneeded?.();
+        openRequest.onsuccess?.();
+      });
+      return openRequest;
+    }
+  };
+}
+
 function makeContext(registry = {}) {
   const context = vm.createContext({
     WIDGET_REGISTRY: registry,
@@ -179,6 +237,43 @@ test('cache service migrates and removes legacy localStorage entries', () => {
   });
 });
 
+test('large asset cache keeps binary payloads local, enforces quota, and protects record ownership', async () => {
+  const context = makeContext();
+  context.indexedDB = makeIndexedDb();
+  context.payloadOne = Uint8Array.from([1, 2, 3, 4]).buffer;
+  context.payloadTwo = Uint8Array.from([5, 6, 7, 8]).buffer;
+  const result = await vm.runInContext(`(async () => {
+    WidgetSDK.localPackages.setEnabled(true);
+    WidgetSDK.registry.register({
+      id: 'asset-test', name: 'Assets', category: 'Other', description: 'Fixture', allowedIn: ['column'],
+      defaultConfig: {}, defaultData: {}, settingsSchema: { type: 'object', properties: {} },
+      capabilities: { assetCache: { quotaBytes: 6 } }, responsive: { minWidth: 180 }, render() {}
+    }, { source: 'local' });
+    const stored = await WidgetSDK.assets.set('asset-test', 'one', payloadOne, {
+      id: 'forged', widgetType: 'forged', key: 'forged', size: 999, hash: 'verified'
+    });
+    const metadata = await WidgetSDK.assets.metadata('asset-test', 'one');
+    const loaded = await WidgetSDK.assets.get('asset-test', 'one');
+    const listed = await WidgetSDK.assets.list('asset-test');
+    let quotaError = '';
+    try { await WidgetSDK.assets.set('asset-test', 'two', payloadTwo); } catch (error) { quotaError = error.message; }
+    await WidgetSDK.assets.remove('asset-test', 'one');
+    return {
+      stored, metadata, bytes: Array.from(new Uint8Array(loaded.payload)), listed: listed.length,
+      quotaError, removed: await WidgetSDK.assets.get('asset-test', 'one')
+    };
+  })()`, context);
+  assert.equal(result.stored.id, 'asset-test:one');
+  assert.equal(result.stored.widgetType, 'asset-test');
+  assert.equal(result.stored.key, 'one');
+  assert.equal(result.stored.size, 4);
+  assert.equal(result.metadata.hash, 'verified');
+  assert.deepEqual(Array.from(result.bytes), [1, 2, 3, 4]);
+  assert.equal(result.listed, 1);
+  assert.match(result.quotaError, /quota exceeded/i);
+  assert.equal(result.removed, null);
+});
+
 test('extension relay and secure credentials are exposed through declared SDK gateways', async () => {
   const context = makeContext({
     rssReader: {
@@ -320,6 +415,18 @@ test('SDK files are ordered and the example manifest covers the contract surface
   assert.ok(manifest.lifecycle.includes('cleanup'));
 });
 
+test('project and SDK rules require meaningful widget UI state to survive reloads locally', () => {
+  const project = fs.readFileSync(path.join(root, 'PROJECT.md'), 'utf8');
+  const readme = fs.readFileSync(path.join(root, 'widget-sdk', 'README.md'), 'utf8');
+  for (const rules of [project, readme]) {
+    assert.match(rules, /Meaningful widget UI state|Meaningful UI state/i);
+    assert.match(rules, /selected tabs[\s\S]*?filters[\s\S]*?expanded or collapsed[\s\S]*?map\/globe cameras/i);
+    assert.match(rules, /WidgetSDK\.cache/);
+    assert.match(rules, /browser-local|portable configuration/);
+    assert.match(rules, /Universal Search[\s\S]*?unfinished query[\s\S]*?keyboard-highlighted result[\s\S]*?transient/i);
+  }
+});
+
 test('substantial built-ins live in ordered standalone script and style modules', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const legacy = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
@@ -330,7 +437,8 @@ test('substantial built-ins live in ordered standalone script and style modules'
     ['iss-tracker', 'issTracker'],
     ['astronomy', 'astronomy'],
     ['rss-reader', 'rssReader'],
-    ['ip-info', 'ipInfo']
+    ['ip-info', 'ipInfo'],
+    ['football-tracker', 'footballTracker']
   ];
 
   let previousScriptIndex = html.indexOf('source/widget-sdk.js');

@@ -96,7 +96,12 @@ function _calendarReadView(widget) {
   const view = {
     mode: ['agenda', 'month'].includes(stored?.mode) ? stored.mode : defaultMode,
     anchor: Number.isFinite(anchor) ? anchor : new Date().setHours(0, 0, 0, 0),
-    hiddenSourceIds: Array.isArray(stored?.hiddenSourceIds) ? stored.hiddenSourceIds.map(String) : []
+    hiddenSourceIds: Array.isArray(stored?.hiddenSourceIds) ? stored.hiddenSourceIds.map(String) : [],
+    openEventIds: Array.isArray(stored?.openEventIds) ? stored.openEventIds.map(String).slice(-100) : [],
+    scrollTop: {
+      agenda: Math.max(0, Math.min(100000, Number(stored?.scrollTop?.agenda) || 0)),
+      month: Math.max(0, Math.min(100000, Number(stored?.scrollTop?.month) || 0))
+    }
   };
   _calendarViewMemory.set(widget.id, view);
   return view;
@@ -107,7 +112,12 @@ function _calendarWriteView(widget, updates = {}) {
   const view = {
     mode: ['agenda', 'month'].includes(updates.mode) ? updates.mode : current.mode,
     anchor: Number.isFinite(Number(updates.anchor)) ? Number(updates.anchor) : current.anchor,
-    hiddenSourceIds: Array.isArray(updates.hiddenSourceIds) ? updates.hiddenSourceIds.map(String) : current.hiddenSourceIds
+    hiddenSourceIds: Array.isArray(updates.hiddenSourceIds) ? updates.hiddenSourceIds.map(String) : current.hiddenSourceIds,
+    openEventIds: Array.isArray(updates.openEventIds) ? updates.openEventIds.map(String).slice(-100) : current.openEventIds,
+    scrollTop: {
+      agenda: Math.max(0, Math.min(100000, Number(updates.scrollTop?.agenda ?? current.scrollTop?.agenda) || 0)),
+      month: Math.max(0, Math.min(100000, Number(updates.scrollTop?.month ?? current.scrollTop?.month) || 0))
+    }
   };
   _calendarViewMemory.set(widget.id, view);
   try { WidgetSDK.cache.set('protonCalendar', widget.id, 'view', view); } catch {}
@@ -794,10 +804,18 @@ function _calendarTimeLabel(event) {
   return `${start}–${end}`;
 }
 
-function _calendarAppendEventDetails(parent, event) {
+function _calendarAppendEventDetails(parent, event, widget = null) {
   const details = document.createElement('details');
   details.className = 'widget-calendar-event';
   details.style.setProperty('--calendar-event-color', event.color);
+  if (widget) {
+    details.open = _calendarReadView(widget).openEventIds.includes(String(event.id));
+    details.addEventListener('toggle', () => {
+      const open = new Set(_calendarReadView(widget).openEventIds);
+      if (details.open) open.add(String(event.id)); else open.delete(String(event.id));
+      _calendarWriteView(widget, { openEventIds: [...open] });
+    });
+  }
   const summary = document.createElement('summary');
   const time = document.createElement('span');
   time.className = 'widget-calendar-event-time';
@@ -860,7 +878,7 @@ function _calendarRenderAgenda(widget, container, runtime, view) {
       });
       container.appendChild(heading);
     }
-    _calendarAppendEventDetails(container, event);
+    _calendarAppendEventDetails(container, event, widget);
   });
 }
 
@@ -1384,7 +1402,15 @@ WIDGET_REGISTRY['protonCalendar'] = {
       const visibleRuntime = { ...runtime, events: runtime.events.filter(event => !hiddenSourceIds.has(event.sourceId)) };
       if (view.mode === 'month') _calendarRenderMonth(widget, content, visibleRuntime, view, renderContent);
       else _calendarRenderAgenda(widget, content, visibleRuntime, view);
+      content.scrollTop = view.scrollTop?.[view.mode] || 0;
     };
+    content.addEventListener('scroll', () => {
+      const mode = view.mode; const scrollTop = content.scrollTop;
+      WidgetSDK.runtime.requestFrame(`${widget.id}:calendar-view-scroll`, () => {
+        const current = _calendarReadView(widget);
+        _calendarWriteView(widget, { scrollTop: { ...current.scrollTop, [mode]: scrollTop } });
+      });
+    }, { passive: true });
     previous.addEventListener('click', () => {
       const anchor = new Date(view.anchor);
       const nextAnchor = view.mode === 'month'

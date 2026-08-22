@@ -1250,20 +1250,30 @@ function createNavItem(item, depth = 0, parent = null) {
       else def.render(item, body, 'navpane');
       el.dataset.widgetRenderSignature = _widgetRenderSignature(item);
     }
+    let dragStartedOnInteractiveControl = false;
+    el.addEventListener('mousedown', event => {
+      dragStartedOnInteractiveControl = _widgetInteractiveDragTarget(event.target);
+    }, true);
+    el.addEventListener('mouseup', () => { dragStartedOnInteractiveControl = false; }, true);
     el.addEventListener('contextmenu', e => {
+      if (_widgetInteractiveDragTarget(e.target)) { e.stopPropagation(); return; }
       e.preventDefault();
       e.stopPropagation();
       handleNavContextMenu(e, item, parent, depth);
     });
     el.addEventListener('dragstart', e => {
-      if (e.target.closest('input, textarea, button, label, select, .widget-interactive-surface')) { e.preventDefault(); return; }
+      if (dragStartedOnInteractiveControl || _widgetInteractiveDragTarget(e.target)) {
+        e.preventDefault();
+        dragStartedOnInteractiveControl = false;
+        return;
+      }
       e.stopPropagation();
       dragPayload = { area: 'nav', itemId: item.id, itemType: 'widget', widgetType: item.widgetType, parentId: parent ? parent.id : null };
       e.dataTransfer.setData('text/plain', item.id);
       e.dataTransfer.effectAllowed = 'move';
       applyDragImage(e, el);
     });
-    el.addEventListener('dragend', () => { el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
+    el.addEventListener('dragend', () => { dragStartedOnInteractiveControl = false; el.classList.remove('dragging'); dragPayload = null; removeDragPlaceholders(); });
     el.addEventListener('dragover', e => handleNavItemDragOver(e, item, parent));
     el.addEventListener('dragleave', e => {
       if (el.contains(e.relatedTarget)) return;

@@ -108,11 +108,25 @@ test('copy uses the browser clipboard and widget runtime remains outside synced 
   assert.deepEqual(JSON.parse(JSON.stringify(context.WIDGET_REGISTRY.calculatorConverter.defaultData)), {});
 });
 
+test('calculator history disclosure survives runtime recreation', () => {
+  const cache = new Map();
+  const context = createContext({
+    WidgetSDK: { cache: {
+      get: (type, id, key) => cache.get(`${type}:${id}:${key}`) || null,
+      set: (type, id, key, value) => cache.set(`${type}:${id}:${key}`, JSON.parse(JSON.stringify(value))),
+      remove: () => {}
+    } }
+  });
+  context.widget = { id: 'calc-view', config: { converterCategory: 'length' } };
+  vm.runInContext('runtime = _calculatorReadRuntime(widget); runtime.historyOpen = false; _calculatorPersistRuntime(widget, runtime); _calculatorRuntimeMemory.clear();', context);
+  assert.equal(vm.runInContext('_calculatorReadRuntime(widget).historyOpen', context), false);
+});
+
 test('widget descriptor supports board/sidebar layouts and complete SDK metadata', () => {
   const context = createContext();
   const descriptor = context.WIDGET_REGISTRY.calculatorConverter;
   assert.deepEqual(JSON.parse(JSON.stringify(descriptor.allowedIn)), ['column', 'navpane']);
-  assert.equal(descriptor.category, 'Personal & Productivity');
+  assert.equal(descriptor.category, 'Utilities');
   assert.equal(descriptor.capabilities.localCache.quotaBytes, 128 * 1024);
   assert.equal(typeof descriptor.render, 'function');
   assert.equal(typeof descriptor.renderSettings, 'function');

@@ -130,7 +130,7 @@ function _gitWorkspaceRenderSettings(widget, container) {
 }
 
 WIDGET_REGISTRY['gitWorkspace'] = {
-  id: 'gitWorkspace', name: 'Git Workspace', category: 'Personal & Productivity', description: 'Track approved repositories, branches, changes, sync state, and recent commits through fixed native capabilities.',
+  id: 'gitWorkspace', name: 'Git Workspace', category: 'Coding & Development', description: 'Track approved repositories, branches, changes, sync state, and recent commits through fixed native capabilities.',
   allowedIn: ['column', 'navpane'], liveSettingsPreview: false, reloadLabel: 'Refresh repositories',
   defaultConfig: { repositories: [], refreshSeconds: 60, showLastCommit: true }, defaultData: {},
   settingsSchema: { type: 'object', properties: { repositories: { type: 'array' }, refreshSeconds: { type: 'number' }, showLastCommit: { type: 'boolean' } }, additionalProperties: false },

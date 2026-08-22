@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.157';
+const APP_VERSION = '0.11.189';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -1039,7 +1039,9 @@ function attachEventListeners() {
   elements.modalCancelBtn.addEventListener('click', hideModal);
   elements.modalOverlay.addEventListener('click', event => {
     if (event.target !== elements.modalOverlay) return;
-    if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) {
+    if (!document.getElementById('notificationCenterPanel').classList.contains('hidden')) {
+      hideNotificationCenter();
+    } else if (!document.getElementById('dynamicRuleEditorPanel').classList.contains('hidden')) {
       hideDynamicRuleEditor();
     } else if (!document.getElementById('settingsPanel').classList.contains('hidden')) {
       hideSettingsPanel();
@@ -1225,6 +1227,7 @@ function attachEventListeners() {
     if (event.key !== 'Escape') return;
     if (!document.getElementById('noticeOverlay').classList.contains('hidden')) { hideNotice(); return; }
     if (!document.getElementById('confirmOverlay').classList.contains('hidden')) { hideConfirmDialog({ invokeCancel: true }); return; }
+    if (!document.getElementById('notificationCenterPanel').classList.contains('hidden')) { hideNotificationCenter(); return; }
     if (!elements.searchModal.classList.contains('hidden')) { closeSearchModal(); return; }
     if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) { hideInboxPanel(); return; }
     if (!elements.contextMenu.classList.contains('hidden')) { hideContextMenu(); return; }

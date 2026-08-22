@@ -407,7 +407,8 @@ function shouldKeepModalOverlayVisible() {
     'searchModal',
     'tagManagerPanel',
     'widgetSettingsPanel',
-    'inboxPanel'
+    'inboxPanel',
+    'notificationCenterPanel'
   ];
   if (persistentPanelIds.some(id => {
     const el = document.getElementById(id);
