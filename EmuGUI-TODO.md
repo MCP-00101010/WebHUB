@@ -1,12 +1,14 @@
 # EmuGUI and Morpheus WebHub Integration Plan
 
+> **Status: completed on 2026-08-24.** The migration is finished and this document is retained as the architecture and validation record. Further emulator systems and EmuGUI features belong to the normal product backlog rather than the migration.
+
 ## Goal
 
 Keep Morpheus EmuGUI as the complete game-library manager while making Morpheus WebHub the convenient launcher for a small selection of frequently played games.
 
 EmuGUI remains responsible for collections, metadata, artwork, scraping, emulator configuration, and launch testing. WebHub receives compact game shortcuts from EmuGUI and organises them like bookmarks and applications in columns, folders, tabs, Inboxes, Hub Search, and the command palette.
 
-Replace EmuGUI's manually started localhost server with the existing Morpheus WebHub extension and persistent native-host architecture. EmuGUI's own `web/index.html`, CSS, and JavaScript remain the interface; the Firefox extension is only the authenticated broker, while filesystem access, collection maintenance, and emulator launches remain in Python native services.
+EmuGUI's former manually started localhost-server requirement has been replaced by the existing Morpheus WebHub extension and persistent native-host architecture. EmuGUI's own `web/index.html`, CSS, and JavaScript remain the interface; the Firefox extension is only the authenticated broker, while filesystem access, collection maintenance, and emulator launches remain in Python native services. The localhost HTTP adapter remains available solely for optional standalone development.
 
 ## Product Boundaries
 
@@ -275,7 +277,7 @@ Initial context actions:
 
 The Hub should not provide emulator/profile editors or a collection browser. Emulator changes belong in EmuGUI; **Open in EmuGUI** should navigate to the source game and its launch configuration when possible.
 
-## Migration from the Manual Server
+## Completed Migration from the Manual Server
 
 Implementation status as of 2026-08-24:
 
@@ -293,19 +295,20 @@ Implementation status as of 2026-08-24:
 - [x] Extracted the library model, collection discovery/configuration/loading, import matching, metadata mutations, scraper dispatch, and bounded background-job state into transport-independent `emugui_core` services with focused tests. `server.py` now retains thin compatibility functions and the low-level filesystem/network adapters.
 - [x] Replaced hardcoded server emulator definitions with validated versioned configuration, added generic Add/Edit/Delete emulator controls, safe argument-array templates, collection defaults, and template-driven launches while preserving the ZX adapters.
 - [x] Connected EmuGUI scraper secrets to the WebHub native host's Windows Credential Manager boundary and completed verified write-before-delete migration of the configured ScreenScraper and TheGamesDB credentials.
+- [x] Completed the final feature-parity sweep across the real 12,933-game library and disposable writable collections, covering frontend route parity, collection maintenance, metadata, scraping, artwork, POKs, favourites, emulator/profile configuration, secure credentials, jobs, read-only guards, native restart/reload behaviour, and the closed legacy server port.
 
-1. Freeze the current EmuGUI server as the behaviour reference.
-2. Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
+1. [Completed] Freeze the current EmuGUI server as the behaviour reference.
+2. [Completed] Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
 3. [Completed] Extract the profile lifecycle, Windows/ZX launch core, library and collection services, metadata operations, scraper dispatch, and long-running job state into `emugui_core` while retaining the optional HTTP adapter and low-level platform adapters.
 4. [Completed in WebHub 0.11.216 / extension 1.0.49] Add a narrow EmuGUI namespace, exact configured-page authentication, and chunked bounded API/artwork relays to the extension.
 5. [Completed in WebHub 0.11.216 / extension 1.0.49] Switch the external EmuGUI frontend to extension RPC when opened from `file://`, retaining HTTP fetches only as the standalone development fallback.
-6. Verify feature parity for current management workflows.
+6. [Completed in EmuGUI commit `536b311`] Verify feature parity for current management workflows.
 7. [Completed in WebHub 0.11.209 / extension 1.0.42] Add native game bindings and **Send to WebHub**.
 8. [Completed in WebHub 0.11.209 / extension 1.0.42] Add first-class Hub game items and launch/status actions.
 9. [Completed in WebHub 0.11.214 / extension 1.0.47] Add open, reveal, in-place rebind, selected-game handoff, and actionable binding states.
 10. [Completed: automated and live launch matrices pass] Validate real EightyOne, Spectaculator, managed-profile, running-instance, and missing-file scenarios.
 11. [Completed in WebHub 0.11.216 / extension 1.0.49] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport, including large collections.
-12. Retain an optional development HTTP adapter if it remains useful for standalone frontend work.
+12. [Completed] Retain the HTTP adapter as an optional standalone frontend-development tool, not a normal runtime requirement.
 
 Scraper secrets remain outside the extension and Hub databases. The native host's existing Windows Credential Manager service performs verified write-before-delete migration from legacy EmuGUI JSON and supplies credentials only to the native scraper service.
 
@@ -353,9 +356,9 @@ A WebHub game card remains a title, thumbnail, tags, and opaque `gameKey` regard
 - Verify useful errors for immediate exit, missing helper, missing ROM, and unavailable collection.
 - Confirm emulator processes survive the native-message response.
 
-## MVP Completion Criteria
+## MVP Completion Record
 
-The first integration release is complete when:
+All first-integration criteria were met on 2026-08-24:
 
 - EmuGUI opens from its own external `web/index.html` without manually starting its HTTP server.
 - Editing EmuGUI HTML, CSS, or JavaScript requires only a page reload, not an extension rebuild or reinstall.
