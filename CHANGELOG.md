@@ -5,6 +5,17 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.218] — 2026-08-24
+
+### Fixed
+
+- **Local pages can be bookmarked** — canonical local `file://` page URLs, including EmuGUI's external `web/index.html`, are now accepted by the Add Bookmark dialog, Import Manager, and extension Inbox delivery. Local page bookmarks remain ordinary browser links; remote file shares, empty file roots, and executable/application targets are not enabled by this change.
+- **Stable local URL storage** — local page paths containing spaces are stored in canonical percent-encoded form while existing HTTP/HTTPS bookmark behaviour remains unchanged.
+
+### Validation
+
+- Added bookmark-policy regression coverage for EmuGUI's exact local page URL, paths containing spaces, localhost file URLs, normal web URLs, and rejected remote-file, empty-file, script, data, and null-byte targets. All 345 JavaScript tests and changed-file syntax checks pass. Firefox extension `1.0.50` remains unchanged and passes `web-ext lint` with zero errors and the existing native-host Python notice and installer-shell warning. No in-app browser target was available for an automated click-through.
+
 ## [0.11.217] — 2026-08-24
 
 ### Changed

@@ -1675,8 +1675,22 @@ function insertSetLinkIntoTab(tab, setId, targetSetId = null, position = 'after'
 }
 
 function isValidUrl(value) {
-  if (!value || !value.trim()) return false;
+  if (typeof value !== 'string' || !value.trim() || value.includes('\0')) return false;
   let v = value.trim();
+  if (/^file:\/\//i.test(v)) {
+    try {
+      const url = new URL(v);
+      const hostname = (url.hostname || '').trim().toLowerCase();
+      return url.protocol === 'file:'
+        && (!hostname || hostname === 'localhost')
+        && !url.username
+        && !url.password
+        && !!url.pathname
+        && url.pathname !== '/';
+    } catch {
+      return false;
+    }
+  }
   if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
   try {
     const url = new URL(v);
@@ -1694,6 +1708,9 @@ function isValidUrl(value) {
 
 function normalizeUrl(value) {
   const v = value.trim();
+  if (/^file:\/\//i.test(v)) {
+    try { return new URL(v).href; } catch { return v; }
+  }
   return /^https?:\/\//i.test(v) ? v : 'https://' + v;
 }
 
