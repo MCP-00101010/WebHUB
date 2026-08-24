@@ -37,6 +37,7 @@ const URL_HEALTH_TIMEOUT_MS = 15000;
 const IMAGE_ASSET_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 const NATIVE_REQUEST_TIMEOUT_MS = 15000;
 const EMUGUI_REQUEST_TIMEOUT_MS = 120000;
+const MAX_EMUGUI_TRANSFER_BYTES = 32 * 1024 * 1024;
 const DIRECTORY_APPROVAL_TIMEOUT_MS = 300000;
 const TRANSLATOR_ASSET_TIMEOUT_MS = 45000;
 const TRANSLATOR_ASSET_MAX_CHUNK_BYTES = 1024 * 1024;
@@ -1561,19 +1562,74 @@ async function runGameAction(type, gameKey) {
 async function runEmuGuiPageRpc(message) {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
-  return sendPersistentNativeMessage({
+  const response = await sendPersistentNativeMessage({
     type: 'EMUGUI_API',
     method: String(message.method || '').slice(0, 8),
     path: String(message.path || '').slice(0, 96),
     query: message.query && typeof message.query === 'object' ? message.query : {},
     body: message.body && typeof message.body === 'object' ? message.body : {}
   }, EMUGUI_REQUEST_TIMEOUT_MS);
+  if (response?.ok !== true) return response || { ok: false, error: 'EmuGUI API request failed' };
+  return { ok: true, result: await readEmuGuiNativeTransfer(response.transfer) };
 }
 
 async function loadEmuGuiPageAsset(path) {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
-  return sendPersistentNativeMessage({ type: 'EMUGUI_ASSET', path: String(path || '').slice(0, 2048) }, EMUGUI_REQUEST_TIMEOUT_MS);
+  const response = await sendPersistentNativeMessage(
+    { type: 'EMUGUI_ASSET', path: String(path || '').slice(0, 2048) },
+    EMUGUI_REQUEST_TIMEOUT_MS
+  );
+  if (response?.ok !== true) return response || { ok: false, error: 'EmuGUI artwork request failed' };
+  return { ok: true, asset: await readEmuGuiNativeTransfer(response.transfer) };
+}
+
+async function readEmuGuiNativeTransfer(initialTransfer) {
+  let transfer = initialTransfer;
+  const chunks = [];
+  let receivedSize = 0;
+  let totalSize = 0;
+  let transferId = '';
+  while (true) {
+    if (!transfer || typeof transfer !== 'object') throw new Error('EmuGUI returned an invalid transfer');
+    const currentId = String(transfer.transferId || '');
+    if (!/^[A-Za-z0-9_-]{16,80}$/.test(currentId)) throw new Error('EmuGUI returned an invalid transfer ID');
+    if (transferId && currentId !== transferId) throw new Error('EmuGUI transfer changed during delivery');
+    transferId = currentId;
+    const advertisedSize = Number(transfer.totalSize);
+    if (!Number.isSafeInteger(advertisedSize) || advertisedSize < 0 || advertisedSize > MAX_EMUGUI_TRANSFER_BYTES) {
+      throw new Error('EmuGUI transfer is too large');
+    }
+    if (totalSize && advertisedSize !== totalSize) throw new Error('EmuGUI transfer size changed during delivery');
+    totalSize = advertisedSize;
+    const bytes = decodeBase64Chunk(String(transfer.chunk || ''));
+    if (bytes.length > 512 * 1024 || receivedSize + bytes.length > totalSize) {
+      throw new Error('EmuGUI returned an invalid transfer chunk');
+    }
+    chunks.push(bytes);
+    receivedSize += bytes.length;
+    const nextOffset = Number(transfer.nextOffset);
+    if (!Number.isSafeInteger(nextOffset) || nextOffset !== receivedSize) {
+      throw new Error('EmuGUI transfer offset is invalid');
+    }
+    if (transfer.done === true) break;
+    if (!bytes.length) throw new Error('EmuGUI transfer stalled');
+    const response = await sendPersistentNativeMessage({
+      type: 'EMUGUI_TRANSFER_CHUNK',
+      transferId,
+      offset: receivedSize
+    }, EMUGUI_REQUEST_TIMEOUT_MS);
+    if (response?.ok !== true) throw new Error(response?.error || 'EmuGUI transfer failed');
+    transfer = response.transfer;
+  }
+  if (receivedSize !== totalSize) {
+    throw new Error(`EmuGUI transfer was incomplete (${receivedSize} of ${totalSize} bytes)`);
+  }
+  try {
+    return JSON.parse(decodeChunkedText(chunks, totalSize));
+  } catch {
+    throw new Error('EmuGUI returned invalid JSON');
+  }
 }
 
 async function openGameInEmuGui(gameKey, rebind = false) {

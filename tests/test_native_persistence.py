@@ -682,6 +682,23 @@ class NativePersistenceTests(unittest.TestCase):
         self.assertEqual(calls[0], ('api', 'GET', '/api/games', {'collection': 'spectrum'}, {}))
         self.assertEqual(calls[1], ('asset', 'screenshots/jetpac.png', HOST.MAX_EMUGUI_ASSET_BYTES))
 
+    def test_large_emugui_results_are_delivered_in_bounded_native_chunks(self):
+        payload = {'ok': True, 'games': [{'title': 'Ghostbusters'}, {'title': 'Jetpac'}]}
+        chunks = []
+        HOST.EMUGUI_TRANSFERS.clear()
+        with patch.object(HOST, 'MAX_EMUGUI_TRANSFER_CHUNK_BYTES', 12):
+            transfer = HOST.start_emugui_transfer(payload)
+            transfer_id = transfer['transferId']
+            while True:
+                chunks.append(base64.b64decode(transfer['chunk']))
+                if transfer['done']:
+                    break
+                transfer = HOST.read_emugui_transfer_chunk(transfer_id, transfer['nextOffset'])
+        rebuilt = json.loads(b''.join(chunks).decode('utf-8'))
+        self.assertEqual(rebuilt, payload)
+        self.assertGreater(len(chunks), 1)
+        self.assertNotIn(transfer_id, HOST.EMUGUI_TRANSFERS)
+
     def test_game_system_identity_covers_planned_emulator_families(self):
         cases = (
             ({'system': 'ZX Spectrum 128K'}, {}, ('zx-spectrum', 'ZX Spectrum')),

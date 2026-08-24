@@ -286,20 +286,20 @@ Implementation status as of 2026-08-24:
 - [x] Added **Send to WebHub** to EmuGUI's game details and context menu, delivering the selected game through the extension to the active Hub Inbox with an opaque binding, name, tags, and optional bounded thumbnail.
 - [x] Added first-class Hub `game` items across state migration, Inbox counts, cards, folders, drag-and-drop, context actions, search, duplication, status, and launch handling.
 - [x] Added the game-shortcut lifecycle in WebHub 0.11.214 / extension 1.0.47: **Open in EmuGUI**, **Reveal game file**, in-place **Rebind in EmuGUI**, and precise library/game/emulator/profile failure states. Rebinding keeps EmuGUI authoritative and updates the existing Hub card instead of creating a duplicate.
-- [x] Added the server-free external-page transport in WebHub 0.11.215 / extension 1.0.48: the configured EmuGUI `web/index.html` uses authenticated generic API and bounded artwork relays through the persistent native host, while the original HTTP server remains an optional fallback.
+- [x] Added the server-free external-page transport in WebHub 0.11.215 and completed large-library chunking in 0.11.216 / extension 1.0.49: the configured EmuGUI `web/index.html` uses authenticated generic API and bounded artwork relays through the persistent native host, while the original HTTP server remains an optional fallback.
 - [ ] Continue extracting the large `server.py` into focused core modules without moving the external frontend into the extension.
 
 1. Freeze the current EmuGUI server as the behaviour reference.
 2. Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
 3. Extract `emugui_core` while retaining the HTTP adapter.
-4. [Completed in WebHub 0.11.215 / extension 1.0.48] Add a narrow EmuGUI namespace, exact configured-page authentication, and generic bounded API/artwork relays to the extension.
-5. [Completed in WebHub 0.11.215 / extension 1.0.48] Switch the external EmuGUI frontend to extension RPC when opened from `file://`, retaining HTTP fetches only as the standalone development fallback.
+4. [Completed in WebHub 0.11.216 / extension 1.0.49] Add a narrow EmuGUI namespace, exact configured-page authentication, and chunked bounded API/artwork relays to the extension.
+5. [Completed in WebHub 0.11.216 / extension 1.0.49] Switch the external EmuGUI frontend to extension RPC when opened from `file://`, retaining HTTP fetches only as the standalone development fallback.
 6. Verify feature parity for current management workflows.
 7. [Completed in WebHub 0.11.209 / extension 1.0.42] Add native game bindings and **Send to WebHub**.
 8. [Completed in WebHub 0.11.209 / extension 1.0.42] Add first-class Hub game items and launch/status actions.
 9. [Completed in WebHub 0.11.214 / extension 1.0.47] Add open, reveal, in-place rebind, selected-game handoff, and actionable binding states.
 10. Validate real EightyOne, Spectaculator, managed-profile, running-instance, and missing-file scenarios.
-11. [Completed in WebHub 0.11.215 / extension 1.0.48] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport.
+11. [Completed in WebHub 0.11.216 / extension 1.0.49] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport, including large collections.
 12. Retain an optional development HTTP adapter if it remains useful for standalone frontend work.
 
 Do not copy scraper secrets from EmuGUI's current JSON configuration into the extension or Hub database. Move them explicitly to Windows Credential Manager through the existing native secret service, with verified write-before-delete migration.

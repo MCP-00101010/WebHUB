@@ -52,8 +52,12 @@ MAX_GAME_BINDINGS = 512
 MAX_EMUGUI_RPC_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_EMUGUI_RPC_RESPONSE_BYTES = 32 * 1024 * 1024
 MAX_EMUGUI_ASSET_BYTES = 4 * 1024 * 1024
+MAX_EMUGUI_TRANSFER_CHUNK_BYTES = 384 * 1024
+MAX_EMUGUI_TRANSFERS = 4
+EMUGUI_TRANSFER_TTL_SECONDS = 180
 EMUGUI_MODULE = None
 EMUGUI_MODULE_PATH = ''
+EMUGUI_TRANSFERS = {}
 
 
 # ---------------------------------------------------------------------------
@@ -1170,6 +1174,53 @@ def emugui_asset(relative_path):
     if not isinstance(result, dict):
         raise RuntimeError('The EmuGUI asset service returned invalid data')
     return result
+
+
+def _cleanup_emugui_transfers(now=None):
+    now = time.monotonic() if now is None else now
+    expired = [transfer_id for transfer_id, record in EMUGUI_TRANSFERS.items()
+               if now - record['createdAt'] > EMUGUI_TRANSFER_TTL_SECONDS]
+    for transfer_id in expired:
+        EMUGUI_TRANSFERS.pop(transfer_id, None)
+
+
+def read_emugui_transfer_chunk(transfer_id, offset=0):
+    transfer_id = str(transfer_id or '')
+    if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', transfer_id):
+        raise ValueError('The EmuGUI transfer ID is invalid')
+    _cleanup_emugui_transfers()
+    record = EMUGUI_TRANSFERS.get(transfer_id)
+    if not record:
+        raise ValueError('The EmuGUI transfer expired or is unknown')
+    data = record['data']
+    offset = int(offset or 0)
+    if offset < 0 or offset > len(data):
+        raise ValueError('The EmuGUI transfer offset is invalid')
+    end = min(len(data), offset + MAX_EMUGUI_TRANSFER_CHUNK_BYTES)
+    done = end >= len(data)
+    result = {
+        'transferId': transfer_id,
+        'chunk': base64.b64encode(data[offset:end]).decode('ascii'),
+        'nextOffset': end,
+        'totalSize': len(data),
+        'done': done,
+    }
+    if done:
+        EMUGUI_TRANSFERS.pop(transfer_id, None)
+    return result
+
+
+def start_emugui_transfer(payload):
+    data = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    if len(data) > MAX_EMUGUI_RPC_RESPONSE_BYTES:
+        raise ValueError('The EmuGUI response is too large')
+    _cleanup_emugui_transfers()
+    while len(EMUGUI_TRANSFERS) >= MAX_EMUGUI_TRANSFERS:
+        oldest = min(EMUGUI_TRANSFERS, key=lambda key: EMUGUI_TRANSFERS[key]['createdAt'])
+        EMUGUI_TRANSFERS.pop(oldest, None)
+    transfer_id = secrets.token_urlsafe(18)
+    EMUGUI_TRANSFERS[transfer_id] = {'data': data, 'createdAt': time.monotonic()}
+    return read_emugui_transfer_chunk(transfer_id, 0)
 
 
 def emugui_service_status():
@@ -2605,15 +2656,21 @@ def handle(msg):
 
     elif msg_type == 'EMUGUI_API':
         try:
-            reply_ok(result=emugui_api_request(
+            reply_ok(transfer=start_emugui_transfer(emugui_api_request(
                 msg.get('method', ''), msg.get('path', ''), msg.get('query', {}), msg.get('body', {})
-            ))
+            )))
         except Exception as e:
             reply_err(str(e))
 
     elif msg_type == 'EMUGUI_ASSET':
         try:
-            reply_ok(asset=emugui_asset(msg.get('path', '')))
+            reply_ok(transfer=start_emugui_transfer(emugui_asset(msg.get('path', ''))))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_TRANSFER_CHUNK':
+        try:
+            reply_ok(transfer=read_emugui_transfer_chunk(msg.get('transferId', ''), msg.get('offset', 0)))
         except Exception as e:
             reply_err(str(e))
 

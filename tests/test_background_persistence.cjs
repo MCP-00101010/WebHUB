@@ -26,6 +26,29 @@ async function loadBackground(options = {}) {
   if (options.localStorageState) storageValues.set('morpheusState', options.localStorageState);
   const createdAlarms = new Map();
   const createdNotifications = [];
+  const emuguiTransfers = new Map();
+  let emuguiTransferSequence = 0;
+  const emuguiTransferChunk = (transferId, offset = 0) => {
+    const data = emuguiTransfers.get(transferId);
+    if (!data) return null;
+    const chunkSize = options.emuguiChunkBytes || 384 * 1024;
+    const end = Math.min(data.length, offset + chunkSize);
+    const done = end >= data.length;
+    const transfer = {
+      transferId,
+      chunk: data.subarray(offset, end).toString('base64'),
+      nextOffset: end,
+      totalSize: data.length,
+      done
+    };
+    if (done) emuguiTransfers.delete(transferId);
+    return transfer;
+  };
+  const startEmuguiTransfer = payload => {
+    const transferId = `emugui_test_transfer_${++emuguiTransferSequence}`;
+    emuguiTransfers.set(transferId, Buffer.from(JSON.stringify(payload), 'utf8'));
+    return emuguiTransferChunk(transferId, 0);
+  };
   const browser = {
     runtime: {
       id: 'test-extension',
@@ -56,8 +79,18 @@ async function loadBackground(options = {}) {
         if (message.type === 'EMUGUI_STATUS') return options.emuguiStatus || { ok: true, emugui: { available: true, serviceVersion: 1 } };
         if (message.type === 'EMUGUI_CREATE_HUB_BINDING') return options.emuguiBinding || { ok: true, game: { gameKey: 'game_abcdefghijklmnop', state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } };
         if (message.type === 'EMUGUI_AUTHORIZE_PAGE') return { ok: true, authorized: options.emuguiAuthorized !== false };
-        if (message.type === 'EMUGUI_API') return options.emuguiApi || { ok: true, result: { ok: true, games: [] } };
-        if (message.type === 'EMUGUI_ASSET') return options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } };
+        if (message.type === 'EMUGUI_API') {
+          const response = options.emuguiApi || { ok: true, result: { ok: true, games: [] } };
+          return response.ok === false ? response : { ok: true, transfer: startEmuguiTransfer(response.result) };
+        }
+        if (message.type === 'EMUGUI_ASSET') {
+          const response = options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } };
+          return response.ok === false ? response : { ok: true, transfer: startEmuguiTransfer(response.asset) };
+        }
+        if (message.type === 'EMUGUI_TRANSFER_CHUNK') {
+          const transfer = emuguiTransferChunk(message.transferId, message.offset);
+          return transfer ? { ok: true, transfer } : { ok: false, error: 'Unknown transfer' };
+        }
         if (message.type === 'GAME_STATUS') return { ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } };
         return { ok: true };
       },
@@ -170,9 +203,14 @@ async function loadBackground(options = {}) {
             } else if (message.type === 'EMUGUI_AUTHORIZE_PAGE') {
               messageListeners.forEach(listener => listener({ ok: true, authorized: options.emuguiAuthorized !== false }));
             } else if (message.type === 'EMUGUI_API') {
-              messageListeners.forEach(listener => listener(options.emuguiApi || { ok: true, result: { ok: true, games: [] } }));
+              const response = options.emuguiApi || { ok: true, result: { ok: true, games: [] } };
+              messageListeners.forEach(listener => listener(response.ok === false ? response : { ok: true, transfer: startEmuguiTransfer(response.result) }));
             } else if (message.type === 'EMUGUI_ASSET') {
-              messageListeners.forEach(listener => listener(options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } }));
+              const response = options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } };
+              messageListeners.forEach(listener => listener(response.ok === false ? response : { ok: true, transfer: startEmuguiTransfer(response.asset) }));
+            } else if (message.type === 'EMUGUI_TRANSFER_CHUNK') {
+              const transfer = emuguiTransferChunk(message.transferId, message.offset);
+              messageListeners.forEach(listener => listener(transfer ? { ok: true, transfer } : { ok: false, error: 'Unknown transfer' }));
             } else if (message.type === 'GAME_STATUS') {
               messageListeners.forEach(listener => listener({ ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } }));
             } else if (message.type === 'OPEN_GAME_IN_EMUGUI') {
@@ -457,7 +495,11 @@ test('localhost EmuGUI fallback cannot invoke the privileged management RPC', as
 });
 
 test('configured EmuGUI file page registers once and relays API and asset requests', async () => {
-  const harness = await loadBackground({ usePersistentNative: true });
+  const harness = await loadBackground({
+    usePersistentNative: true,
+    emuguiChunkBytes: 8,
+    emuguiApi: { ok: true, result: { ok: true, games: [{ title: 'Ghostbusters' }, { title: 'Jetpac' }] } }
+  });
   const pageUrl = 'file:///F:/Projects/Coding/Morpheus%20EmuGUI/web/index.html';
   const sender = { tab: { id: 21, url: pageUrl } };
   const registration = await new Promise(resolve => harness.listeners.message(
@@ -477,10 +519,12 @@ test('configured EmuGUI file page registers once and relays API and asset reques
     emuguiSessionToken: registration.emuguiSessionToken
   }, sender, resolve));
 
-  assert.equal(rpc.result.games.length, 0);
+  assert.equal(rpc.result.games.length, 2);
+  assert.equal(rpc.result.games[0].title, 'Ghostbusters');
   assert.match(asset.asset.dataUrl, /^data:image\/png/);
   assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_API'), true);
   assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_ASSET'), true);
+  assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_TRANSFER_CHUNK'), true);
 });
 
 test('unconfigured EmuGUI file page is denied before RPC reaches the native service', async () => {

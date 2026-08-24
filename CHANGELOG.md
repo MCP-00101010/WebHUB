@@ -5,6 +5,17 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.216] — 2026-08-24
+
+### Fixed
+
+- **Large EmuGUI libraries load without native-message failure** — extension-backed EmuGUI API and artwork results now travel over short-lived, bounded native transfers instead of one oversized response. The background validates transfer identity, offsets, advertised size, chunk size, completeness, and JSON before returning the reconstructed result to the configured EmuGUI page.
+- **Real Desasteron startup restored** — the initial 12,933-game response previously produced a roughly 17.3 MB native message and failed in EmuGUI's relay response handler. Compact serialization now delivers the current 15.9 MB payload in 41 responses whose largest native envelope is about 524 KB.
+
+### Validation
+
+- Added multi-chunk native and extension reconstruction tests, including cleanup after completion and API/artwork routing over the persistent connection. All 342 JavaScript tests, all 41 native-host tests (plus 11 parameterised subtests), and all 14 EmuGUI tests pass. A live read-only transfer reconstructed all 12,933 configured games from 41 bounded chunks. JavaScript syntax checks pass, and Firefox extension `1.0.49` passes `web-ext lint` with zero errors and the existing native-host Python notice and installer-shell warning. No in-app browser target was available for an automated click-through.
+
 ## [0.11.215] — 2026-08-24
 
 ### Added
