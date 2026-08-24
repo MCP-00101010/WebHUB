@@ -288,18 +288,19 @@ Implementation status as of 2026-08-24:
 - [x] Added the game-shortcut lifecycle in WebHub 0.11.214 / extension 1.0.47: **Open in EmuGUI**, **Reveal game file**, in-place **Rebind in EmuGUI**, and precise library/game/emulator/profile failure states. Rebinding keeps EmuGUI authoritative and updates the existing Hub card instead of creating a duplicate.
 - [x] Added the server-free external-page transport in WebHub 0.11.215 and completed large-library chunking in 0.11.216 / extension 1.0.49: the configured EmuGUI `web/index.html` uses authenticated generic API and bounded artwork relays through the persistent native host, while the original HTTP server remains an optional fallback.
 - [x] Extracted emulator-profile import, refresh, editing, deletion, and automatic/explicit launch-profile selection into `emugui_core/profiles.py` in WebHub 0.11.217 / extension 1.0.50. File-mode path pickers now retain an interactive five-minute timeout.
-- [ ] Continue extracting the Windows launch orchestration and emulator adapters from the large `server.py` without moving the external frontend into the extension.
+- [x] Extracted Windows launch orchestration, managed EightyOne profile preparation, process startup, running-instance decisions, window focus handling, and the EightyOne/Spectaculator/SpecStub adapter capabilities into `emugui_core/launching.py`. `server.py` retains thin compatibility functions for both transports.
+- [ ] Complete the real-emulator launch matrix against the extracted core before adding another system adapter.
 
 1. Freeze the current EmuGUI server as the behaviour reference.
 2. Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
-3. [In progress: profile lifecycle completed in WebHub 0.11.217 / extension 1.0.50] Extract `emugui_core` while retaining the HTTP adapter; move Windows launch orchestration and emulator adapters next.
+3. [In progress: profile lifecycle and Windows/ZX launch core completed] Continue extracting `emugui_core` while retaining the HTTP adapter; collection, metadata, and long-running job services remain in `server.py`.
 4. [Completed in WebHub 0.11.216 / extension 1.0.49] Add a narrow EmuGUI namespace, exact configured-page authentication, and chunked bounded API/artwork relays to the extension.
 5. [Completed in WebHub 0.11.216 / extension 1.0.49] Switch the external EmuGUI frontend to extension RPC when opened from `file://`, retaining HTTP fetches only as the standalone development fallback.
 6. Verify feature parity for current management workflows.
 7. [Completed in WebHub 0.11.209 / extension 1.0.42] Add native game bindings and **Send to WebHub**.
 8. [Completed in WebHub 0.11.209 / extension 1.0.42] Add first-class Hub game items and launch/status actions.
 9. [Completed in WebHub 0.11.214 / extension 1.0.47] Add open, reveal, in-place rebind, selected-game handoff, and actionable binding states.
-10. Validate real EightyOne, Spectaculator, managed-profile, running-instance, and missing-file scenarios.
+10. [In progress: automated launch-service coverage completed] Validate real EightyOne, Spectaculator, managed-profile, running-instance, and missing-file scenarios.
 11. [Completed in WebHub 0.11.216 / extension 1.0.49] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport, including large collections.
 12. Retain an optional development HTTP adapter if it remains useful for standalone frontend work.
 
