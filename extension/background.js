@@ -1562,13 +1562,15 @@ async function runGameAction(type, gameKey) {
 async function runEmuGuiPageRpc(message) {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  const path = String(message.path || '').slice(0, 96);
+  const timeoutMs = path === '/api/pick-path' ? DIRECTORY_APPROVAL_TIMEOUT_MS : EMUGUI_REQUEST_TIMEOUT_MS;
   const response = await sendPersistentNativeMessage({
     type: 'EMUGUI_API',
     method: String(message.method || '').slice(0, 8),
-    path: String(message.path || '').slice(0, 96),
+    path,
     query: message.query && typeof message.query === 'object' ? message.query : {},
     body: message.body && typeof message.body === 'object' ? message.body : {}
-  }, EMUGUI_REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
   if (response?.ok !== true) return response || { ok: false, error: 'EmuGUI API request failed' };
   return { ok: true, result: await readEmuGuiNativeTransfer(response.transfer) };
 }

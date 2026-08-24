@@ -540,6 +540,22 @@ test('unconfigured EmuGUI file page is denied before RPC reaches the native serv
   assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_API'), false);
 });
 
+test('EmuGUI native path picker keeps the relay alive for an interactive choice', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+  const pageUrl = 'file:///F:/Projects/Coding/Morpheus%20EmuGUI/web/index.html';
+  const sender = { tab: { id: 23, url: pageUrl } };
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_REGISTER', pageUrl }, sender, resolve
+  ));
+  const result = await new Promise(resolve => harness.listeners.message({
+    type: 'MW_EMUGUI_RPC', method: 'POST', path: '/api/pick-path', query: {}, body: { kind: 'file' }, pageUrl,
+    emuguiSessionToken: registration.emuguiSessionToken
+  }, sender, resolve));
+
+  assert.equal(result.ok, true);
+  assert.equal(harness.scheduledTimeouts.includes(300000), true);
+});
+
 test('status discovers an unregistered file hub and injects the root extension relay', async () => {
   const harness = await loadBackground({
     tabs: [{ id: 42, url: 'file:///F:/Projects/Coding/Morpheus%20WebHub/index.html', active: true }],

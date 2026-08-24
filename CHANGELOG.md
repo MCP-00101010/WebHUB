@@ -5,6 +5,17 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.217] — 2026-08-24
+
+### Changed
+
+- **EmuGUI profile core extraction** — emulator-profile import, managed-copy refresh, editing, deletion, status calculation, rule normalisation, and explicit/automatic launch-profile selection now live in EmuGUI's transport-independent `emugui_core/profiles.py`. The existing HTTP and external file interfaces retain the same `server.py` compatibility functions while sharing one implementation.
+- **Server-free launch/profile parity** — the generic file transport now has regression coverage for emulator-profile mutations, explicit launch choices, running-emulator choice payloads, and safe picker cancellation. EmuGUI's native executable/profile picker receives a five-minute interactive timeout at both the page and extension layers instead of expiring after roughly two minutes.
+
+### Validation
+
+- All 343 JavaScript tests, all 41 native-host tests (plus 11 parameterised subtests), and all 17 EmuGUI tests pass. A live read-only check loaded the extracted `EmulatorProfileService`, found both configured managed profiles, and resolved Bubble Bobble's explicit `Spectrum 48K` profile without launching an emulator or changing configuration. JavaScript and Python syntax checks pass, and Firefox extension `1.0.50` passes `web-ext lint` with zero errors and the existing native-host Python notice and installer-shell warning. No in-app browser target was available for an automated click-through.
+
 ## [0.11.216] — 2026-08-24
 
 ### Fixed
