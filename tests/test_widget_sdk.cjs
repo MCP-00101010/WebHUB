@@ -427,6 +427,27 @@ test('project and SDK rules require meaningful widget UI state to survive reload
   }
 });
 
+test('widgets can move through tab Inboxes with shared drag, context-menu, and runtime boundaries', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const stateSource = fs.readFileSync(path.join(root, 'source', 'state.js'), 'utf8');
+  const renderSource = fs.readFileSync(path.join(root, 'source', 'render.js'), 'utf8');
+  const dndSource = fs.readFileSync(path.join(root, 'source', 'dnd.js'), 'utf8');
+  const contextSource = fs.readFileSync(path.join(root, 'source', 'context.js'), 'utf8');
+  const widgetsSource = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'source', 'styles.css'), 'utf8');
+
+  assert.match(stateSource, /function moveWidgetToTabInbox[\s\S]*same-destination[\s\S]*duplicate-destination/);
+  assert.match(stateSource, /beforeMove[\s\S]*source\.list\.splice[\s\S]*targetInbox\.items\.push\(widget\)/);
+  assert.match(dndSource, /handleBoardTabInboxDrop[\s\S]*_moveDraggedWidgetToInbox\(board, tab\)/);
+  assert.match(dndSource, /clearWidgetContextRuntime\(result\.widget\.id, result\.source\.area === 'nav' \? 'navpane' : 'column'\)/);
+  assert.match(contextSource, /label: 'Send to', submenu: sendTo/);
+  assert.match(contextSource, /action: `sendWidgetToInbox:\$\{board\.id\}::\$\{tab\.id\}`/);
+  assert.match(widgetsSource, /itemType: 'widget'[\s\S]*sourceColumnId: columnId/);
+  assert.match(renderSource, /Widgets in inbox/);
+  assert.match(html, /id="inboxPanelWidgetCount"/);
+  assert.match(styles, /\.count-chip--widget/);
+});
+
 test('substantial built-ins live in ordered standalone script and style modules', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const legacy = fs.readFileSync(path.join(root, 'source', 'widgets.js'), 'utf8');

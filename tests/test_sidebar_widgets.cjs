@@ -96,6 +96,6 @@ test('bottom-aligned sidebar widgets form a stable reorderable group', () => {
   assert.match(dnd, /_moveNavPreview\(elements\.navList, bottomGroup \|\| null\)/);
   assert.match(widgets, /Align at sidebar bottom/);
   assert.match(widgets, /placementInput\.dataset\.cfg = 'sidebarBottom'/);
-  assert.match(contextSource, /widgetContext: contextTarget\.area === 'nav-item' \? 'navpane' : 'column'/);
+  assert.match(contextSource, /widgetContext: contextTarget\.widgetContext \|\| \(contextTarget\.area === 'nav-item' \? 'navpane' : 'column'\)/);
   assert.match(contextSource, /widgetContext: 'navpane'/);
 });

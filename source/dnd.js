@@ -41,20 +41,36 @@ function _clearSelectionAfterMultiDrag() {
   if (_hasMultiItemDrag() && typeof clearSelection === 'function') clearSelection();
 }
 
-// Returns true when the active drag payload contains a bookmark or folder
-// that can be sent to another board's inbox.
+// Returns true when the active drag payload contains a bookmark, folder, or
+// board-compatible widget that can be sent to a tab Inbox.
 function _canSendToInbox() {
   if (!dragPayload) return false;
-  if (dragPayload.area === 'board') return ['bookmark', 'folder'].includes(dragPayload.itemType);
-  if (dragPayload.area === 'import-manager') return ['bookmark', 'folder'].includes(dragPayload.itemType);
+  if (dragPayload.area === 'board') {
+    if (dragPayload.itemType === 'widget') return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
+    return ['bookmark', 'application', 'folder'].includes(dragPayload.itemType);
+  }
+  if (dragPayload.area === 'import-manager') return ['bookmark', 'application', 'folder'].includes(dragPayload.itemType);
   if (dragPayload.area === 'speed-dial') return true;
   if (dragPayload.area === 'essential') return !!state.essentials[dragPayload.slot];
   if (dragPayload.area === 'nav') {
+    if (dragPayload.itemType === 'widget') return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
     const path = findNavItemPath(dragPayload.itemId);
     const item = path?.list.find(i => i.id === dragPayload.itemId);
-    return !!item && ['bookmark', 'folder'].includes(item.type);
+    return !!item && ['bookmark', 'application', 'folder'].includes(item.type);
   }
   return false;
+}
+
+function _moveDraggedWidgetToInbox(targetBoard, targetTab) {
+  const widgetId = dragPayload?.itemType === 'widget' ? dragPayload.itemId : null;
+  if (!widgetId || !targetBoard || !targetTab) return false;
+  const result = moveWidgetToTabInbox(widgetId, targetBoard.id, targetTab.id, { beforeMove: pushUndoSnapshot });
+  dragPayload = null;
+  if (!result.ok) return false;
+  clearWidgetContextRuntime(result.widget.id, result.source.area === 'nav' ? 'navpane' : 'column');
+  renderAll();
+  saveState();
+  return true;
 }
 
 function _findDraggedImportManagerItem() {
@@ -83,10 +99,59 @@ function isExternalDrag(event) {
   return !dragPayload;
 }
 
+const APPLICATION_DROP_PATTERN = /\.(exe|com|lnk|url|app|desktop)$/i;
+const APPLICATION_DROP_PROTOCOLS = new Set([
+  'steam:', 'goggalaxy:', 'com.epicgames.launcher:', 'uplay:', 'origin:',
+  'origin2:', 'ea:', 'battlenet:', 'xbox:', 'ms-xbl:', 'heroic:'
+]);
+
+function _externalFileDrop(name = '', displayTitle = name, file = null) {
+  const fileName = String(name || '').trim();
+  const title = String(displayTitle || fileName).trim() || 'Dropped file';
+  return APPLICATION_DROP_PATTERN.test(fileName)
+    ? { application: true, title: fileName || title, file }
+    : { unsupportedFile: true, title };
+}
+
+function _fileNameFromDropUri(value = '') {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (url.protocol !== 'file:') return '';
+    const pathName = decodeURIComponent(url.pathname || '').replace(/\\/g, '/');
+    return pathName.split('/').filter(Boolean).pop() || 'Dropped file';
+  } catch {
+    return '';
+  }
+}
+
+function _externalApplicationProtocolDrop(value = '', title = '') {
+  try {
+    const targetUri = String(value || '').trim();
+    const url = new URL(targetUri);
+    if (!APPLICATION_DROP_PROTOCOLS.has(url.protocol.toLowerCase())) return null;
+    return { application: true, title: String(title || url.protocol.slice(0, -1) || 'Application').trim(), targetUri };
+  } catch {
+    return null;
+  }
+}
+
 function getExternalDrop(event) {
+  const transfer = event.dataTransfer;
+  const droppedFile = transfer?.files?.[0];
+  if (droppedFile) return _externalFileDrop(droppedFile.name, droppedFile.name, droppedFile);
+
+  // Firefox may expose desktop files through its legacy native-file flavour
+  // while leaving DataTransfer.files empty.
+  try {
+    const mozFile = transfer?.mozGetDataAt?.('application/x-moz-file', 0);
+    const mozFileName = mozFile?.name || mozFile?.leafName || '';
+    if (mozFileName) return _externalFileDrop(mozFileName, mozFileName, mozFile);
+  } catch {
+    // Continue through the standard URI and text flavours.
+  }
   // Firefox rich bookmark drag — includes the cached favicon as iconuri
-  const mozPlace = event.dataTransfer.getData('application/x-moz-place') ||
-                   event.dataTransfer.getData('application/x-moz-place+json');
+  const mozPlace = transfer?.getData('application/x-moz-place') ||
+                   transfer?.getData('application/x-moz-place+json');
   if (mozPlace) {
     try {
       const data = JSON.parse(mozPlace);
@@ -96,17 +161,31 @@ function getExternalDrop(event) {
       }
     } catch {}
   }
-  const mozUrl = event.dataTransfer.getData('text/x-moz-url');
+  const mozUrl = transfer?.getData('text/x-moz-url');
   if (mozUrl) {
     const [url, title] = mozUrl.split('\n');
+    const fileName = _fileNameFromDropUri(url);
+    if (fileName) return _externalFileDrop(fileName, title || fileName);
+    const applicationProtocol = _externalApplicationProtocolDrop(url, title);
+    if (applicationProtocol) return applicationProtocol;
     return { url: (url || '').trim(), title: (title || '').trim(), faviconCache: '' };
   }
-  const uriList = event.dataTransfer.getData('text/uri-list');
+  const uriList = transfer?.getData('text/uri-list');
   if (uriList) {
     const url = uriList.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('#'));
-    if (url) return { url, title: '', faviconCache: '' };
+    if (url) {
+      const fileName = _fileNameFromDropUri(url);
+      if (fileName) return _externalFileDrop(fileName);
+      const applicationProtocol = _externalApplicationProtocolDrop(url);
+      if (applicationProtocol) return applicationProtocol;
+      return { url, title: '', faviconCache: '' };
+    }
   }
-  const text = event.dataTransfer.getData('text/plain');
+  const text = transfer?.getData('text/plain');
+  const textFileName = _fileNameFromDropUri(text);
+  if (textFileName) return _externalFileDrop(textFileName);
+  const textApplicationProtocol = _externalApplicationProtocolDrop(text);
+  if (textApplicationProtocol) return textApplicationProtocol;
   if (text?.trim().match(/^https?:\/\//)) return { url: text.trim(), title: '', faviconCache: '' };
   return null;
 }
@@ -488,7 +567,7 @@ function _takeDraggedItemsForInbox(board) {
 }
 
 function handleBoardTabInboxDragOver(event, board, tab) {
-  if (!board || !tab || board.locked || !_canSendToInbox()) return;
+  if (!board || !tab || board.locked || tab.locked || !_canSendToInbox()) return;
   const targetInbox = getBoardInbox(board, tab);
   if (!targetInbox) return;
   if (dragPayload?.area === 'board' && dragPayload.sourceColumnId === targetInbox.id) return;
@@ -499,13 +578,18 @@ function handleBoardTabInboxDragOver(event, board, tab) {
 }
 
 function handleBoardTabInboxDrop(event, board, tab) {
-  if (!board || !tab || board.locked || !_canSendToInbox()) return;
+  if (!board || !tab || board.locked || tab.locked || !_canSendToInbox()) return;
   const targetInbox = getBoardInbox(board, tab);
   if (!targetInbox) return;
   event.preventDefault();
   event.stopPropagation();
   event.currentTarget.classList.remove('drop-target');
   if (dragPayload?.area === 'board' && dragPayload.sourceColumnId === targetInbox.id) return;
+
+  if (dragPayload?.itemType === 'widget') {
+    _moveDraggedWidgetToInbox(board, tab);
+    return;
+  }
 
   pushUndoSnapshot();
   const draggedItems = _takeDraggedItemsForInbox(getActiveBoard());
@@ -892,7 +976,9 @@ function handleBoardColumnDrop(event, columnId) {
 
   if (isExternalDrag(event)) {
     const ext = getExternalDrop(event);
-    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'board-empty', columnId }, ext.faviconCache);
+    if (ext?.application) void addDroppedApplicationShortcut(ext, { area: 'board-empty', columnId });
+    else if (ext?.unsupportedFile) showNotice(`${ext.title} is not a supported application shortcut.`);
+    else if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'board-empty', columnId }, ext.faviconCache);
     return;
   }
 
@@ -1136,7 +1222,9 @@ function handleSpeedDialSlotDrop(event, target, slot) {
   event.currentTarget.querySelectorAll('.drag-preview').forEach(el => el.remove());
   if (isExternalDrag(event)) {
     const ext = getExternalDrop(event);
-    if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial', slot }, ext.faviconCache);
+    if (ext?.application) showNotice('Add applications to a board column or folder.');
+    else if (ext?.unsupportedFile) showNotice(`${ext.title} is not a supported application shortcut.`);
+    else if (ext) openExternalBookmarkModal(ext.url, ext.title, { area: 'speed-dial', slot }, ext.faviconCache);
     return;
   }
   if (!dragPayload || !_speedDialAreaAllowed(dragPayload.area)) return;
@@ -1196,8 +1284,9 @@ function handleNavItemDragOver(event, item, parent) {
         event.dataTransfer.dropEffect = _currentDropEffect();
         event.currentTarget.classList.add('drop-target');
       }
+      return;
     }
-    return;
+    if (dragPayload?.itemType !== 'widget') return;
   }
   const isBoardWidget = dragPayload?.area === 'board' && _canDropAsNavWidget();
   const isPlacementDrag = dragPayload?.area === 'nav' || dragPayload?.area === 'folder-tab' || isBoardWidget;
@@ -1238,7 +1327,10 @@ function handleNavItemDragOver(event, item, parent) {
 }
 
 function handleNavDrop(event, targetItem, parent) {
-  if (dragPayload?.area === 'board' && _canDropAsNavWidget()) {
+  const isWidgetInboxTarget = targetItem.type === 'board'
+    && _canSendToInbox()
+    && !(dragPayload?.area === 'board' && targetItem.boardId === state.activeBoardId);
+  if (dragPayload?.area === 'board' && _canDropAsNavWidget() && !isWidgetInboxTarget) {
     const position = _dropPos || 'before';
     removeDragPlaceholders();
     pushUndoSnapshot();
@@ -1256,11 +1348,16 @@ function handleNavDrop(event, targetItem, parent) {
   if (targetItem.type === 'board' && _canSendToInbox()) {
     if (dragPayload?.area === 'board' && targetItem.boardId === state.activeBoardId) { dragPayload = null; return; }
     removeDragPlaceholders();
-    pushUndoSnapshot();
     const targetBoard = state.boards.find(b => b.id === targetItem.boardId);
     if (!targetBoard || targetBoard.locked) { dragPayload = null; return; }
-    const inbox = getBoardInbox(targetBoard);
+    const targetTab = getBoardTab(targetBoard);
+    const inbox = targetTab ? getBoardInbox(targetBoard, targetTab) : null;
     if (!inbox) { dragPayload = null; return; }
+    if (dragPayload?.itemType === 'widget') {
+      _moveDraggedWidgetToInbox(targetBoard, targetTab);
+      return;
+    }
+    pushUndoSnapshot();
     const board = getActiveBoard();
     const draggedItems = _takeDraggedItemsForInbox(board);
     if (!draggedItems.length) { dragPayload = null; return; }

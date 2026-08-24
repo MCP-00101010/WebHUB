@@ -58,9 +58,12 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
   if (effectiveLocked) itemEl.classList.add('is-locked');
   if (parentFolder) itemEl.classList.add('board-folder-child');
 
-  if (item.type === 'folder' || item.type === 'bookmark') {
+  if (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application') {
     if (item.type === 'folder') itemEl.classList.add('folder-card');
-    else itemEl.classList.add('bookmark-item');
+    else {
+      itemEl.classList.add('bookmark-item');
+      if (item.type === 'application') itemEl.classList.add('application-item');
+    }
     if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
 
     // --- Header row: checkbox + icon + name ---
@@ -95,7 +98,17 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
     } else {
       const favicon = document.createElement('span');
       favicon.className = 'bookmark-favicon';
-      if (item.url) {
+      if (item.type === 'application') {
+        if (item.iconCache) {
+          const applicationImg = document.createElement('img');
+          applicationImg.src = item.iconCache;
+          applicationImg.alt = '';
+          applicationImg.draggable = false;
+          favicon.appendChild(applicationImg);
+        } else {
+          favicon.appendChild(icon('icon-application'));
+        }
+      } else if (item.url) {
         const faviconImg = document.createElement('img');
         setFavicon(faviconImg, item, 64);
         faviconImg.alt = '';
@@ -107,8 +120,32 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
 
     const name = document.createElement('span');
     name.className = item.type === 'folder' ? 'folder-title' : 'bookmark-label';
-    name.textContent = item.type === 'folder' ? item.title : (item.title || item.url || 'Untitled Bookmark');
+    name.textContent = item.type === 'folder'
+      ? item.title
+      : item.type === 'application'
+        ? (item.title || 'Application')
+        : (item.title || item.url || 'Untitled Bookmark');
     header.appendChild(name);
+
+    if (item.type === 'application') {
+      const status = getApplicationStatus(item);
+      if (status.state !== 'ready') {
+        const badge = document.createElement('span');
+        badge.className = `application-status application-status--${status.state}`;
+        badge.textContent = status.state === 'checking' ? 'Checking'
+          : status.state === 'missing' ? 'Missing'
+            : status.state === 'changed' ? 'Changed'
+              : status.state === 'unbound' ? 'Set up'
+                : 'Unavailable';
+        badge.title = status.state === 'unbound'
+          ? 'Set up this application on this device'
+          : `Application status: ${status.state}`;
+        header.appendChild(badge);
+      }
+      if (!applicationStatusCache.has(item.appKey) && !applicationStatusRequests.has(item.appKey)) {
+        void refreshApplicationStatus(item);
+      }
+    }
 
     if (item.type === 'folder' && dynamicFolder) {
       const sortBtn = document.createElement('button');
@@ -204,6 +241,12 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       itemEl.dataset.tooltip = buildTooltip(item, getActiveBoard());
       itemEl.dataset.tooltipKind = 'bookmark';
       itemEl.addEventListener('click', () => openHubBookmark(item));
+    }
+
+    if (item.type === 'application') {
+      itemEl.dataset.tooltip = `${item.title || 'Application'}\nApplication shortcut`;
+      itemEl.dataset.tooltipKind = 'application';
+      itemEl.addEventListener('click', () => void launchApplicationShortcut(item));
     }
 
     // --- Folder-specific: drag on header, tag grid, and children container ---

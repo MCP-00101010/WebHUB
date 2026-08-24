@@ -150,6 +150,8 @@ async function loadBackground(options = {}) {
                 done: true,
                 fileInfo: { exists: true, version: 'v1', contentHash: 'h1' }
               }));
+            } else if (message.type === 'LAUNCH_APPROVED_APPLICATION') {
+              messageListeners.forEach(listener => listener({ ok: true }));
             }
           });
         }
@@ -473,6 +475,30 @@ test('startup and chunked database load share one persistent native connection',
   assert.deepEqual(
     harness.nativeConnections[0].messages.map(message => message.type),
     ['PING', 'READ_CONFIG', 'READ_FILE_CHUNK']
+  );
+});
+
+test('application launches stay on the persistent native connection', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+  const response = await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_LAUNCH_APPROVED_APPLICATION', appKey: 'app_abcdefghijklmnop',
+      morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken
+    },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+
+  assert.equal(response.ok, true);
+  assert.equal(harness.nativeConnections.length, 1);
+  assert.deepEqual(
+    harness.nativeConnections[0].messages.map(message => message.type),
+    ['PING', 'READ_CONFIG', 'LAUNCH_APPROVED_APPLICATION']
   );
 });
 

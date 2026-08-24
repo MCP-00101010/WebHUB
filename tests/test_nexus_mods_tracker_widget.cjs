@@ -36,7 +36,7 @@ function loadTracker(fetchImpl, apiKey = 'personal-test-key') {
     setInterval,
     clearInterval,
     fetch: fetchImpl,
-    APP_VERSION: '0.11.194',
+    APP_VERSION: '0.11.196',
     getServiceSecret: service => service === 'nexusMods' ? apiKey : '',
     saveState: () => { throw new Error('Nexus runtime data must not save shared Hub state'); },
     location: { href: 'file:///morpheus/index.html' },
@@ -139,7 +139,7 @@ test('Nexus tracker keeps one selected game and browser-local caches', async () 
   assert.ok(calls.every(call => call.options.headers.APIKEY === 'personal-test-key'));
   assert.ok(calls.every(call => call.options.headers['Protocol-Version'] === '1.0.0'));
   assert.ok(calls.every(call => call.options.headers['Application-Name'] === 'Morpheus WebHub'));
-  assert.ok(calls.every(call => call.options.headers['Application-Version'] === '0.11.194'));
+  assert.ok(calls.every(call => call.options.headers['Application-Version'] === '0.11.196'));
   const requestBody = JSON.parse(calls[0].options.body);
   assert.equal(requestBody.operationName, 'MorpheusNexusModsFeed');
   assert.equal(requestBody.variables.count, 30);

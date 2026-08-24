@@ -67,6 +67,8 @@ const HUB_PAGE_REQUEST_TYPES = new Set([
   'MW_LIST_DATABASE_BACKUPS', 'MW_READ_DATABASE_BACKUP', 'MW_CREATE_DATABASE_BACKUP',
   'MW_MONITOR_SERVICE', 'MW_SYSTEM_METRICS', 'MW_APPROVE_DIRECTORY',
   'MW_GIT_WORKSPACE_STATUS', 'MW_OPEN_APPROVED_DIRECTORY', 'MW_LIST_RECENT_FILES', 'MW_OPEN_APPROVED_FILE',
+  'MW_APPROVE_APPLICATION', 'MW_APPROVE_APPLICATION_LINK', 'MW_GET_APPLICATION_STATUS', 'MW_LAUNCH_APPROVED_APPLICATION',
+  'MW_REVEAL_APPROVED_APPLICATION', 'MW_FORGET_APPROVED_APPLICATION',
   'MW_FETCH_TRANSLATOR_ASSET_CHUNK', 'MW_NOTIFICATION_SCHEDULE', 'MW_NOTIFICATION_CANCEL',
   'MW_NOTIFICATION_LIST', 'MW_NOTIFICATION_MARK_READ', 'MW_NOTIFICATION_CLEAR'
 ]);
@@ -502,7 +504,7 @@ function getStorageInfo() {
     fileSchemeAccess,
     fileSchemeAccessRequired,
     extensionId: browser.runtime.id || '',
-    capabilities: ['urlHealth', 'serviceMonitor', 'systemMetrics', 'approvedDirectories', 'gitWorkspace', 'recentFiles', 'commandPalette', 'browserSessions', 'backupTimeline', 'portableBundles', 'translationModels', 'notificationScheduler']
+    capabilities: ['urlHealth', 'serviceMonitor', 'systemMetrics', 'approvedDirectories', 'gitWorkspace', 'recentFiles', 'applicationLauncher', 'commandPalette', 'browserSessions', 'backupTimeline', 'portableBundles', 'translationModels', 'notificationScheduler']
   };
 }
 
@@ -1413,6 +1415,49 @@ async function openApprovedFile(handle, relativePath, action) {
   return sendNativeRequest({ type: 'OPEN_APPROVED_FILE', handle: String(handle || '').slice(0, 80), relativePath: String(relativePath || '').slice(0, 2048), action });
 }
 
+async function approveApplication(appKey, title) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendNativeRequest({
+    type: 'APPROVE_APPLICATION',
+    appKey: String(appKey || '').slice(0, 80),
+    title: String(title || 'Select application').slice(0, 160)
+  }, DIRECTORY_APPROVAL_TIMEOUT_MS);
+}
+
+async function approveApplicationLink(appKey, title, targetUri, iconHint) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendNativeRequest({
+    type: 'APPROVE_APPLICATION_LINK',
+    appKey: String(appKey || '').slice(0, 80),
+    title: String(title || 'Application').slice(0, 160),
+    targetUri: String(targetUri || '').slice(0, 4096),
+    iconHint: String(iconHint || '').slice(0, 2048)
+  });
+}
+
+async function getApplicationStatus(appKey) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendNativeRequest({ type: 'GET_APPLICATION_STATUS', appKey: String(appKey || '').slice(0, 80) });
+}
+
+async function runApprovedApplicationAction(type, appKey) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  const allowed = new Set(['LAUNCH_APPROVED_APPLICATION', 'REVEAL_APPROVED_APPLICATION', 'FORGET_APPROVED_APPLICATION']);
+  if (!allowed.has(type)) return { ok: false, error: 'Unsupported application action' };
+  const message = { type, appKey: String(appKey || '').slice(0, 80) };
+  // Firefox tears down the process created for sendNativeMessage immediately
+  // after its reply. On Windows that process can own launched children, making
+  // an application appear for a moment and then vanish. Keep launches on the
+  // long-lived native port so the child survives the response lifecycle.
+  return type === 'LAUNCH_APPROVED_APPLICATION'
+    ? sendPersistentNativeMessage(message)
+    : sendNativeRequest(message);
+}
+
 
 // ---------------------------------------------------------------------------
 // Save — correlated native FIFO + storage.local fallback
@@ -1797,6 +1842,30 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'MW_OPEN_APPROVED_FILE':
       openApprovedFile(msg.handle, msg.relativePath, msg.action).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_APPROVE_APPLICATION':
+      approveApplication(msg.appKey, msg.title).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_APPROVE_APPLICATION_LINK':
+      approveApplicationLink(msg.appKey, msg.title, msg.targetUri, msg.iconHint).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_GET_APPLICATION_STATUS':
+      getApplicationStatus(msg.appKey).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_LAUNCH_APPROVED_APPLICATION':
+      runApprovedApplicationAction('LAUNCH_APPROVED_APPLICATION', msg.appKey).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_REVEAL_APPROVED_APPLICATION':
+      runApprovedApplicationAction('REVEAL_APPROVED_APPLICATION', msg.appKey).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_FORGET_APPROVED_APPLICATION':
+      runApprovedApplicationAction('FORGET_APPROVED_APPLICATION', msg.appKey).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
     case 'MW_SECRET_STATUS':

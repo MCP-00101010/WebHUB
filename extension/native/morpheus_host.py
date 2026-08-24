@@ -14,6 +14,7 @@ import base64
 import mimetypes
 import urllib.request
 import urllib.parse
+import urllib.error
 import hashlib
 import tempfile
 import stat
@@ -30,11 +31,18 @@ HOST_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HOST_DIR, 'config.json')
 MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
 MAX_FAVICON_BYTES = 1024 * 1024
+MAX_APPLICATION_ICON_BYTES = 480 * 1024
 MAX_FAVICON_HTML_BYTES = 1024 * 1024
 MAX_DATABASE_BACKUPS = 30
 DATABASE_BACKUP_MIN_INTERVAL_SECONDS = 60
 SECRET_TARGET_PREFIX = 'Morpheus WebHub/'
 THEME_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{0,79}$', re.IGNORECASE)
+APPLICATION_KEY_PATTERN = re.compile(r'^app_[a-zA-Z0-9_-]{12,75}$')
+APPLICATION_URI_SCHEMES = {
+    'steam', 'goggalaxy', 'com.epicgames.launcher', 'uplay', 'origin',
+    'origin2', 'ea', 'battlenet', 'xbox', 'ms-xbl', 'heroic'
+}
+MAX_INTERNET_SHORTCUT_BYTES = 64 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +214,12 @@ def _picker_filetypes(accept=''):
         return [('Image files', '*.png *.jpg *.jpeg *.gif *.webp *.svg *.bmp'), ('All files', '*.*')]
     if accept == 'json':
         return [('JSON files', '*.json'), ('All files', '*.*')]
+    if accept == 'application':
+        if sys.platform == 'win32':
+            return [('Applications', '*.exe *.com *.lnk *.url'), ('All files', '*.*')]
+        if sys.platform == 'darwin':
+            return [('Applications', '*.app'), ('All files', '*.*')]
+        return [('Applications', '*.desktop'), ('All files', '*.*')]
     return [('All files', '*.*')]
 
 
@@ -214,6 +228,8 @@ def _windows_filter_string(accept=''):
         return 'Image Files (*.png,*.jpg,*.jpeg,*.gif,*.webp,*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp|All Files (*.*)|*.*'
     if accept == 'json':
         return 'JSON Files (*.json)|*.json|All Files (*.*)|*.*'
+    if accept == 'application':
+        return 'Applications (*.exe,*.com,*.lnk,*.url)|*.exe;*.com;*.lnk;*.url|All Files (*.*)|*.*'
     return 'All Files (*.*)|*.*'
 
 
@@ -245,12 +261,12 @@ def open_file_picker(accept='', title='Select file'):
             ps_script = (
                 'Add-Type -AssemblyName System.Windows.Forms;'
                 '$d = New-Object System.Windows.Forms.OpenFileDialog;'
-                f'$d.Title = \'{title}\';'
-                f'$d.Filter = \'{filter_str}\';'
+                '$d.Title = $args[0];'
+                '$d.Filter = $args[1];'
                 'if ($d.ShowDialog() -eq \'OK\') { Write-Output $d.FileName }'
             )
             result = subprocess.run(
-                ['powershell', '-NonInteractive', '-Command', ps_script],
+                ['powershell', '-STA', '-NonInteractive', '-Command', ps_script, str(title or 'Select file')[:160], filter_str],
                 capture_output=True, text=True, timeout=60
             )
             path = result.stdout.strip()
@@ -971,9 +987,43 @@ def save_config(config):
             'path': path, 'purpose': purpose, 'label': str(entry.get('label', '') or os.path.basename(path) or path)[:160],
             'approvedAt': int(entry.get('approvedAt', 0) or 0)
         }
+    applications = config.get('approvedApplications')
+    if applications is None:
+        applications = load_config().get('approvedApplications', {})
+    if not isinstance(applications, dict):
+        applications = {}
+    safe_applications = {}
+    for app_key, entry in list(applications.items())[:256]:
+        if not APPLICATION_KEY_PATTERN.fullmatch(str(app_key)) or not isinstance(entry, dict):
+            continue
+        kind = str(entry.get('kind', '') or '')
+        if kind == 'protocol-link':
+            try:
+                target_uri = _validated_application_uri(entry.get('targetUri', ''))
+            except ValueError:
+                continue
+            safe_applications[str(app_key)] = {
+                'targetUri': target_uri,
+                'kind': kind,
+                'label': str(entry.get('label', '') or urllib.parse.urlsplit(target_uri).scheme or 'Application')[:160],
+                'approvedAt': int(entry.get('approvedAt', 0) or 0),
+                'iconDataUrl': str(entry.get('iconDataUrl', '') or '')[:700000]
+            }
+            continue
+        path = os.path.realpath(str(entry.get('path', '') or ''))
+        if not path or kind not in {'executable', 'shortcut', 'uri-shortcut', 'app-bundle', 'desktop-entry'}:
+            continue
+        safe_applications[str(app_key)] = {
+            'path': path,
+            'kind': kind,
+            'label': str(entry.get('label', '') or os.path.splitext(os.path.basename(path))[0] or 'Application')[:160],
+            'approvedAt': int(entry.get('approvedAt', 0) or 0),
+            'iconDataUrl': str(entry.get('iconDataUrl', '') or '')[:700000]
+        }
     data = {
         'databasePath': config.get('databasePath', '') or '',
-        'approvedDirectories': safe_approved
+        'approvedDirectories': safe_approved,
+        'approvedApplications': safe_applications
     }
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -1407,6 +1457,383 @@ def open_approved_file(handle, relative_path, action):
 
 
 # ---------------------------------------------------------------------------
+# User-approved applications and fixed launch/reveal operations
+# ---------------------------------------------------------------------------
+
+def _internet_shortcut_scheme(path):
+    if os.path.getsize(path) > MAX_INTERNET_SHORTCUT_BYTES:
+        raise ValueError('The Internet Shortcut is too large')
+    with open(path, 'rb') as shortcut_file:
+        raw = shortcut_file.read(MAX_INTERNET_SHORTCUT_BYTES + 1)
+    text = None
+    encodings = ('utf-16', 'utf-8-sig', 'cp1252') if raw.startswith((b'\xff\xfe', b'\xfe\xff')) or b'\x00' in raw else ('utf-8-sig', 'cp1252')
+    for encoding in encodings:
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeError:
+            continue
+    if text is None:
+        raise ValueError('The Internet Shortcut could not be read')
+    in_shortcut_section = False
+    targets = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            in_shortcut_section = stripped.casefold() == '[internetshortcut]'
+        elif in_shortcut_section and stripped.casefold().startswith('url='):
+            targets.append(stripped[4:].strip())
+    if len(targets) != 1:
+        raise ValueError('The Internet Shortcut must contain one application target')
+    target = targets[0]
+    return urllib.parse.urlsplit(_validated_application_uri(target)).scheme.casefold()
+
+
+def _validated_application_uri(target):
+    target = str(target or '').strip()
+    if not target or len(target) > 4096 or any(ord(char) < 32 for char in target):
+        raise ValueError('The application link has no valid target')
+    parsed = urllib.parse.urlsplit(target)
+    scheme = parsed.scheme.casefold()
+    if scheme not in APPLICATION_URI_SCHEMES:
+        raise ValueError('Only approved game and application protocol shortcuts are supported')
+    return target
+
+
+def _application_kind(path):
+    extension = os.path.splitext(path)[1].lower()
+    if sys.platform == 'win32':
+        if not os.path.isfile(path):
+            raise ValueError('The selected application is unavailable')
+        if extension in {'.exe', '.com'}:
+            return 'executable'
+        if extension == '.lnk':
+            return 'shortcut'
+        if extension == '.url':
+            _internet_shortcut_scheme(path)
+            return 'uri-shortcut'
+        raise ValueError('Select an executable or Windows application shortcut')
+    if sys.platform == 'darwin':
+        if extension == '.app' and os.path.isdir(path):
+            return 'app-bundle'
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return 'executable'
+        raise ValueError('Select an application bundle or executable')
+    if extension == '.desktop' and os.path.isfile(path):
+        return 'desktop-entry'
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return 'executable'
+    raise ValueError('Select a desktop application entry or executable')
+
+
+def _application_icon_data_url(path):
+    if sys.platform != 'win32':
+        return ''
+    script = (
+        'Add-Type -AssemblyName System.Drawing;'
+        '$p=[Console]::In.ReadToEnd().Trim();'
+        '$i=[System.Drawing.Icon]::ExtractAssociatedIcon($p);'
+        'if($i){$m=New-Object System.IO.MemoryStream;'
+        '$i.ToBitmap().Save($m,[System.Drawing.Imaging.ImageFormat]::Png);'
+        '[Convert]::ToBase64String($m.ToArray());$m.Dispose();$i.Dispose()}'
+    )
+    try:
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+            input=str(path), capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        )
+        encoded = (result.stdout or '').strip()
+        if not encoded or len(encoded) > 512 * 1024:
+            return ''
+        raw = base64.b64decode(encoded, validate=True)
+        if len(raw) > 256 * 1024 or not raw.startswith(b'\x89PNG\r\n\x1a\n'):
+            return ''
+        return 'data:image/png;base64,' + encoded
+    except Exception:
+        return ''
+
+
+def _steam_app_id(target_uri):
+    try:
+        parsed = urllib.parse.urlsplit(str(target_uri or '').strip())
+    except ValueError:
+        return ''
+    if parsed.scheme.casefold() != 'steam' or parsed.netloc.casefold() != 'rungameid':
+        return ''
+    match = re.fullmatch(r'/(\d{1,10})/?', parsed.path or '')
+    return match.group(1) if match else ''
+
+
+def _steam_library_cache_dir():
+    if sys.platform != 'win32':
+        return ''
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Valve\Steam') as key:
+            steam_path, _ = winreg.QueryValueEx(key, 'SteamPath')
+        return os.path.realpath(os.path.join(str(steam_path), 'appcache', 'librarycache'))
+    except (ImportError, OSError, TypeError, ValueError):
+        return ''
+
+
+def _bounded_local_image_data_url(path):
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) > MAX_APPLICATION_ICON_BYTES:
+            return ''
+        with open(path, 'rb') as image_file:
+            data = image_file.read(MAX_APPLICATION_ICON_BYTES + 1)
+    except OSError:
+        return ''
+    if not data or len(data) > MAX_APPLICATION_ICON_BYTES:
+        return ''
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        mime = 'image/png'
+    elif data.startswith(b'\xff\xd8\xff'):
+        mime = 'image/jpeg'
+    elif data.startswith((b'GIF87a', b'GIF89a')):
+        mime = 'image/gif'
+    elif data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+        mime = 'image/webp'
+    elif data.startswith(b'\x00\x00\x01\x00'):
+        mime = 'image/x-icon'
+    else:
+        return ''
+    return f'data:{mime};base64,{base64.b64encode(data).decode("ascii")}'
+
+
+def _steam_cached_app_icon_data_url(app_id):
+    if not re.fullmatch(r'\d{1,10}', str(app_id or '')):
+        return ''
+    cache_dir = _steam_library_cache_dir()
+    if not cache_dir:
+        return ''
+    cache_dir = os.path.realpath(cache_dir)
+    legacy_candidates = [
+        os.path.join(cache_dir, f'{app_id}_icon.jpg'),
+        os.path.join(cache_dir, f'{app_id}_icon.png')
+    ]
+    for candidate in legacy_candidates:
+        resolved = os.path.realpath(candidate)
+        try:
+            if os.path.commonpath([os.path.normcase(cache_dir), os.path.normcase(resolved)]) != os.path.normcase(cache_dir):
+                continue
+        except ValueError:
+            continue
+        icon_data = _bounded_local_image_data_url(resolved)
+        if icon_data:
+            return icon_data
+
+    app_dir = os.path.realpath(os.path.join(cache_dir, str(app_id)))
+    try:
+        if os.path.commonpath([os.path.normcase(cache_dir), os.path.normcase(app_dir)]) != os.path.normcase(cache_dir):
+            return ''
+        candidates = []
+        with os.scandir(app_dir) as entries:
+            for index, entry in enumerate(entries):
+                if index >= 64:
+                    break
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                extension = os.path.splitext(entry.name)[1].casefold()
+                if extension not in {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.ico'}:
+                    continue
+                resolved = os.path.realpath(entry.path)
+                if os.path.commonpath([os.path.normcase(app_dir), os.path.normcase(resolved)]) != os.path.normcase(app_dir):
+                    continue
+                try:
+                    size = os.path.getsize(resolved)
+                except OSError:
+                    continue
+                if 0 < size <= MAX_APPLICATION_ICON_BYTES:
+                    name = entry.name.casefold()
+                    is_hashed_icon = re.fullmatch(r'[0-9a-f]{40}\.(?:jpe?g|png|gif|webp|ico)', name) is not None
+                    priority = 0 if 'icon' in name or is_hashed_icon else 1
+                    candidates.append((priority, size, resolved))
+    except (OSError, ValueError):
+        return ''
+    for _, _, candidate in sorted(candidates):
+        icon_data = _bounded_local_image_data_url(candidate)
+        if icon_data:
+            return icon_data
+    return ''
+
+
+def _steam_store_art_data_url(app_id):
+    if not re.fullmatch(r'\d{1,10}', str(app_id or '')):
+        return ''
+    url = f'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{app_id}/library_600x900.jpg'
+    try:
+        return _download_favicon_candidate(url, MAX_APPLICATION_ICON_BYTES).get('dataUrl', '')
+    except (OSError, ValueError, urllib.error.URLError):
+        return ''
+
+
+def _application_link_icon_data_url(target_uri, icon_hint=''):
+    if sys.platform != 'win32' or urllib.parse.urlsplit(target_uri).scheme.casefold() != 'steam':
+        return ''
+    hinted_path = str(icon_hint or '').strip().strip('"')
+    if hinted_path and os.path.splitext(hinted_path)[1].casefold() == '.ico':
+        icon_path = os.path.realpath(hinted_path)
+        icon_dir = os.path.dirname(icon_path)
+        steam_dir = os.path.dirname(icon_dir)
+        if os.path.basename(icon_dir).casefold() == 'games' and os.path.basename(steam_dir).casefold() == 'steam':
+            try:
+                if os.path.isfile(icon_path) and os.path.getsize(icon_path) <= MAX_FAVICON_BYTES:
+                    icon_data = _application_icon_data_url(icon_path)
+                    if icon_data:
+                        return icon_data
+            except OSError:
+                pass
+    app_id = _steam_app_id(target_uri)
+    if not app_id:
+        return ''
+    return _steam_cached_app_icon_data_url(app_id) or _steam_store_art_data_url(app_id)
+
+
+def _application_public_record(app_key, entry, state='ready'):
+    return {
+        'appKey': app_key,
+        'label': str(entry.get('label', '') or 'Application')[:160],
+        'kind': str(entry.get('kind', '') or ''),
+        'state': state,
+        'iconDataUrl': str(entry.get('iconDataUrl', '') or '')[:700000]
+    }
+
+
+def approve_application(app_key='', title='Select application', selected_path=None):
+    requested_key = str(app_key or '')
+    if requested_key and not APPLICATION_KEY_PATTERN.fullmatch(requested_key):
+        raise ValueError('Application key is invalid')
+    selected = selected_path or open_file_picker('application', str(title or 'Select application')[:160])
+    if not selected:
+        return None
+    path = os.path.realpath(selected)
+    kind = _application_kind(path)
+    key = requested_key or f'app_{secrets.token_urlsafe(18)}'
+    label = os.path.splitext(os.path.basename(path.rstrip('\\/')))[0] or 'Application'
+    entry = {
+        'path': path,
+        'kind': kind,
+        'label': label[:160],
+        'approvedAt': int(time.time() * 1000),
+        'iconDataUrl': _application_icon_data_url(path)
+    }
+    config = load_config()
+    config.setdefault('approvedApplications', {})[key] = entry
+    save_config(config)
+    return _application_public_record(key, entry)
+
+
+def approve_application_link(app_key='', title='Application', target_uri='', icon_hint=''):
+    requested_key = str(app_key or '')
+    if requested_key and not APPLICATION_KEY_PATTERN.fullmatch(requested_key):
+        raise ValueError('Application key is invalid')
+    target = _validated_application_uri(target_uri)
+    key = requested_key or f'app_{secrets.token_urlsafe(18)}'
+    fallback_label = urllib.parse.urlsplit(target).scheme or 'Application'
+    entry = {
+        'targetUri': target,
+        'kind': 'protocol-link',
+        'label': str(title or fallback_label)[:160],
+        'approvedAt': int(time.time() * 1000),
+        'iconDataUrl': _application_link_icon_data_url(target, icon_hint)
+    }
+    config = load_config()
+    config.setdefault('approvedApplications', {})[key] = entry
+    save_config(config)
+    return _application_public_record(key, entry)
+
+
+def resolve_approved_application(app_key, require_exists=True):
+    key = str(app_key or '')
+    if not APPLICATION_KEY_PATTERN.fullmatch(key):
+        raise ValueError('Application key is invalid')
+    entry = load_config().get('approvedApplications', {}).get(key)
+    if not isinstance(entry, dict):
+        raise ValueError('Application is not approved on this device')
+    if entry.get('kind') == 'protocol-link':
+        return _validated_application_uri(entry.get('targetUri', '')), entry
+    path = os.path.realpath(str(entry.get('path', '') or ''))
+    exists = os.path.isdir(path) if entry.get('kind') == 'app-bundle' else os.path.isfile(path)
+    if require_exists and not exists:
+        raise FileNotFoundError('The approved application is missing or unavailable')
+    if exists and _application_kind(path) != entry.get('kind'):
+        raise ValueError('The approved application type changed; approve it again')
+    return path, entry
+
+
+def application_status(app_key):
+    try:
+        _, entry = resolve_approved_application(app_key)
+        public = _application_public_record(str(app_key), entry)
+        if not public['iconDataUrl']:
+            config = load_config()
+            stored = config.get('approvedApplications', {}).get(str(app_key), {})
+            if stored.get('kind') == 'protocol-link':
+                icon_data = _application_link_icon_data_url(stored.get('targetUri', ''))
+            else:
+                path = stored.get('path', '')
+                icon_data = _application_icon_data_url(path) if path else ''
+            if icon_data:
+                stored['iconDataUrl'] = icon_data
+                save_config(config)
+                public['iconDataUrl'] = icon_data
+        return public
+    except FileNotFoundError:
+        return {'appKey': str(app_key or ''), 'label': 'Application', 'kind': '', 'state': 'missing', 'iconDataUrl': ''}
+    except ValueError as error:
+        state = 'unbound' if 'not approved' in str(error) else 'changed'
+        return {'appKey': str(app_key or ''), 'label': 'Application', 'kind': '', 'state': state, 'iconDataUrl': ''}
+
+
+def launch_approved_application(app_key):
+    path, entry = resolve_approved_application(app_key)
+    if sys.platform == 'win32':
+        kind = entry.get('kind')
+        if kind == 'executable':
+            subprocess.Popen([path], cwd=os.path.dirname(path) or None, close_fds=True)
+        else:
+            subprocess.Popen(
+                ['explorer.exe', path], close_fds=True,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            )
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', path], close_fds=True) if entry.get('kind') == 'app-bundle' else subprocess.Popen([path], close_fds=True)
+    elif entry.get('kind') == 'desktop-entry':
+        launcher = shutil.which('gio')
+        if not launcher:
+            raise RuntimeError('No supported desktop-entry launcher was found')
+        subprocess.Popen([launcher, 'launch', path], close_fds=True)
+    else:
+        subprocess.Popen([path], close_fds=True)
+    return True
+
+
+def reveal_approved_application(app_key):
+    path, entry = resolve_approved_application(app_key)
+    if entry.get('kind') == 'protocol-link':
+        raise ValueError('Application protocol links do not have a file to reveal')
+    if sys.platform == 'win32':
+        subprocess.Popen(['explorer.exe', '/select,', path])
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', '-R', path], close_fds=True)
+    else:
+        subprocess.Popen(['xdg-open', os.path.dirname(path) or path], close_fds=True)
+    return True
+
+
+def forget_approved_application(app_key):
+    key = str(app_key or '')
+    if not APPLICATION_KEY_PATTERN.fullmatch(key):
+        raise ValueError('Application key is invalid')
+    config = load_config()
+    removed = config.get('approvedApplications', {}).pop(key, None)
+    save_config(config)
+    return removed is not None
+
+
+# ---------------------------------------------------------------------------
 # Message handlers
 # ---------------------------------------------------------------------------
 
@@ -1648,6 +2075,46 @@ def handle(msg):
         try:
             open_approved_file(msg.get('handle', ''), msg.get('relativePath', ''), msg.get('action', ''))
             reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'APPROVE_APPLICATION':
+        try:
+            reply_ok(application=approve_application(msg.get('appKey', ''), msg.get('title', 'Select application')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'APPROVE_APPLICATION_LINK':
+        try:
+            reply_ok(application=approve_application_link(
+                msg.get('appKey', ''), msg.get('title', 'Application'), msg.get('targetUri', ''), msg.get('iconHint', '')
+            ))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'GET_APPLICATION_STATUS':
+        try:
+            reply_ok(application=application_status(msg.get('appKey', '')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'LAUNCH_APPROVED_APPLICATION':
+        try:
+            launch_approved_application(msg.get('appKey', ''))
+            reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'REVEAL_APPROVED_APPLICATION':
+        try:
+            reveal_approved_application(msg.get('appKey', ''))
+            reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'FORGET_APPROVED_APPLICATION':
+        try:
+            reply_ok(removed=forget_approved_application(msg.get('appKey', '')))
         except Exception as e:
             reply_err(str(e))
 

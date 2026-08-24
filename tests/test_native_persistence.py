@@ -1,4 +1,6 @@
 import importlib.util
+import base64
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -255,6 +257,219 @@ class NativePersistenceTests(unittest.TestCase):
                     HOST._approved_child_path(approved['handle'], 'recent-files', '../outside.txt')
             finally:
                 HOST.CONFIG_PATH = original
+
+    def test_application_approval_keeps_paths_native_and_rebinds_by_key(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            config_path = Path(directory) / 'native-config.json'
+            executable = Path(directory) / 'Useful App.exe'
+            executable.write_bytes(b'MZ')
+            replacement = Path(directory) / 'Useful App 2.exe'
+            replacement.write_bytes(b'MZ')
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            try:
+                with patch.object(HOST.sys, 'platform', 'win32'), \
+                        patch.object(HOST, '_application_icon_data_url', return_value='data:image/png;base64,aWNvbg=='):
+                    approved = HOST.approve_application(selected_path=str(executable))
+                    self.assertRegex(approved['appKey'], r'^app_[A-Za-z0-9_-]+$')
+                    self.assertNotIn('path', approved)
+                    self.assertEqual(approved['state'], 'ready')
+                    self.assertEqual(HOST.application_status(approved['appKey'])['state'], 'ready')
+                    rebound = HOST.approve_application(approved['appKey'], selected_path=str(replacement))
+                    self.assertEqual(rebound['appKey'], approved['appKey'])
+                    resolved, _ = HOST.resolve_approved_application(approved['appKey'])
+                    self.assertEqual(Path(resolved), replacement)
+                stored = json.loads(config_path.read_text(encoding='utf-8'))
+                self.assertIn(str(replacement), stored['approvedApplications'][approved['appKey']]['path'])
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_application_launch_uses_only_the_approved_path(self):
+        approved_path = r'F:\Apps\Useful & Safe.exe'
+        with patch.object(HOST, 'resolve_approved_application', return_value=(approved_path, {'kind': 'executable'})), \
+                patch.object(HOST.sys, 'platform', 'win32'), \
+                patch.object(HOST.subprocess, 'Popen') as popen:
+            self.assertTrue(HOST.launch_approved_application('app_abcdefghijklmnop'))
+        popen.assert_called_once_with([approved_path], cwd=r'F:\Apps', close_fds=True)
+
+    def test_dropped_protocol_link_is_stored_without_a_page_visible_path(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            config_path = Path(directory) / 'native-config.json'
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            try:
+                with patch.object(HOST, '_application_link_icon_data_url', return_value=''):
+                    approved = HOST.approve_application_link(
+                        title="Baldur's Gate 3", target_uri='steam://rungameid/1086940'
+                    )
+                self.assertEqual(approved['kind'], 'protocol-link')
+                self.assertNotIn('path', approved)
+                stored = json.loads(config_path.read_text(encoding='utf-8'))['approvedApplications'][approved['appKey']]
+                self.assertNotIn('path', stored)
+                self.assertEqual(stored['targetUri'], 'steam://rungameid/1086940')
+                with patch.object(HOST.sys, 'platform', 'win32'), \
+                        patch.object(HOST.subprocess, 'Popen') as popen:
+                    self.assertTrue(HOST.launch_approved_application(approved['appKey']))
+                popen.assert_called_once_with(
+                    ['explorer.exe', 'steam://rungameid/1086940'], close_fds=True,
+                    creationflags=getattr(HOST.subprocess, 'CREATE_NO_WINDOW', 0)
+                )
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_steam_protocol_link_accepts_only_a_steam_icon_cache_hint(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            config_path = Path(directory) / 'native-config.json'
+            icon_dir = Path(directory) / 'steam' / 'games'
+            icon_dir.mkdir(parents=True)
+            icon_path = icon_dir / 'bg3.ico'
+            icon_path.write_bytes(b'icon')
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            try:
+                with patch.object(HOST.sys, 'platform', 'win32'), \
+                        patch.object(HOST, '_application_icon_data_url', return_value='data:image/png;base64,aWNvbg=='), \
+                        patch.object(HOST, '_steam_cached_app_icon_data_url', return_value=''), \
+                        patch.object(HOST, '_steam_store_art_data_url', return_value=''):
+                    approved = HOST.approve_application_link(
+                        title="Baldur's Gate 3", target_uri='steam://rungameid/1086940', icon_hint=str(icon_path)
+                    )
+                    rejected_hint = HOST._application_link_icon_data_url(
+                        'steam://rungameid/1086940', str(Path(directory) / 'private.ico')
+                    )
+                self.assertEqual(approved['iconDataUrl'], 'data:image/png;base64,aWNvbg==')
+                self.assertEqual(rejected_hint, '')
+                stored = json.loads(config_path.read_text(encoding='utf-8'))['approvedApplications'][approved['appKey']]
+                self.assertNotIn('iconHint', stored)
+                self.assertNotIn('iconSourcePath', stored)
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_steam_protocol_link_uses_the_bounded_local_app_cache_icon(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            cache_dir = Path(directory) / 'librarycache'
+            app_dir = cache_dir / '977400'
+            app_dir.mkdir(parents=True)
+            image = b'\xff\xd8\xff' + b'cell-icon'
+            (app_dir / '130a3091d6e6ae68e7204b21bfa2b4fec02c3d8d.jpg').write_bytes(image)
+            with patch.object(HOST.sys, 'platform', 'win32'), \
+                    patch.object(HOST, '_steam_library_cache_dir', return_value=str(cache_dir)), \
+                    patch.object(HOST, '_steam_store_art_data_url') as store_art:
+                result = HOST._application_link_icon_data_url('steam://rungameid/977400')
+            self.assertEqual(result, 'data:image/jpeg;base64,' + base64.b64encode(image).decode('ascii'))
+            store_art.assert_not_called()
+
+    def test_steam_protocol_link_uses_official_store_art_when_local_cache_is_empty(self):
+        expected = 'data:image/jpeg;base64,c3RlYW0='
+        with patch.object(HOST.sys, 'platform', 'win32'), \
+                patch.object(HOST, '_steam_cached_app_icon_data_url', return_value=''), \
+                patch.object(HOST, '_download_favicon_candidate', return_value={'dataUrl': expected}) as download:
+            result = HOST._application_link_icon_data_url('steam://rungameid/977400')
+        self.assertEqual(result, expected)
+        self.assertEqual(
+            download.call_args.args[0],
+            'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/977400/library_600x900.jpg'
+        )
+
+    def test_application_status_backfills_a_missing_protocol_link_icon(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            config_path = Path(directory) / 'native-config.json'
+            app_key = 'app_abcdefghijklmnop'
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            try:
+                HOST.save_config({'approvedApplications': {app_key: {
+                    'targetUri': 'steam://rungameid/977400',
+                    'kind': 'protocol-link',
+                    'label': 'Cell to Singularity',
+                    'iconDataUrl': ''
+                }}})
+                with patch.object(HOST, '_application_link_icon_data_url', return_value='data:image/jpeg;base64,Y2VsbA=='):
+                    status = HOST.application_status(app_key)
+                self.assertEqual(status['iconDataUrl'], 'data:image/jpeg;base64,Y2VsbA==')
+                stored = json.loads(config_path.read_text(encoding='utf-8'))
+                self.assertEqual(
+                    stored['approvedApplications'][app_key]['iconDataUrl'],
+                    'data:image/jpeg;base64,Y2VsbA=='
+                )
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_windows_icon_extraction_passes_the_path_over_stdin(self):
+        encoded = base64.b64encode(b'\x89PNG\r\n\x1a\nicon').decode('ascii')
+        completed = type('Completed', (), {'stdout': encoded})()
+        path = r'F:\Apps\Useful & Safe.exe'
+        with patch.object(HOST.sys, 'platform', 'win32'), \
+                patch.object(HOST.subprocess, 'run', return_value=completed) as run:
+            result = HOST._application_icon_data_url(path)
+        self.assertEqual(result, f'data:image/png;base64,{encoded}')
+        self.assertNotIn(path, run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs['input'], path)
+
+    def test_dropped_protocol_link_rejects_web_and_arbitrary_schemes(self):
+        for target in ('https://example.com/', 'file:///C:/Windows/System32/cmd.exe', 'javascript:alert(1)'):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(ValueError, 'approved game and application protocol'):
+                    HOST.approve_application_link(title='Unsafe', target_uri=target)
+
+    def test_windows_game_uri_shortcut_can_be_approved(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            config_path = Path(directory) / 'native-config.json'
+            shortcut = Path(directory) / "Baldur's Gate 3.url"
+            shortcut.write_text('[InternetShortcut]\nURL=steam://rungameid/1086940\n', encoding='utf-8')
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            try:
+                with patch.object(HOST.sys, 'platform', 'win32'), \
+                        patch.object(HOST, '_application_icon_data_url', return_value=''):
+                    approved = HOST.approve_application(selected_path=str(shortcut))
+                    self.assertEqual(approved['kind'], 'uri-shortcut')
+                    self.assertNotIn('path', approved)
+                    self.assertEqual(HOST.application_status(approved['appKey'])['state'], 'ready')
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_windows_web_url_shortcut_is_not_an_application(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            shortcut = Path(directory) / 'Website.url'
+            shortcut.write_text('[InternetShortcut]\nURL=https://example.com/\n', encoding='utf-8')
+            with patch.object(HOST.sys, 'platform', 'win32'):
+                with self.assertRaisesRegex(ValueError, 'approved game and application protocol'):
+                    HOST._application_kind(str(shortcut))
+
+    def test_windows_uri_shortcut_rejects_conflicting_targets(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            shortcut = Path(directory) / 'Conflicting.url'
+            shortcut.write_text(
+                '[InternetShortcut]\nURL=steam://rungameid/1086940\nURL=https://example.com/\n',
+                encoding='utf-8'
+            )
+            with patch.object(HOST.sys, 'platform', 'win32'):
+                with self.assertRaisesRegex(ValueError, 'one application target'):
+                    HOST._application_kind(str(shortcut))
+
+    def test_application_status_is_unbound_without_native_mapping(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            original = HOST.CONFIG_PATH
+            HOST.CONFIG_PATH = str(Path(directory) / 'native-config.json')
+            try:
+                status = HOST.application_status('app_abcdefghijklmnop')
+                self.assertEqual(status['state'], 'unbound')
+                self.assertNotIn('path', status)
+            finally:
+                HOST.CONFIG_PATH = original
+
+    def test_windows_application_picker_passes_titles_as_data(self):
+        hostile_title = "Select Bob's app'; Write-Output injected; #"
+        completed = type('Completed', (), {'stdout': r'C:\Apps\Editor.exe'})()
+        with patch.object(HOST.sys, 'platform', 'win32'), \
+                patch.dict(HOST.sys.modules, {'tkinter': None}), \
+                patch.object(HOST.subprocess, 'run', return_value=completed) as run:
+            selected = HOST.open_file_picker('application', hostile_title)
+        arguments = run.call_args.args[0]
+        self.assertEqual(selected, r'C:\Apps\Editor.exe')
+        self.assertNotIn(hostile_title, arguments[4])
+        self.assertEqual(arguments[-2], hostile_title)
 
 
 def tearDownModule():

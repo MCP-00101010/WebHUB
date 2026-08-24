@@ -76,6 +76,17 @@ function _commandPaletteOpenNewBookmark() {
   });
 }
 
+function _commandPaletteOpenNewApplication() {
+  const board = getActiveBoard();
+  const tab = getActiveTab();
+  if (!board || !tab || board.locked || !(tab.columns || []).length) {
+    showNotice('Select an unlocked board tab with at least one column first.');
+    return;
+  }
+  contextTarget = { area: 'board-empty', columnId: lastActiveColumnId || tab.columns[0].id };
+  void addApplicationShortcut(contextTarget);
+}
+
 function _commandPaletteActivateBoard(board, tab = null) {
   if (!board) return;
   state.activeBoardId = board.id;
@@ -120,6 +131,8 @@ function _commandPaletteStoredWidgets() {
       for (const column of (tab.columns || [])) {
         walkBoardItems(column.items || [], { area: 'board', boardId: board.id, tabId: tab.id, columnId: column.id, location: `${board.title || 'Untitled Board'} / ${tab.title || 'Untitled Tab'} / ${column.title || 'Untitled Column'}` });
       }
+      const inbox = getBoardInbox(board, tab);
+      walkBoardItems(inbox?.items || [], { area: 'board', boardId: board.id, tabId: tab.id, columnId: inbox?.id || '', location: `${board.title || 'Untitled Board'} / ${tab.title || 'Untitled Tab'} / Inbox` });
     }
   }
   const walkNav = (items, parentId = null) => {
@@ -182,6 +195,19 @@ function _commandPaletteLocateBookmark(entry) {
   locateStoredBookmarkEntry(entry);
 }
 
+function _commandPaletteRunApplicationAction(entry, action = 'launch') {
+  if (!entry?.item) return;
+  if (entry.boardId) {
+    state.activeBoardId = entry.boardId;
+    if (entry.tabId) state.activeTabId = entry.tabId;
+    renderAll();
+  }
+  contextTarget = { area: 'board-item', boardId: entry.boardId, tabId: entry.tabId, columnId: entry.columnId, itemId: entry.item.id, item: entry.item };
+  if (action === 'launch' || action === 'open') void launchApplicationShortcut(entry.item);
+  else if (action === 'edit' || action === 'tag') _showEditApplicationModal(contextTarget, action === 'tag' ? { title: 'Edit Application Tags' } : {});
+  else if (action === 'move' || action === 'inbox') _showMoveToBoardModal(contextTarget, 'Move application to Tab Inbox');
+}
+
 function buildCommandPaletteEntries() {
   const entries = [];
   const add = entry => entries.push(entry);
@@ -200,6 +226,7 @@ function buildCommandPaletteEntries() {
   addCommand('workflows', 'Open Workflows', 'Inbox automation, browser sessions, backup timeline, and portable transfer', () => showHubToolsPanel('workflows'), 'rules session backup export import restore');
   addCommand('search', 'Open Search', 'Search the complete Hub', () => openSearchModal({}), 'find filter', 'Ctrl+F');
   addCommand('new-bookmark', 'Create Bookmark', 'Add a bookmark to the active column', _commandPaletteOpenNewBookmark, 'new add');
+  addCommand('new-application', 'Create Application Shortcut', 'Choose an approved application for the active column', _commandPaletteOpenNewApplication, 'new add app launcher executable');
   addCommand('inbox', 'Open Active Inbox', 'Review externally delivered and moved items', () => showInboxPanel(), 'incoming');
   addCommand('import-manager', 'Open Import Manager', 'Review browser bookmark imports', () => showImportManagerPanel(), 'imports');
   addCommand('sets', 'Open Sets Manager', 'Manage manual and dynamic Sets', () => showSetManagerPanel(), 'collections');
@@ -262,6 +289,18 @@ function buildCommandPaletteEntries() {
       keywords: `bookmark ${entry.item.url} ${(entry.item.tags || []).map(id => resolveTag(id)?.name || '').join(' ')}`,
       run: () => openHubBookmark(entry.item),
       locate: () => _commandPaletteLocateBookmark(entry)
+    });
+  }
+
+  for (const entry of (typeof collectStoredApplications === 'function' ? collectStoredApplications() : [])) {
+    const status = getApplicationStatus(entry.item);
+    add({
+      id: `application:${entry.key}`,
+      group: 'Applications',
+      label: entry.item.title || 'Application',
+      detail: `${entry.location} · ${status.state === 'ready' ? 'Ready' : status.state}`,
+      keywords: `application app launch ${(entry.item.tags || []).map(id => resolveTag(id)?.name || '').join(' ')}`,
+      run: () => void launchApplicationShortcut(entry.item)
     });
   }
 
@@ -342,7 +381,7 @@ function buildCommandPaletteEntries() {
 }
 
 function _commandPaletteContextualEntries(query, baseEntries) {
-  const match = String(query || '').trim().match(/^(open|edit|move|tag|add to set|set|send to inbox|inbox)\s+(.+)$/i);
+  const match = String(query || '').trim().match(/^(open|launch|edit|move|tag|add to set|set|send to inbox|inbox)\s+(.+)$/i);
   if (!match) return [];
   const requested = match[1].toLowerCase();
   const term = match[2];
@@ -351,7 +390,7 @@ function _commandPaletteContextualEntries(query, baseEntries) {
       : requested;
   const label = action === 'set' ? 'Add to Set' : action === 'inbox' ? 'Send to Inbox' : action[0].toUpperCase() + action.slice(1);
   const storedByPaletteId = new Map(collectStoredBookmarks().map(entry => [`bookmark:${entry.key}`, entry]));
-  return baseEntries.filter(entry => entry.group === 'Bookmarks')
+  const bookmarkEntries = action === 'launch' ? [] : baseEntries.filter(entry => entry.group === 'Bookmarks')
     .map(entry => {
       const storedEntry = storedByPaletteId.get(entry.id);
       if (!storedEntry) return null;
@@ -364,6 +403,23 @@ function _commandPaletteContextualEntries(query, baseEntries) {
         run: () => _commandPaletteRunBookmarkAction(storedEntry, action)
       };
     }).filter(Boolean);
+  const applicationByPaletteId = new Map((typeof collectStoredApplications === 'function' ? collectStoredApplications() : []).map(entry => [`application:${entry.key}`, entry]));
+  const applicationEntries = ['open', 'launch', 'edit', 'move', 'tag', 'inbox'].includes(action)
+    ? baseEntries.filter(entry => entry.group === 'Applications').map(entry => {
+        const storedEntry = applicationByPaletteId.get(entry.id);
+        if (!storedEntry) return null;
+        const applicationAction = action === 'open' ? 'launch' : action;
+        return {
+          id: `application-action:${applicationAction}:${storedEntry.key}`,
+          group: 'Application Actions',
+          label: `${applicationAction[0].toUpperCase() + applicationAction.slice(1)}: ${entry.label}`,
+          detail: entry.detail,
+          keywords: `${term} ${entry.keywords || ''}`,
+          run: () => _commandPaletteRunApplicationAction(storedEntry, applicationAction)
+        };
+      }).filter(Boolean)
+    : [];
+  return [...bookmarkEntries, ...applicationEntries];
 }
 
 function _commandPaletteCalculatorEntry(query) {

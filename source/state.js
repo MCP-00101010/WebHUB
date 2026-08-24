@@ -573,6 +573,21 @@ function migrateItems(items) {
       if (!item.tags) item.tags = [];
       if (item.faviconCache === undefined) item.faviconCache = '';
     }
+    if (item.type === 'application') {
+      if (!Array.isArray(item.tags)) item.tags = [];
+      if (typeof item.iconCache !== 'string') item.iconCache = '';
+      if (!/^app_[a-zA-Z0-9_-]{12,75}$/.test(item.appKey || '')) {
+        const token = globalThis.crypto?.randomUUID?.().replace(/-/g, '')
+          || `${Date.now()}${Math.random().toString(36).slice(2, 14)}`;
+        item.appKey = `app_${token}`.slice(0, 79);
+      }
+      item.title = String(item.title || 'Application').slice(0, 160);
+      item.applicationKind = String(item.applicationKind || '').slice(0, 40);
+      delete item.nativePath;
+      delete item.executablePath;
+      delete item.command;
+      delete item.arguments;
+    }
     if (item.type === 'folder') {
       if (!item.sharedTags) item.sharedTags = [];
       if (item.labels && !item.tags) item.tags = item.labels;
@@ -853,6 +868,7 @@ function migrateWidgetServiceSettings(parsed) {
       for (const col of (tab.columns || [])) {
         (col.items || []).forEach(visitItem);
       }
+      (getBoardInbox(board, tab)?.items || []).forEach(visitItem);
     }
   }
 }
@@ -1796,6 +1812,49 @@ function findBoardItemInColumns(board, itemId) {
   return null;
 }
 
+function findWidgetPlacement(widgetId) {
+  if (!widgetId) return null;
+  const navPath = findNavItemPath(widgetId);
+  if (navPath?.item?.type === 'widget') {
+    return { area: 'nav', item: navPath.item, list: navPath.list, parent: navPath.parent || null, board: null, tab: null, container: null };
+  }
+  for (const board of (state.boards || [])) {
+    for (const tab of getBoardTabs(board)) {
+      for (const container of getBoardItemContainers(board, tab)) {
+        const found = findBoardItemInList(container.items || [], widgetId);
+        if (found?.item?.type === 'widget') {
+          return { area: 'board', item: found.item, list: found.list, parent: found.parent || null, board, tab, container };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function moveWidgetToTabInbox(widgetId, targetBoardId, targetTabId, options = {}) {
+  const targetBoard = (state.boards || []).find(board => board.id === targetBoardId) || null;
+  const targetTab = targetBoard ? findBoardTabById(targetBoard, targetTabId) : null;
+  const targetInbox = targetBoard && targetTab ? getBoardInbox(targetBoard, targetTab) : null;
+  if (!targetBoard || !targetTab || !targetInbox) return { ok: false, reason: 'missing-destination' };
+  if (targetBoard.locked || targetTab.locked) return { ok: false, reason: 'locked-destination' };
+
+  const source = findWidgetPlacement(widgetId);
+  if (!source?.item) return { ok: false, reason: 'missing-widget' };
+  if (source.board?.locked || source.tab?.locked) return { ok: false, reason: 'locked-source' };
+  const definition = typeof WIDGET_REGISTRY !== 'undefined' ? WIDGET_REGISTRY[source.item.widgetType] : null;
+  if (!definition?.allowedIn?.includes('column')) return { ok: false, reason: 'unsupported-placement' };
+  if (source.list === targetInbox.items) return { ok: false, reason: 'same-destination' };
+  if (targetInbox.items.some(item => item?.id === widgetId)) return { ok: false, reason: 'duplicate-destination' };
+
+  const sourceIndex = source.list.indexOf(source.item);
+  if (sourceIndex === -1) return { ok: false, reason: 'missing-widget' };
+  if (typeof options.beforeMove === 'function') options.beforeMove(source.item, source, { board: targetBoard, tab: targetTab, inbox: targetInbox });
+  const [widget] = source.list.splice(sourceIndex, 1);
+  delete widget.locked;
+  targetInbox.items.push(widget);
+  return { ok: true, widget, source, destination: { board: targetBoard, tab: targetTab, inbox: targetInbox } };
+}
+
 function unfoldBoardItemAncestors(board, itemId) {
   const search = (list) => {
     for (const item of list) {
@@ -2319,23 +2378,29 @@ function getBoardInbox(board, tab = null) {
 }
 
 function getBoardInboxCounts(board, tab = null) {
-  if (!board) return { bookmarks: 0, folders: 0 };
+  if (!board) return { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
   if (tab) {
     const inbox = getBoardInbox(board, tab);
-    if (!inbox) return { bookmarks: 0, folders: 0 };
+    if (!inbox) return { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
     return {
       bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
-      folders: countItemsRecursive(inbox.items, 'folder')
+      applications: countItemsRecursive(inbox.items, 'application'),
+      folders: countItemsRecursive(inbox.items, 'folder'),
+      widgets: countItemsRecursive(inbox.items, 'widget')
     };
   }
   let bookmarks = 0;
+  let applications = 0;
   let folders = 0;
+  let widgets = 0;
   for (const boardTab of getBoardTabs(board)) {
     const inbox = getBoardInbox(board, boardTab);
     bookmarks += countItemsRecursive(inbox?.items, 'bookmark');
+    applications += countItemsRecursive(inbox?.items, 'application');
     folders += countItemsRecursive(inbox?.items, 'folder');
+    widgets += countItemsRecursive(inbox?.items, 'widget');
   }
-  return { bookmarks, folders };
+  return { bookmarks, applications, folders, widgets };
 }
 
 function importManagerHasItems() {

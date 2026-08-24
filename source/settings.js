@@ -1412,6 +1412,7 @@ function collectLegacyWidgetServiceSecretKeys(root = state) {
   for (const board of (root?.boards || [])) {
     for (const tab of (typeof getBoardTabs === 'function' ? getBoardTabs(board) : board.tabs || [])) {
       for (const column of (tab.columns || [])) (column.items || []).forEach(visit);
+      (typeof getBoardInbox === 'function' ? getBoardInbox(board, tab)?.items || [] : tab.inbox?.items || []).forEach(visit);
     }
   }
   return collected;

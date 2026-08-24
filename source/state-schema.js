@@ -1,6 +1,6 @@
 // Persisted-state versioning and non-destructive structural repair.
 
-const CURRENT_STATE_SCHEMA_VERSION = 2;
+const CURRENT_STATE_SCHEMA_VERSION = 3;
 
 function collectReferencedBoardIds(items) {
   const ids = new Set();
@@ -42,6 +42,8 @@ function migrateStateSchema(parsed) {
   // normalizers in state.js remain the migration body for unversioned data.
   // Version 2 adds portable automation rules and saved browser sessions. The
   // records are normalized by state.js so old databases remain valid.
+  // Version 3 adds portable application items whose executable bindings remain
+  // device-local in the native host.
   parsed.schemaVersion = Math.max(sourceVersion, CURRENT_STATE_SCHEMA_VERSION);
   return parsed;
 }

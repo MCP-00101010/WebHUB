@@ -672,6 +672,52 @@ const bridge = (() => {
       return true;
     },
 
+    async approveApplication(appKey = '', title = 'Select application') {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
+      const res = await _send('MW_APPROVE_APPLICATION', { appKey, title }, { timeoutMs: DIRECTORY_APPROVAL_TIMEOUT_MS });
+      return res.application || null;
+    },
+
+    async approveApplicationLink(appKey = '', title = 'Application', targetUri = '', iconHint = '') {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
+      const res = await _send('MW_APPROVE_APPLICATION_LINK', { appKey, title, targetUri, iconHint });
+      return res.application || null;
+    },
+
+    async getApplicationStatus(appKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) {
+        return { appKey, state: 'unavailable', label: 'Application', kind: '', iconDataUrl: '' };
+      }
+      const res = await _send('MW_GET_APPLICATION_STATUS', { appKey });
+      return res.application || { appKey, state: 'unbound', label: 'Application', kind: '', iconDataUrl: '' };
+    },
+
+    async launchApplication(appKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
+      const res = await _send('MW_LAUNCH_APPROVED_APPLICATION', { appKey });
+      if (res.ok === false) throw new Error(res.error || 'The application could not be launched');
+      return true;
+    },
+
+    async revealApplication(appKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
+      const res = await _send('MW_REVEAL_APPROVED_APPLICATION', { appKey });
+      if (res.ok === false) throw new Error(res.error || 'The application could not be revealed');
+      return true;
+    },
+
+    async forgetApplication(appKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
+      const res = await _send('MW_FORGET_APPROVED_APPLICATION', { appKey });
+      return res.removed === true;
+    },
+
     async secretStatus() {
       if (!_available) await _connect({ retries: 1, delayMs: 200 });
       if (!_available || !_nativeAvailable) return { available: false, provider: '', error: 'Native host not available' };

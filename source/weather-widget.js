@@ -306,6 +306,20 @@ WIDGET_REGISTRY['weather'] = {
     showHourly24: false
   },
   defaultData: {},
+  settingsSchema: {
+    type: 'object',
+    properties: {
+      locationName: { type: 'string' },
+      latitude: { type: 'any' },
+      longitude: { type: 'any' },
+      timezone: { type: 'string' },
+      days: { type: 'number' },
+      units: { type: 'string', enum: ['metric', 'imperial'] },
+      forecastLayout: { type: 'string', enum: ['vertical', 'horizontal'] },
+      showHourly24: { type: 'boolean' }
+    },
+    additionalProperties: false
+  },
 
   dispose(widget) {
     const cacheKey = _weatherCacheKey(widget.id);

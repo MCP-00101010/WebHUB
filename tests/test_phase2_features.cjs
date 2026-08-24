@@ -82,8 +82,26 @@ assert.strictEqual(imported.ok, true);
 assert.strictEqual(destination.boards[0].tabs[0].inbox.items.length, 1);
 assert.notStrictEqual(destination.boards[0].tabs[0].inbox.items[0].id, 'bm-1', 'copy import should remap IDs');
 
+root.boards[0].tabs[0].inbox.items.push({
+  id: 'app-item-1', type: 'application', title: 'Useful App',
+  appKey: 'app_existingdevicebinding', applicationKind: 'executable',
+  iconCache: 'data:image/png;base64,appicon', tags: ['tag-1']
+});
+const applicationBundle = context.createPortableBundle(root, 'active-inbox', { includeFavicons: false });
+const applicationJson = JSON.stringify(applicationBundle);
+assert(!applicationJson.includes('app_existingdevicebinding'), 'portable bundles must omit native application bindings');
+assert(!applicationJson.includes('base64,appicon'), 'portable bundles should omit application icon caches by default');
+assert(applicationBundle.manifest.omitted.includes('application bindings'));
+const applicationDestination = structuredClone(root);
+applicationDestination.boards[0].tabs[0].inbox.items = [];
+const importedApplications = context.importPortableBundle(applicationBundle, applicationDestination, { mode: 'merge' });
+assert.strictEqual(importedApplications.ok, true);
+const importedApplication = applicationDestination.boards[0].tabs[0].inbox.items.find(item => item.type === 'application');
+assert.match(importedApplication.appKey, /^app_[A-Za-z0-9_-]+$/);
+assert.notStrictEqual(importedApplication.appKey, 'app_existingdevicebinding');
+
 const summary = context.summarizePhaseTwoState(root);
-assert.deepStrictEqual({ boards: summary.boards, tabs: summary.tabs, bookmarks: summary.bookmarks }, { boards: 1, tabs: 1, bookmarks: 1 });
+assert.deepStrictEqual({ boards: summary.boards, tabs: summary.tabs, bookmarks: summary.bookmarks, applications: summary.applications }, { boards: 1, tabs: 1, bookmarks: 1, applications: 1 });
 const comparison = context.comparePhaseTwoSummaries(summary, { ...summary, bookmarks: 3 });
 assert.strictEqual(comparison.find(entry => entry.key === 'bookmarks').delta, 2);
 

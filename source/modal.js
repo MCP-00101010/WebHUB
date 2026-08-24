@@ -729,6 +729,15 @@ async function handleModalSubmit(event) {
       if (result === 'complete') return;
       break;
     }
+    case 'editApplication': {
+      const board = getBoardForContext(contextTarget);
+      const found = board ? findBoardItemInColumns(board, contextTarget?.itemId) : null;
+      if (!found?.item || found.item.type !== 'application') return;
+      ensureUndo();
+      found.item.title = value1.slice(0, 160);
+      found.item.tags = tags;
+      break;
+    }
     case 'addFolder': {
       const parent = contextTarget?.item;
       if (area === 'nav-empty') {

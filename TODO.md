@@ -28,31 +28,14 @@ This file tracks outstanding work only. Completed changes and their validation b
 
 - Revisit a per-item “ignore inheritance” option after the current tag-inheritance system has had enough real-world use to reveal its edge cases.
 
-### Widget movement between tabs and boards
-
-- Allow widgets to be dragged onto a tab name in the tab bar, moving the widget into the target tab's Inbox.
-- Add a widget context-menu action matching bookmark behaviour: **Send to** → target Collection/Board.
-- Preserve the widget's configuration and portable data while moving it, but keep browser-local cache and runtime state scoped safely to the widget instance.
-- Reuse the existing cross-board move, Inbox intake, destination-preview, Undo, and conflict-handling infrastructure rather than introducing a separate transfer path.
-- Test same-tab drops, cross-tab and cross-board moves, unavailable or deleted destinations, duplicate delivery events, active-widget teardown, and Undo restoration.
-
 ## Widget Roadmap
 
 Future network- and native-dependent widgets should use the existing shared SDK, cache, scheduler, and capability layers. Runtime samples, histories, and view preferences should remain local unless users explicitly choose to share them.
 
-### Application Launcher and application shortcuts
+### Application Launcher follow-ups
 
-- Decide whether launchable applications should be a first-class Hub item type alongside bookmarks or a dedicated widget, while retaining normal drag, move, tag, search, export, and layout behaviour.
-- Allow users to create an application shortcut by dropping an application, approved executable path, or application link onto the Hub.
-- Keep executable discovery and launches behind narrow native-host capabilities with explicit path approval, fixed open/reveal actions, missing-application handling, and platform-neutral page-side contracts.
-- Define portable import/export behaviour that excludes unsafe machine-local paths by default and provides clear placeholders when a shortcut is unavailable on another system.
-
-### Universal Search settings and provider catalogue
-
-- Replace the crowded inline provider editor with a compact provider list and an Add/Edit Provider sub-modal.
-- Expand the built-in provider catalogue beyond the initial sites, including DuckDuckGo, Amazon, Wolfram Alpha, and other broadly useful search targets.
-- Group or filter provider templates by purpose, keep custom HTTPS templates available, and preserve aliases, ordering, default-provider selection, and existing local recent-search privacy rules.
-- Add usability and migration tests for the simplified modal, built-in catalogue additions, custom providers, duplicate aliases, and existing saved configurations.
+- Add bounded installed-application discovery after the explicit picker workflow has had real-world use: Start Menu entries on Windows, application bundles on macOS, and desktop entries on Linux.
+- Improve native icon extraction on macOS and Linux while retaining the current generic icon fallback and portable unbound placeholders.
 
 ### Daily Briefing
 
@@ -181,6 +164,7 @@ This is a low-priority compatibility update for a possible future need, not part
 ## Known Platform Limitations
 
 - Firefox 153+ disables extension access to local files by default. File-based Hubs require “Access local files on your computer” under the extension’s Permissions in `about:addons`; 0.11.79 detects and explains this state.
+- Firefox/Zen intentionally withholds the absolute source path of files dragged from Windows Explorer. The Hub can create application items directly from readable `.url` files and allowlisted launcher URIs, but `.exe`, `.com`, and binary `.lnk` drops must use the native application picker so the approved device-local binding receives the real path. Image drops are unaffected because the Hub reads and saves a copy of their contents rather than retaining the source path.
 - Firefox/Zen does not expose external bookmark-drag payload data during `dragover`, so the Hub cannot render an item-specific insertion preview until `drop`. External browser drags therefore use a dashed placeholder.
 - Dragging a bookmark folder directly from Firefox/Zen imports only the first bookmark. The HTML drag-and-drop API exposes a single URL rather than the folder tree; full-folder import requires extension interception and relay support.
 

@@ -479,10 +479,10 @@ function _footballTrackerProviderPayloadError(providerId, payload) {
 function _footballTrackerProviderError(competition, directError, relayError) {
   const provider = _footballTrackerProvider(competition); const relayMessage = String(relayError?.message || relayError || '');
   if (competition.provider === 'sportmonks' && /\b401\b|invalid token|no token provided/i.test(relayMessage)) {
-    return new Error('Sportmonks rejected the token. Reload Firefox extension 1.0.33, then verify the Sportmonks token in Settings > API Keys.');
+    return new Error('Sportmonks rejected the token. Reload Firefox extension 1.0.40, then verify the Sportmonks token in Settings > API Keys.');
   }
   if (competition.provider === 'sportmonks' && !relayMessage && /network|failed to fetch/i.test(String(directError?.message || directError || ''))) {
-    return new Error('Sportmonks requires the Firefox extension relay. Reload extension 1.0.33 and refresh the Hub.');
+    return new Error('Sportmonks requires the Firefox extension relay. Reload extension 1.0.40 and refresh the Hub.');
   }
   return relayError || directError || new Error(`${provider.name} request failed.`);
 }

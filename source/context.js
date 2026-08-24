@@ -89,6 +89,32 @@ function _sortedInboxTargetOptions(boards, options = {}) {
       })));
 }
 
+function _buildWidgetInboxSubmenu(widgetId) {
+  const source = findWidgetPlacement(widgetId);
+  const definition = source?.item ? WIDGET_REGISTRY[source.item.widgetType] : null;
+  if (!source?.item || source.board?.locked || source.tab?.locked || !definition?.allowedIn?.includes('column')) return [];
+  return [...(state.boards || [])]
+    .filter(board => !board.locked)
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''))
+    .map(board => ({
+      label: board.title || 'Untitled Board',
+      submenu: (board.tabs || [])
+        .filter(tab => !tab.locked && getBoardInbox(board, tab)?.items !== source.list)
+        .map(tab => ({
+          label: tab.title || 'Untitled Tab',
+          action: `sendWidgetToInbox:${board.id}::${tab.id}`
+        }))
+    }))
+    .filter(entry => entry.submenu.length);
+}
+
+function _widgetInboxMoveError(reason) {
+  if (reason === 'same-destination' || reason === 'duplicate-destination') return 'That widget is already in the selected Inbox.';
+  if (reason === 'locked-source' || reason === 'locked-destination') return 'The source or destination is locked.';
+  if (reason === 'unsupported-placement') return 'That widget cannot be used in a board column.';
+  return 'The widget or destination is no longer available.';
+}
+
 function _buildAddToSetSubmenu() {
   const sets = [...(state.sets || [])]
     .filter(set => !isDynamicSet(set))
@@ -182,6 +208,19 @@ function _showEditBookmarkModal(context = contextTarget, overrides = {}) {
     showTags: true,
     value3: (context?.item?.tags || []).join(' '),
     inheritedTags: overrides.inheritedTags ?? (context?.area === 'set-item' ? [] : getContextInheritedTags(context)),
+    ...overrides
+  });
+}
+
+function _showEditApplicationModal(context = contextTarget, overrides = {}) {
+  showModal('editApplication', {
+    title: 'Edit Application',
+    placeholder1: 'Application title',
+    value1: context?.item?.title || '',
+    showUrl: false,
+    showTags: true,
+    value3: (context?.item?.tags || []).join(' '),
+    inheritedTags: overrides.inheritedTags ?? getContextInheritedTags(context),
     ...overrides
   });
 }
@@ -523,6 +562,9 @@ function handleContextMenuAction(action) {
     case 'addBookmark':
       _showAddBookmarkModal(contextTarget);
       break;
+    case 'addApplication':
+      void addApplicationShortcut(contextTarget);
+      break;
     case 'addTitle':
       showModal('addTitle', { title: 'New Title', placeholder1: 'New Title', contextTarget });
       break;
@@ -582,6 +624,29 @@ function handleContextMenuAction(action) {
       });
       break;
     }
+    case 'addApplicationToFolder':
+      if (!isDynamicFolder(contextTarget.item)) {
+        void addApplicationShortcut({ ...contextTarget, area: 'board-folder-item' });
+      }
+      break;
+    case 'launchApplication':
+      void launchApplicationShortcut(contextTarget.item);
+      break;
+    case 'revealApplication':
+      void revealApplicationShortcut(contextTarget.item);
+      break;
+    case 'rebindApplication':
+      void rebindApplicationShortcut(contextTarget.item);
+      break;
+    case 'forgetApplication':
+      void forgetApplicationShortcut(contextTarget.item);
+      break;
+    case 'editApplication':
+      _showEditApplicationModal(contextTarget);
+      break;
+    case 'duplicateApplication':
+      duplicateApplicationShortcut(contextTarget);
+      break;
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
       showFolderModal('create');
@@ -697,10 +762,10 @@ function handleContextMenuAction(action) {
       break;
     case 'editWidget':
       openWidgetSettings(contextTarget.item, () => {
-        const context = contextTarget.area === 'nav-item' ? 'navpane' : 'column';
+        const context = contextTarget.widgetContext || (contextTarget.area === 'nav-item' ? 'navpane' : 'column');
         if (!refreshRenderedWidget(contextTarget.item, context)) renderAll();
       }, {
-        widgetContext: contextTarget.area === 'nav-item' ? 'navpane' : 'column',
+        widgetContext: contextTarget.widgetContext || (contextTarget.area === 'nav-item' ? 'navpane' : 'column'),
         sidebarBottomAvailable: contextTarget.area === 'nav-item' && !contextTarget.parentId
       });
       break;
@@ -793,6 +858,16 @@ function handleContextMenuAction(action) {
           renderAll();
           saveState();
         }
+      } else if (action.startsWith('sendWidgetToInbox:')) {
+        const [targetBoardId, targetTabId] = action.slice('sendWidgetToInbox:'.length).split('::');
+        const result = moveWidgetToTabInbox(contextTarget.itemId, targetBoardId, targetTabId, { beforeMove: pushUndoSnapshot });
+        if (!result.ok) {
+          showNotice(_widgetInboxMoveError(result.reason));
+          return;
+        }
+        clearWidgetContextRuntime(result.widget.id, result.source.area === 'nav' ? 'navpane' : 'column');
+        renderAll();
+        saveState();
       } else if (action.startsWith('addBookmarkToSet:')) {
         const setId = action.slice('addBookmarkToSet:'.length);
         const set = findSetById(setId);
@@ -864,6 +939,7 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     } else {
       options.push({ label: 'Edit folder', action: 'editFolder' });
       options.push({ label: 'Add bookmark', action: 'addBookmarkToFolder' });
+      options.push({ label: 'Add application', action: 'addApplicationToFolder' });
       options.push({ label: 'Add title', action: 'addTitleToFolder' });
       options.push({ label: 'Add divider', action: 'addDividerToFolder' });
       if (canInsertIntoFolder(item, 'folder')) options.push({ label: 'Add dynamic folder', action: 'addDynamicFolder' });
@@ -879,12 +955,21 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     options.push({ label: 'Refresh favicon', action: 'refreshFavicon' });
     if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     options.push({ label: 'Delete bookmark', action: 'deleteItem' });
+  } else if (item.type === 'application') {
+    options.push({ label: 'Launch application', action: 'launchApplication' });
+    if (item.applicationKind !== 'protocol-link') options.push({ label: 'Reveal application', action: 'revealApplication' });
+    options.push({ label: 'Edit application', action: 'editApplication' });
+    options.push({ label: 'Set up on this device…', action: 'rebindApplication' });
+    if (getApplicationStatus(item).state === 'ready') options.push({ label: 'Forget device binding', action: 'forgetApplication' });
+    options.push({ label: 'Duplicate', action: 'duplicateApplication' });
+    if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
+    options.push({ label: 'Delete application', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
     options.push({ label: 'Delete', action: 'deleteItem' });
   }
 
-  if (!isInboxColumnId(columnId) && (item.type === 'folder' || item.type === 'bookmark')) {
+  if (!isInboxColumnId(columnId) && (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application')) {
     options.push({ label: 'Lock item', action: 'lockItem' });
   }
 
@@ -914,6 +999,8 @@ function handleNavContextMenu(event, item, parent, depth = 0) {
     options.push({ label: 'Delete', action: 'deleteNavItem' });
   } else if (item.type === 'widget') {
     options.push({ label: 'Widget settings', action: 'editWidget' });
+    const sendTo = _buildWidgetInboxSubmenu(item.id);
+    if (sendTo.length) options.push({ label: 'Send to', submenu: sendTo });
     options.push({ label: 'Delete widget', action: 'deleteNavItem' });
   }
 
@@ -985,6 +1072,7 @@ function handleBoardColumnContextMenu(event, columnId) {
     { label: 'Add folder', action: 'addFolder' },
     { label: 'Add dynamic folder', action: 'addDynamicFolder' },
     { label: 'Add bookmark', action: 'addBookmark' },
+    { label: 'Add application', action: 'addApplication' },
     { label: 'Add title', action: 'addTitle' },
     { label: 'Add divider', action: 'addDivider' }
   ];
@@ -1033,7 +1121,15 @@ function handleSearchResultContextMenu(event, item, meta) {
   contextTarget = { area: 'board-item', itemId: item.id, columnId: meta.columnId || null, parentId: null, boardId: meta.boardId, item, depth: 1 };
 
   const options = [];
-  if (item.type === 'bookmark') {
+  if (item.type === 'application') {
+    options.push({ label: 'Launch application', action: 'launchApplication' });
+    if (item.applicationKind !== 'protocol-link') options.push({ label: 'Reveal application', action: 'revealApplication' });
+    options.push({ label: 'Edit application', action: 'editApplication' });
+    options.push({ label: 'Set up on this device…', action: 'rebindApplication' });
+    if (getApplicationStatus(item).state === 'ready') options.push({ label: 'Forget device binding', action: 'forgetApplication' });
+    options.push({ label: 'Show in board', action: `openInBoard:${meta.boardId}` });
+    options.push({ label: 'Delete application', action: 'deleteItem' });
+  } else if (item.type === 'bookmark') {
     if (item.url) {
       options.push({ label: 'Open in new tab',    action: 'openNewTab' });
       options.push({ label: 'Open in new window', action: 'openNewWindow' });
@@ -1052,6 +1148,12 @@ function handleSearchResultContextMenu(event, item, meta) {
     options.push({ label: 'Edit folder',     action: 'editFolder' });
     options.push({ label: 'Show in board',   action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete folder',   action: 'deleteItem' });
+  } else if (item.type === 'widget') {
+    options.push({ label: 'Widget settings', action: 'editWidget' });
+    const sendTo = _buildWidgetInboxSubmenu(item.id);
+    if (sendTo.length) options.push({ label: 'Send to', submenu: sendTo });
+    options.push({ label: 'Show in board', action: `openInBoard:${meta.boardId}` });
+    options.push({ label: 'Delete widget', action: 'deleteItem' });
   }
   showContextMenu(event.clientX, event.clientY, options);
 }

@@ -191,7 +191,7 @@ function createWidgetElement(widget, columnId) {
   el.dataset.itemId = widget.id;
   el.dataset.columnId = columnId;
   el.dataset.itemType = 'widget';
-  el.draggable = true;
+  el.draggable = !getActiveBoard()?.locked;
 
   const body = document.createElement('div');
   body.className = 'widget-body';
@@ -210,15 +210,16 @@ function createWidgetElement(widget, columnId) {
     if (_widgetInteractiveDragTarget(e.target)) { e.stopPropagation(); return; }
     e.preventDefault();
     e.stopPropagation();
-    contextTarget = { area: 'board-item', itemId: widget.id, columnId, parentId: null, item: widget, depth: 1 };
-    showContextMenu(e.clientX, e.clientY, [
-      { label: 'Widget settings', action: 'editWidget' },
-      { label: 'Delete widget',   action: 'deleteItem' }
-    ]);
+    contextTarget = { area: 'board-item', itemId: widget.id, columnId, parentId: null, item: widget, depth: 1, widgetContext: 'column' };
+    const actions = [{ label: 'Widget settings', action: 'editWidget' }];
+    const sendTo = _buildWidgetInboxSubmenu(widget.id);
+    if (sendTo.length) actions.push({ label: 'Send to', submenu: sendTo });
+    actions.push({ label: 'Delete widget', action: 'deleteItem' });
+    showContextMenu(e.clientX, e.clientY, actions);
   });
 
   el.addEventListener('dragstart', e => {
-    if (dragStartedOnInteractiveControl || _widgetInteractiveDragTarget(e.target)) {
+    if (getActiveBoard()?.locked || dragStartedOnInteractiveControl || _widgetInteractiveDragTarget(e.target)) {
       e.preventDefault();
       dragStartedOnInteractiveControl = false;
       return;

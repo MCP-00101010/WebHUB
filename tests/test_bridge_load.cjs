@@ -163,8 +163,11 @@ test('directory approval keeps the page request alive for the interactive picker
     postMessage(message) {
       if (!message?._req) return;
       let response;
-      if (message.type === 'MW_PING') response = { ok: true, nativeAvailable: true, capabilities: ['approvedDirectories'] };
+      if (message.type === 'MW_PING') response = { ok: true, nativeAvailable: true, capabilities: ['approvedDirectories', 'applicationLauncher'] };
       else if (message.type === 'MW_APPROVE_DIRECTORY') response = { ok: true, directory: { handle: 'dir_abcdefghijklmnop', label: 'Repository' } };
+      else if (message.type === 'MW_APPROVE_APPLICATION') response = { ok: true, application: { appKey: 'app_abcdefghijklmnop', label: 'Editor', kind: 'executable', state: 'ready' } };
+      else if (message.type === 'MW_GET_APPLICATION_STATUS') response = { ok: true, application: { appKey: message.appKey, label: 'Editor', kind: 'executable', state: 'ready' } };
+      else if (message.type === 'MW_LAUNCH_APPROVED_APPLICATION') response = { ok: true };
       else response = { ok: false, error: 'No terminal application was found' };
       setImmediate(() => {
         for (const listener of (windowListeners.get('message') || [])) {
@@ -196,6 +199,12 @@ test('directory approval keeps the page request alive for the interactive picker
   assert.equal(directory.handle, 'dir_abcdefghijklmnop');
   assert.deepEqual(scheduledTimeouts, [305000]);
   assert.ok(scheduledTimeouts.every(Number.isFinite));
+  scheduledTimeouts.length = 0;
+  const application = await vm.runInContext("bridge.approveApplication('', 'Select application')", context);
+  assert.equal(application.appKey, 'app_abcdefghijklmnop');
+  assert.deepEqual(scheduledTimeouts, [305000]);
+  assert.equal((await vm.runInContext("bridge.getApplicationStatus('app_abcdefghijklmnop')", context)).state, 'ready');
+  assert.equal(await vm.runInContext("bridge.launchApplication('app_abcdefghijklmnop')", context), true);
   await assert.rejects(
     vm.runInContext("bridge.openApprovedDirectory('dir_abcdefghijklmnop', 'git', 'terminal')", context),
     /No terminal application was found/

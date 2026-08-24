@@ -260,7 +260,9 @@ function phaseTwoSanitizePortable(value, options = {}) {
   const copy = {};
   for (const [key, child] of Object.entries(value)) {
     if (blocked.has(key) || /credential|secret|nativePath/i.test(key)) continue;
+    if (key === 'appKey') continue;
     if (key === 'faviconCache' && !options.includeFavicons) continue;
+    if (key === 'iconCache' && !options.includeFavicons) continue;
     if (key === 'backgroundImage' && !options.includeBackgrounds) { copy[key] = ''; continue; }
     copy[key] = phaseTwoSanitizePortable(child, options);
   }
@@ -306,7 +308,7 @@ function createPortableBundle(root, scope = 'active-tab', options = {}) {
     manifest: {
       includes: Object.keys(payload),
       dependencies: Object.keys(dependencies).filter(key => dependencies[key].length),
-      omitted: ['credentials', 'native paths', 'browser tab/window IDs', 'runtime caches', ...(!options.includeFavicons ? ['favicon cache'] : []), ...(!options.includeBackgrounds ? ['background assets'] : []), ...(!options.includeUsage ? ['usage statistics'] : [])],
+      omitted: ['credentials', 'native paths', 'application bindings', 'browser tab/window IDs', 'runtime caches', ...(!options.includeFavicons ? ['favicon and application icon cache'] : []), ...(!options.includeBackgrounds ? ['background assets'] : []), ...(!options.includeUsage ? ['usage statistics'] : [])],
       sanitized: true
     },
     dependencies: phaseTwoSanitizePortable(dependencies, options),
@@ -345,12 +347,27 @@ function phaseTwoRemapTreeIds(value, idMap = new Map()) {
   return copy;
 }
 
+function phaseTwoResetApplicationBindings(value) {
+  const visit = node => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (node.type === 'application') {
+      const token = globalThis.crypto?.randomUUID?.().replace(/-/g, '')
+        || `${Date.now()}${Math.random().toString(36).slice(2, 14)}`;
+      node.appKey = `app_${token}`.slice(0, 79);
+    }
+    Object.values(node).forEach(visit);
+  };
+  visit(value);
+  return value;
+}
+
 function importPortableBundle(bundle, root, options = {}) {
   const validation = validatePortableBundle(bundle);
   if (!validation.ok) return validation;
   const mode = ['merge', 'copy', 'replace'].includes(options.mode) ? options.mode : 'merge';
   const remap = mode === 'copy';
-  const payload = remap ? phaseTwoRemapTreeIds(bundle.payload) : structuredClone(bundle.payload || {});
+  const payload = phaseTwoResetApplicationBindings(remap ? phaseTwoRemapTreeIds(bundle.payload) : structuredClone(bundle.payload || {}));
   if (mode === 'replace' && payload.boards) root.boards = payload.boards;
   else if (payload.boards) root.boards.push(...payload.boards.filter(board => mode === 'copy' || !root.boards.some(existing => existing.id === board.id)));
   if (payload.sets) root.sets.push(...payload.sets.filter(set => mode === 'copy' || !root.sets.some(existing => existing.id === set.id)));
@@ -372,14 +389,14 @@ function importPortableBundle(bundle, root, options = {}) {
 }
 
 function summarizePhaseTwoState(root) {
-  const summary = { schemaVersion: root?.schemaVersion || 0, boards: root?.boards?.length || 0, tabs: 0, bookmarks: 0, folders: 0, sets: root?.sets?.length || 0, tags: root?.tags?.length || 0, settings: root?.settings ? Object.keys(root.settings).length : 0 };
-  const walk = values => (values || []).forEach(item => { if (item?.type === 'bookmark') summary.bookmarks++; if (item?.type === 'folder') summary.folders++; if (item?.children) walk(item.children); });
+  const summary = { schemaVersion: root?.schemaVersion || 0, boards: root?.boards?.length || 0, tabs: 0, bookmarks: 0, applications: 0, folders: 0, sets: root?.sets?.length || 0, tags: root?.tags?.length || 0, settings: root?.settings ? Object.keys(root.settings).length : 0 };
+  const walk = values => (values || []).forEach(item => { if (item?.type === 'bookmark') summary.bookmarks++; if (item?.type === 'application') summary.applications++; if (item?.type === 'folder') summary.folders++; if (item?.children) walk(item.children); });
   for (const board of (root?.boards || [])) for (const tab of (board.tabs || [])) { summary.tabs++; for (const column of (tab.columns || [])) walk(column.items); walk(tab.inbox?.items); }
   return summary;
 }
 
 function comparePhaseTwoSummaries(current, backup) {
-  const keys = ['schemaVersion', 'boards', 'tabs', 'bookmarks', 'folders', 'sets', 'tags', 'settings'];
+  const keys = ['schemaVersion', 'boards', 'tabs', 'bookmarks', 'applications', 'folders', 'sets', 'tags', 'settings'];
   return keys.map(key => ({ key, current: Number(current?.[key] || 0), backup: Number(backup?.[key] || 0), delta: Number(backup?.[key] || 0) - Number(current?.[key] || 0) }));
 }
 

@@ -440,6 +440,35 @@ input::placeholder {
   object-fit: cover;
 }
 
+.bookmark-favicon > svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+}
+
+.application-status {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: capitalize;
+}
+
+.application-status--missing,
+.application-status--changed {
+  background: rgba(226, 96, 96, 0.16);
+  color: #e26060;
+}
+
+.application-status--unbound {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
 .bookmark-label {
   white-space: nowrap;
   overflow: hidden;
@@ -1282,6 +1311,16 @@ input::placeholder {
 .count-chip--folder {
   background: var(--text-muted);
   color: var(--bg);
+}
+
+.count-chip--application {
+  background: color-mix(in srgb, var(--accent) 72%, #7c3aed);
+  color: #fff;
+}
+
+.count-chip--widget {
+  background: color-mix(in srgb, var(--accent) 55%, var(--text-muted));
+  color: #fff;
 }
 
 .nav-item[data-type="board"] {

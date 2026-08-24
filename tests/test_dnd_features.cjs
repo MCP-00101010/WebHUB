@@ -52,6 +52,70 @@ test('multi-item Import Manager drag removes every selected bookmark in payload 
   ]);
 });
 
+test('desktop Internet Shortcuts are recognized as applications across drop formats', () => {
+  const harness = loadDnd([]);
+  harness.context.URL = URL;
+  harness.context.dropEvent = {
+    dataTransfer: {
+      files: [{ name: "Baldur's Gate 3.url" }],
+      getData: () => ''
+    }
+  };
+  const fileResult = vm.runInContext('getExternalDrop(dropEvent)', harness.context);
+  assert.equal(fileResult.application, true);
+  assert.equal(fileResult.title, "Baldur's Gate 3.url");
+
+  harness.context.dropEvent = {
+    dataTransfer: {
+      files: [],
+      getData: type => type === 'text/uri-list'
+        ? 'file:///C:/Users/Test/Desktop/Baldur%27s%20Gate%203.url'
+        : ''
+    }
+  };
+  const uriResult = vm.runInContext('getExternalDrop(dropEvent)', harness.context);
+  assert.equal(uriResult.application, true);
+  assert.equal(uriResult.title, "Baldur's Gate 3.url");
+
+  harness.context.dropEvent = {
+    dataTransfer: {
+      files: [],
+      getData: type => type === 'text/x-moz-url'
+        ? 'file:///C:/Users/Test/Desktop/Baldur%27s%20Gate%203.url\nBaldur\'s Gate 3'
+        : ''
+    }
+  };
+  const mozResult = vm.runInContext('getExternalDrop(dropEvent)', harness.context);
+  assert.equal(mozResult.application, true);
+  assert.equal(mozResult.title, "Baldur's Gate 3.url");
+
+  harness.context.dropEvent = {
+    dataTransfer: {
+      files: [],
+      getData: type => type === 'text/x-moz-url'
+        ? "steam://rungameid/1086940\nBaldur's Gate 3"
+        : ''
+    }
+  };
+  const protocolResult = vm.runInContext('getExternalDrop(dropEvent)', harness.context);
+  assert.equal(protocolResult.application, true);
+  assert.equal(protocolResult.title, "Baldur's Gate 3");
+  assert.equal(protocolResult.targetUri, 'steam://rungameid/1086940');
+});
+
+test('unsupported desktop file drops return an explicit result', () => {
+  const harness = loadDnd([]);
+  harness.context.dropEvent = {
+    dataTransfer: {
+      files: [{ name: 'notes.txt' }],
+      getData: () => ''
+    }
+  };
+  const result = vm.runInContext('getExternalDrop(dropEvent)', harness.context);
+  assert.equal(result.unsupportedFile, true);
+  assert.equal(result.title, 'notes.txt');
+});
+
 test('multi-item insertion keeps the group together beside its drop target', () => {
   const harness = loadDnd([]);
   const result = vm.runInContext(`(() => {

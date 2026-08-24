@@ -227,7 +227,7 @@ test('Sportmonks network failures explain the required extension relay', async (
     }
   });
   context.widget = widget({ competitionCode: 'SCO-PL' });
-  await assert.rejects(vm.runInContext("_footballTrackerProviderRequest(widget, _footballTrackerCompetition(widget), 'leagues/501')", context), /Reload Firefox extension 1\.0\.33/);
+  await assert.rejects(vm.runInContext("_footballTrackerProviderRequest(widget, _footballTrackerCompetition(widget), 'leagues/501')", context), /Reload Firefox extension 1\.0\.40/);
 });
 
 test('API-Football fixtures and standings normalize into the shared model', () => {

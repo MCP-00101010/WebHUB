@@ -257,7 +257,10 @@ function _focusCollectWidgetItems(widgetType) {
   };
   (state.boards || []).forEach(board => {
     const tabs = typeof getBoardTabs === 'function' ? getBoardTabs(board) : [{ columns: board.columns || [] }];
-    tabs.forEach(tab => (tab.columns || []).forEach(column => walk(column.items)));
+    tabs.forEach(tab => {
+      (tab.columns || []).forEach(column => walk(column.items));
+      walk(typeof getBoardInbox === 'function' ? getBoardInbox(board, tab)?.items : tab.inbox?.items);
+    });
   });
   walk(state.navItems || []);
   return matches;

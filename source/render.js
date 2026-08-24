@@ -41,6 +41,7 @@ const searchFilters = {
   url: true,
   tags: false,
   typeBookmark: true,
+  typeApplication: true,
   typeFolder: true,
   typeBoard: true
 };
@@ -223,21 +224,25 @@ function createCountChip(value, title, variant = 'bookmark') {
 
 function renderCountChipsInto(container, counts, options = {}) {
   if (!container) return;
-  const { bookmarks = 0, folders = 0 } = counts || {};
+  const { bookmarks = 0, applications = 0, folders = 0, widgets = 0 } = counts || {};
   const showZero = options.showZero === true;
   if (bookmarks > 0 || showZero) container.appendChild(createCountChip(bookmarks, options.bookmarkTitle || 'Bookmarks', 'bookmark'));
+  if (applications > 0 || showZero) container.appendChild(createCountChip(applications, options.applicationTitle || 'Applications', 'application'));
   if (folders > 0 || showZero) container.appendChild(createCountChip(folders, options.folderTitle || 'Folders', 'folder'));
+  if (widgets > 0 || showZero) container.appendChild(createCountChip(widgets, options.widgetTitle || 'Widgets', 'widget'));
 }
 
 function getNavFolderInboxCounts(folder) {
-  const totals = { bookmarks: 0, folders: 0 };
+  const totals = { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
   const seenBoardIds = new Set();
   const addBoard = boardId => {
     if (!boardId || seenBoardIds.has(boardId)) return;
     seenBoardIds.add(boardId);
     const counts = getBoardInboxCounts(state.boards.find(b => b.id === boardId));
     totals.bookmarks += counts.bookmarks;
+    totals.applications += counts.applications;
     totals.folders += counts.folders;
+    totals.widgets += counts.widgets;
   };
   const walk = items => {
     for (const item of (items || [])) {
@@ -374,14 +379,15 @@ function hexToRgba(hex, alpha) {
 
 function updateInboxBadge() {
   const board = getActiveBoard();
-  const { bookmarks, folders } = getBoardInboxCounts(board, getActiveTab());
-  const count = bookmarks + folders;
+  const { bookmarks, applications, folders, widgets } = getBoardInboxCounts(board, getActiveTab());
+  const count = bookmarks + applications + folders + widgets;
   const badge = document.getElementById('inboxBadge');
   if (badge) {
     badge.innerHTML = '';
-    renderCountChipsInto(badge, { bookmarks, folders }, {
+    renderCountChipsInto(badge, { bookmarks, applications, folders, widgets }, {
       bookmarkTitle: 'Bookmarks in inbox',
-      folderTitle: 'Folders in inbox'
+      folderTitle: 'Folders in inbox',
+      widgetTitle: 'Widgets in inbox'
     });
     badge.classList.toggle('hidden', count === 0);
   }
@@ -403,21 +409,55 @@ function renderInboxPanel(options = {}) {
   const inbox = getBoardInbox(board, activeTab);
   const body = document.getElementById('inboxPanelBody');
   if (!body) return;
+  const reusableWidgets = new Map();
+  body.querySelectorAll(':scope > .widget-card[data-item-id]').forEach(element => {
+    reusableWidgets.set(element.dataset.itemId, element);
+    element.remove();
+  });
   body.innerHTML = '';
-  const { bookmarks, folders } = getBoardInboxCounts(board, activeTab);
+  const { bookmarks, applications, folders, widgets } = getBoardInboxCounts(board, activeTab);
   const bmEl = document.getElementById('inboxPanelBmCount');
+  const appEl = document.getElementById('inboxPanelAppCount');
   const flEl = document.getElementById('inboxPanelFlCount');
+  const wgEl = document.getElementById('inboxPanelWidgetCount');
   if (bmEl) { bmEl.textContent = bookmarks; bmEl.className = 'count-chip count-chip--bookmark'; bmEl.classList.toggle('hidden', bookmarks === 0); }
+  if (appEl) { appEl.textContent = applications; appEl.className = 'count-chip count-chip--application'; appEl.classList.toggle('hidden', applications === 0); }
   if (flEl) { flEl.textContent = folders; flEl.className = 'count-chip count-chip--folder'; flEl.classList.toggle('hidden', folders === 0); }
+  if (wgEl) { wgEl.textContent = widgets; wgEl.className = 'count-chip count-chip--widget'; wgEl.classList.toggle('hidden', widgets === 0); }
   updateInboxBadge();
+  const clearUnusedWidgetRuntimes = () => {
+    for (const [widgetId] of reusableWidgets) {
+      const renderedElsewhere = [...document.querySelectorAll('.widget-card[data-item-id]')]
+        .some(element => element.dataset.itemId === widgetId);
+      if (!renderedElsewhere) clearWidgetContextRuntime(widgetId, 'column');
+    }
+  };
   if (!inbox?.items.length) {
+    clearUnusedWidgetRuntimes();
     const empty = document.createElement('div');
     empty.className = 'inbox-empty';
     empty.textContent = 'Inbox is empty.';
     body.appendChild(empty);
     return;
   }
-  inbox.items.forEach(item => body.appendChild(createBoardItemElement(item, inbox.id)));
+  inbox.items.forEach(item => {
+    const reusable = item?.type === 'widget' ? reusableWidgets.get(item.id) : null;
+    const canReuse = reusable
+      && reusable.dataset.columnId === inbox.id
+      && reusable.dataset.widgetRenderSignature === _widgetRenderSignature(item);
+    if (canReuse) {
+      body.appendChild(reusable);
+      reusableWidgets.delete(item.id);
+      requestAnimationFrame(() => resizeWidgetRuntime(item.id));
+      return;
+    }
+    if (reusable) {
+      clearWidgetContextRuntime(item.id, 'column');
+      reusableWidgets.delete(item.id);
+    }
+    body.appendChild(createBoardItemElement(item, inbox.id));
+  });
+  clearUnusedWidgetRuntimes();
 }
 
 function renderAll() {
@@ -532,6 +572,7 @@ function renderSearchResults(options = {}) {
   const typeAllowed = (item) => {
     if (item.type === 'board') return searchFilters.typeBoard;
     if (item.type === 'folder') return searchFilters.typeFolder;
+    if (item.type === 'application') return searchFilters.typeApplication;
     return searchFilters.typeBookmark;
   };
 
@@ -787,6 +828,7 @@ function createSearchResultItem(item, meta = {}) {
   if (meta.area === 'set') return createSetSearchResultItem(item, meta);
   if (item.type === 'folder') return createFolderSearchResultItem(item, meta);
   if (item.type === 'board') return createBoardSearchResultItem(item, meta);
+  if (item.type === 'application') return createApplicationSearchResultItem(item, meta);
 
   const el = document.createElement('a');
   el.className = 'board-column-item bookmark-item';
@@ -825,6 +867,51 @@ function createSearchResultItem(item, meta = {}) {
     el.appendChild(urlEl);
   }
   if (item.tags && item.tags.length > 0) {
+    const tagsEl = document.createElement('div');
+    tagsEl.className = 'item-tag-chips';
+    renderTagsInto(tagsEl, item.tags);
+    el.appendChild(tagsEl);
+  }
+  return el;
+}
+
+function createApplicationSearchResultItem(item, meta = {}) {
+  const el = document.createElement('div');
+  el.className = 'board-column-item bookmark-item application-item';
+  el.draggable = false;
+  el.dataset.itemId = item.id || '';
+  el.dataset.tooltip = `${item.title || 'Application'}\nApplication shortcut`;
+  el.dataset.tooltipKind = 'application';
+  el.addEventListener('click', () => void launchApplicationShortcut(item));
+  el.addEventListener('contextmenu', event => handleSearchResultContextMenu(event, item, meta));
+
+  const header = document.createElement('div');
+  header.className = 'item-header';
+  const iconEl = document.createElement('span');
+  iconEl.className = 'bookmark-favicon';
+  if (item.iconCache) {
+    const img = document.createElement('img');
+    img.src = item.iconCache;
+    img.alt = '';
+    img.draggable = false;
+    iconEl.appendChild(img);
+  } else {
+    iconEl.appendChild(icon('icon-application'));
+  }
+  header.appendChild(iconEl);
+  const name = document.createElement('span');
+  name.className = 'bookmark-label';
+  name.textContent = item.title || 'Application';
+  header.appendChild(name);
+  const status = getApplicationStatus(item);
+  if (status.state !== 'ready') {
+    const badge = document.createElement('span');
+    badge.className = `application-status application-status--${status.state}`;
+    badge.textContent = status.state === 'unbound' ? 'Set up' : status.state;
+    header.appendChild(badge);
+  }
+  el.appendChild(header);
+  if (item.tags?.length) {
     const tagsEl = document.createElement('div');
     tagsEl.className = 'item-tag-chips';
     renderTagsInto(tagsEl, item.tags);
@@ -1318,7 +1405,7 @@ function createNavItem(item, depth = 0, parent = null) {
     header.appendChild(collapseBtn);
     header.appendChild(titleDiv);
     const folderInboxCounts = getNavFolderInboxCounts(item);
-    if (folderInboxCounts.bookmarks + folderInboxCounts.folders > 0) {
+    if (folderInboxCounts.bookmarks + folderInboxCounts.applications + folderInboxCounts.folders + folderInboxCounts.widgets > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator nav-folder-inbox-indicator';
       indicator.title = 'Contained board inbox has items';
@@ -1359,8 +1446,8 @@ function createNavItem(item, depth = 0, parent = null) {
       renderTagsInto(tagsEl, board.tags);
       el.querySelector('.nav-board-info')?.appendChild(tagsEl);
     }
-    const { bookmarks: ibm, folders: ifl } = getBoardInboxCounts(board);
-    if (ibm + ifl > 0) {
+    const { bookmarks: ibm, applications: iap, folders: ifl, widgets: iwg } = getBoardInboxCounts(board);
+    if (ibm + iap + ifl + iwg > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator nav-item-inbox-indicator';
       indicator.title = 'Inbox has items';
@@ -1696,7 +1783,7 @@ function renderBoardTabBar(board, activeTab) {
     tabEl.appendChild(label);
 
     const counts = getBoardInboxCounts(board, tab);
-    if (counts.bookmarks + counts.folders > 0) {
+    if (counts.bookmarks + counts.applications + counts.folders + counts.widgets > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator';
       indicator.title = 'Inbox has items';

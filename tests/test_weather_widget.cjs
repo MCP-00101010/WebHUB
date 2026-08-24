@@ -73,6 +73,29 @@ test('weather widget does not treat its empty default coordinates as a real loca
   assert.equal(vm.runInContext("_weatherSignature({ config: { latitude: 91, longitude: 0, days: 5 } })", context), '');
 });
 
+test('weather settings accept coordinates stored by the location picker', () => {
+  const { context } = loadWidgets();
+  const result = vm.runInContext(`(() => {
+    const def = WIDGET_REGISTRY.weather;
+    return {
+      selectedLocation: WidgetSDK.settings.validateDraft(def, {
+        config: {
+          ...def.defaultConfig,
+          locationName: 'London, England, United Kingdom',
+          latitude: 51.5074,
+          longitude: -0.1278,
+          timezone: 'Europe/London'
+        }
+      }),
+      noLocation: WidgetSDK.settings.validateDraft(def, { config: { ...def.defaultConfig } })
+    };
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    selectedLocation: { valid: true, errors: [] },
+    noLocation: { valid: true, errors: [] }
+  });
+});
+
 test('weather automatic refresh is claimed once per clock hour', () => {
   const { context } = loadWidgets();
   context.runtime = {};

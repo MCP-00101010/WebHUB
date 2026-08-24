@@ -432,7 +432,10 @@ async function _mediaWatchlistLoadSeason(widget, record, seasonNumber, seriesSta
 function _mediaWatchlistFindWidgets() {
   const found = [];
   const walk = items => (items || []).forEach(item => { if (item?.type === 'widget' && item.widgetType === 'mediaWatchlist') found.push(item); if (Array.isArray(item?.children)) walk(item.children); });
-  for (const board of (typeof state !== 'undefined' ? state.boards || [] : [])) for (const tab of (typeof getBoardTabs === 'function' ? getBoardTabs(board) : board.tabs || [])) for (const column of (tab.columns || [])) walk(column.items);
+  for (const board of (typeof state !== 'undefined' ? state.boards || [] : [])) for (const tab of (typeof getBoardTabs === 'function' ? getBoardTabs(board) : board.tabs || [])) {
+    for (const column of (tab.columns || [])) walk(column.items);
+    walk(typeof getBoardInbox === 'function' ? getBoardInbox(board, tab)?.items : tab.inbox?.items);
+  }
   walk(typeof state !== 'undefined' ? state.navItems : []);
   return found;
 }

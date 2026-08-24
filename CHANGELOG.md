@@ -5,6 +5,180 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.207] — 2026-08-24
+
+### Changed
+
+- **Explicit application-drop boundary** — readable `.url` files and allowlisted launcher URIs remain true one-drop application links. Raw `.exe`, `.com`, and binary `.lnk` files deliberately continue through the native picker because Firefox exposes their name and contents but not the absolute Windows source path required for a stable device-local launch binding. This accepted platform limitation is now recorded in `TODO.md` alongside the reason image drops can still be copied directly.
+
+### Fixed
+
+- **Icons for URI-only Steam drops** — Steam application links that arrive from Windows without `.url` icon metadata now resolve their numeric app ID and use Steam's bounded local per-game artwork cache. If the local cache has no usable image, the native host requests the matching official Steam library artwork. Existing icon-less bindings are upgraded automatically during their next status refresh.
+- **Cell to Singularity icon** — the existing `steam://rungameid/977400` binding now resolves and caches its real local Steam icon without requiring the item to be removed and dragged in again. Only bounded image data is retained; Steam cache paths are neither returned to the page nor persisted with the binding.
+
+### Validation
+
+- Added native-host regression coverage for hashed Steam cache images, official artwork fallback, and automatic backfill of existing protocol-link icons. The live Cell to Singularity binding backfilled as a JPEG successfully. All 321 JavaScript tests across 40 files and all 31 native-host tests (plus three parameterized unsafe-link subtests) passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.40` carries the Steam cache fallback.
+
+## [0.11.206] — 2026-08-24
+
+### Added
+
+- **Real application icons** — executable and Windows shortcut approvals now extract their associated icon correctly and cache a bounded PNG on the Hub item. Dropped Steam `.url` links also read their `IconFile` metadata and use it only when it resolves to Steam's own `steam\\games\\*.ico` cache; the local hint path is never stored in the Hub database or native configuration.
+
+### Fixed
+
+- **Windows icon extractor input** — executable paths are now passed to PowerShell over standard input instead of as a malformed trailing command argument, fixing the generic application glyph seen on valid bindings such as Calibre.
+
+### Validation
+
+- Added regression coverage for safe Steam icon hints, rejected unrelated local icon paths, non-persistence of hint paths, and stdin-based Windows icon extraction. All 40 JavaScript test files and all 28 native-host tests (plus three parameterized unsafe-link subtests) passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories. Firefox extension `1.0.39` carries the icon relay and extraction fix.
+
+## [0.11.205] — 2026-08-24
+
+### Fixed
+
+- **Application lifetime after launch** — launch requests now use the extension's long-lived native connection. Firefox closes a one-shot native-message host as soon as it replies; on Windows, applications started as children of that host could be torn down immediately, creating a silent apparent no-op. Executables and protocol handlers now remain alive after the launch response.
+
+### Validation
+
+- Reproduced the lifecycle fault with the real approved Calibre binding: three application processes appeared during the native request and disappeared with the one-shot host. Added an end-to-end background regression proving launch requests share the persistent native connection. All 40 JavaScript test files and all 26 native-host tests (plus three parameterized unsafe-link subtests) passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories. Firefox extension `1.0.38` carries the lifecycle fix.
+
+## [0.11.204] — 2026-08-24
+
+### Fixed
+
+- **Windows launches that reported success but did nothing** — executable bindings now start as direct child processes with their application directory as the working directory. `.lnk`, `.url`, and allowlisted protocol bindings are dispatched through Windows Explorer, avoiding the ShellExecute return-without-visible-launch behaviour observed for both Calibre and Steam game cards. Both card clicks and **Launch application** use this shared backend.
+
+### Validation
+
+- Updated native launch regression coverage for direct executables and Explorer-dispatched Steam protocol links. All 40 JavaScript test files and all 26 native-host tests (plus three parameterized unsafe-link subtests) passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories. Firefox extension `1.0.37` carries the revised launch backend.
+
+## [0.11.203] — 2026-08-24
+
+### Fixed
+
+- **True one-drop game shortcuts** — readable Windows `.url` files are now decoded directly from the drop, validated as an allowlisted game/application protocol, bound in the native host, and added to the target column without reopening a picker. Launcher URIs exposed directly by a desktop or shell drag use the same path; the Hub database still stores only the opaque device binding key.
+- **Reliable Windows application launching** — application clicks and **Launch application** now use checked Windows Shell execution with the executable's own directory as its working directory. Shell failures propagate back to the Hub instead of being reported as successful no-ops; protocol links launch through their registered application handler.
+
+### Changed
+
+- **Honest fallback for opaque drags** — when Firefox supplies only a filename or an unreadable binary shortcut, the Hub explains the browser limitation before offering the native picker. Protocol-only application links no longer show an inapplicable **Reveal application** action. Firefox extension `1.0.36` adds the bounded application-link relay.
+
+### Validation
+
+- Added direct-drop parsing, protocol relay, device-local binding, allowlist rejection, and checked-launch regression coverage. All 40 JavaScript test files and all 26 native-host tests (plus three parameterized unsafe-link subtests) passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories.
+
+## [0.11.202] — 2026-08-24
+
+### Fixed
+
+- **Desktop game shortcut drops** — Windows `.url` Internet Shortcuts such as Steam-created Baldur's Gate 3 links are now recognized from standard, Firefox URI, and Firefox native-file drag formats. Dropping one on a board column opens the native application picker with the shortcut name instead of silently consuming the drop; unsupported desktop files now show an explanation.
+
+### Changed
+
+- **Constrained URI launch support** — the native host accepts `.url` files only when their Internet Shortcut target uses an explicit game/application protocol allowlist (including Steam, GOG Galaxy, Epic, Ubisoft, EA/Origin, Battle.net, Xbox, and Heroic). Web URLs and arbitrary schemes remain bookmarks or are rejected as application targets. Firefox extension `1.0.35` includes the updated native picker and validation path.
+
+### Validation
+
+- Added drag-format and native URI-shortcut regression coverage. All 40 JavaScript test files and all 24 native-host tests passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories.
+
+## [0.11.201] — 2026-08-24
+
+### Added
+
+- **First-class application shortcuts** — applications now live alongside bookmarks and folders with real application icons where the native platform can provide them, tags, locks, drag-and-drop movement, Inbox support, Hub Search results, and an Applications group in the command palette. The **Create Application Shortcut** command and board/folder context menus open an explicit native application picker; supported executable drops route through the same approval flow.
+- **Device-local application approvals** — Hub items store only a random portable application key and display metadata. The native host keeps the executable path in its local configuration and exposes fixed approve, status, launch, reveal, rebind, and forget operations without page-supplied arguments, working directories, shell text, environment variables, or elevation.
+
+### Changed
+
+- **Portable transfer safety** — portable bundles omit application binding keys and local icon caches by default. Every imported application receives a fresh unbound key, preventing imported data from acquiring an existing device approval; the card then offers **Set up on this device**.
+- **Application-aware navigation** — Inbox badges and panels count applications independently, application status badges distinguish checking, unbound, missing, changed, and unavailable states, and command queries such as `launch vscode` target application entries without adding them to bookmark Sets or Speed Dial.
+
+### Validation
+
+- Added application item, native approval/launch, bridge, state migration, search integration, portable-transfer, and Windows picker-injection regression coverage. All 40 JavaScript test files and all 21 native-host tests passed; syntax checks passed for 49 Hub and extension JavaScript files, both JSON manifests validated, and diff checks passed. `web-ext lint` reported zero errors with the two existing bundled native-host packaging advisories. The in-app browser had no active target for an automated visual pass. Firefox extension `1.0.34` adds the authenticated application-launcher bridge capability.
+
+## [0.11.200] — 2026-08-24
+
+### Added
+
+- **Expanded useful-site catalogue** — Universal Search now includes Google Maps (`@maps`), Reddit (`@reddit`), npm (`@npm`), PyPI (`@pypi`), Docker Hub (`@docker`), SteamDB (`@steamdb`), itch.io (`@itch`), ProtonDB (`@proton`), PCGamingWiki (`@pcgw`), and Bandcamp (`@bandcamp`).
+
+### Changed
+
+- **Balanced provider grouping** — the new providers are organized under General, Development, Gaming, and Media while the small Google, DuckDuckGo, YouTube, and Wikipedia default set remains unchanged. Every addition is immediately available through `@` without expanding existing widgets’ persistent chip lists.
+
+### Validation
+
+- Added catalogue-presence and exact URL-construction coverage for all ten providers. All 39 JavaScript test files passed (316 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated interaction pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.199] — 2026-08-24
+
+### Added
+
+- **GOG provider** — added the DRM-free game catalogue to Universal Search’s Gaming presets with the `@gog` alias and the current GOG catalogue-query route.
+- **Twitch provider** — added Twitch to the Media presets with the `@twitch` alias and its site-wide channel, category, and video search route.
+
+### Validation
+
+- Added URL-construction and catalogue-presence coverage for both providers. All 39 JavaScript test files passed (315 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated interaction pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.198] — 2026-08-24
+
+### Added
+
+- **Provider favicons** — Universal Search provider chips, `@` choices, web-search results, and settings summaries now show each site’s resolved favicon. Configured icon text remains visible as a resilient fallback while the favicon loads or when no remote icon is available.
+- **Full `@` provider catalogue** — typing `@` now searches every built-in provider plus configured custom providers. Built-ins can be used immediately without adding them to widget settings, while configured providers retain priority on alias conflicts.
+
+### Changed
+
+- **Persistent versus transient providers** — widget settings continue to control the default provider and compact provider-chip list; selecting an unconfigured built-in from `@` applies only to that search and does not mutate saved configuration.
+
+### Validation
+
+- Added coverage for full-catalogue discovery, purpose filtering, transient built-in searches, configuration preservation, and favicon fallback behavior. All 39 JavaScript test files passed (314 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated interaction pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.197] — 2026-08-24
+
+### Added
+
+- **Discoverable provider shortcuts** — typing `@` in Universal Search now lists configured providers, filters them by name or alias as more characters are entered, and lets keyboard or pointer selection prepare an explicit provider search.
+- **Searchable provider catalogue** — the Add/Edit Provider dialog can now filter the grouped preset library by provider name, alias, or purpose, while existing HTTPS custom-provider support remains unchanged.
+
+### Changed
+
+- **Provider ordering controls** — search providers can be moved up or down from the compact settings list, controlling their widget-chip and shortcut order without replacing existing saved configuration.
+
+### Validation
+
+- Added provider-picker, catalogue-filter, and saved-configuration migration coverage. All 39 JavaScript test files passed (312 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated interaction pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.196] — 2026-08-22
+
+### Fixed
+
+- **Weather settings location validation** — closing the Weather widget settings with **Done** now accepts the numeric coordinates stored by a valid location selection. Latitude and longitude remain internal to the location picker rather than appearing as manual settings.
+
+### Validation
+
+- Added regression coverage for both a selected Open-Meteo location and the empty unconfigured location state. All 39 JavaScript test files passed (309 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests and the example widget manifest validated, and diff checks passed. The in-app browser had no active target for an automated modal pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
+## [0.11.195] — 2026-08-22
+
+### Added
+
+- **Widget movement between tabs and boards** — board-compatible widgets can now be dropped onto tab names to move them into that tab's Inbox. Widget context menus also provide a nested **Send to** → board → tab destination picker from board, Inbox, sidebar, and search-result placements.
+
+### Changed
+
+- **Widget-aware Inboxes** — Inbox badges and panels now count and render widgets alongside bookmarks and folders. Moves preserve the widget ID, configuration, portable data, and browser-local cache namespace while safely clearing only the active runtime for its former placement.
+- **Atomic destination handling** — widget moves reuse one validated mutation path with Undo support and reject locked, unavailable, unsupported, duplicate, and same-Inbox destinations without removing the source widget.
+
+### Validation
+
+- Added regression coverage for same-tab and cross-board moves, sidebar sources, configuration and identity preservation, widget Inbox counts, duplicate/stale/locked destination rejection, runtime cleanup wiring, context-menu destinations, and Undo snapshot restoration. All 39 JavaScript test files passed (308 tests), all 17 native-host tests passed, syntax checks passed for 49 Hub, extension, and widget-template JavaScript files, both JSON manifests validated, and diff checks passed. The in-app browser had no active target for an automated visual pass; extension code was unchanged, so its version remains `1.0.33` and `web-ext lint` was not required by the release checklist.
+
 ## [0.11.194] — 2026-08-22
 
 ### Changed
