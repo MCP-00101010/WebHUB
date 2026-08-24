@@ -291,6 +291,8 @@ Implementation status as of 2026-08-24:
 - [x] Extracted Windows launch orchestration, managed EightyOne profile preparation, process startup, running-instance decisions, window focus handling, and the EightyOne/Spectaculator/SpecStub adapter capabilities into `emugui_core/launching.py`. `server.py` retains thin compatibility functions for both transports.
 - [x] Completed the real-emulator launch matrix against the extracted core: managed EightyOne 48K/128K launches, profile copying, focusable windows, Spectaculator direct launch, running-instance choice, SpecStub reuse, new-instance launch, process survival, cleanup, and automated missing-resource/immediate-exit cases all pass.
 - [x] Extracted the library model, collection discovery/configuration/loading, import matching, metadata mutations, scraper dispatch, and bounded background-job state into transport-independent `emugui_core` services with focused tests. `server.py` now retains thin compatibility functions and the low-level filesystem/network adapters.
+- [x] Replaced hardcoded server emulator definitions with validated versioned configuration, added generic Add/Edit/Delete emulator controls, safe argument-array templates, collection defaults, and template-driven launches while preserving the ZX adapters.
+- [x] Connected EmuGUI scraper secrets to the WebHub native host's Windows Credential Manager boundary and completed verified write-before-delete migration of the configured ScreenScraper and TheGamesDB credentials.
 
 1. Freeze the current EmuGUI server as the behaviour reference.
 2. Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
@@ -305,7 +307,7 @@ Implementation status as of 2026-08-24:
 11. [Completed in WebHub 0.11.216 / extension 1.0.49] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport, including large collections.
 12. Retain an optional development HTTP adapter if it remains useful for standalone frontend work.
 
-Do not copy scraper secrets from EmuGUI's current JSON configuration into the extension or Hub database. Move them explicitly to Windows Credential Manager through the existing native secret service, with verified write-before-delete migration.
+Scraper secrets remain outside the extension and Hub databases. The native host's existing Windows Credential Manager service performs verified write-before-delete migration from legacy EmuGUI JSON and supplies credentials only to the native scraper service.
 
 ## Future Systems
 

@@ -519,6 +519,37 @@ class NativePersistenceTests(unittest.TestCase):
             finally:
                 HOST.CONFIG_PATH = original
 
+    def test_emugui_service_receives_existing_native_secret_boundary(self):
+        with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
+            root = Path(directory) / 'EmuGUI'
+            root.mkdir()
+            (root / 'server.py').write_text(
+                "secret_hooks = {}\n"
+                "def configure_native_secret_service(**hooks):\n"
+                "    secret_hooks.update(hooks)\n"
+                "def dispatch_emugui_read(method):\n"
+                "    return {'serviceVersion': 1, 'active': {}, 'collections': [], 'emulators': [], 'profiles': []}\n",
+                encoding='utf-8'
+            )
+            config_path = Path(directory) / 'native-config.json'
+            original_path = HOST.CONFIG_PATH
+            original_module = HOST.EMUGUI_MODULE
+            original_module_path = HOST.EMUGUI_MODULE_PATH
+            HOST.CONFIG_PATH = str(config_path)
+            HOST.EMUGUI_MODULE = None
+            HOST.EMUGUI_MODULE_PATH = ''
+            try:
+                HOST.save_config({'databasePath': '', 'emuguiRoot': str(root)})
+                module = HOST._load_emugui_module()
+                self.assertIs(module.secret_hooks['get_secret'], HOST.secret_get)
+                self.assertIs(module.secret_hooks['set_secret'], HOST.secret_set)
+                self.assertIs(module.secret_hooks['delete_secret'], HOST.secret_delete)
+                self.assertIs(module.secret_hooks['status'], HOST.secret_status)
+            finally:
+                HOST.CONFIG_PATH = original_path
+                HOST.EMUGUI_MODULE = original_module
+                HOST.EMUGUI_MODULE_PATH = original_module_path
+
     def test_emugui_game_binding_is_opaque_reused_and_launchable(self):
         with TemporaryDirectory(dir=TEST_TEMP_ROOT) as directory:
             root = Path(directory)

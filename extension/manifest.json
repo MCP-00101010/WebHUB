@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Morpheus WebHub",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "description": "Send tabs to your Morpheus WebHub inbox and enable file save/load.",
 
   "browser_specific_settings": {

@@ -5,6 +5,21 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.219] — 2026-08-24
+
+### Added
+
+- **Extensible EmuGUI emulator configuration** — EmuGUI now loads its built-in emulator definitions from versioned JSON, supports validated custom emulators through an Add/Edit interface, stores launch commands as bounded argument arrays with an approved placeholder set, and supports one default emulator per collection.
+- **Credential Manager boundary for EmuGUI** — the native host now supplies its existing Windows Credential Manager service to EmuGUI. Existing ScreenScraper and TheGamesDB secrets are written and read back for verification before their plaintext JSON fields are removed.
+
+### Changed
+
+- **Template-driven native launches** — direct game, running-instance helper, and POK launches render configured argument vectors while retaining `shell=False`, existing managed-profile behaviour, and the current EightyOne/Spectaculator adapters.
+
+### Validation
+
+- All 345 WebHub JavaScript tests, all 47 EmuGUI tests, and all 42 native-host tests (plus 11 parameterised subtests) pass, including custom-emulator lifecycle, dependent-profile deletion guards, path/template rejection, argument rendering, secret migration verification, and native secret-service injection. The real configured credentials migrated successfully with no plaintext scraper secrets remaining and both providers still configured. The live EightyOne 48K/128K and Spectaculator direct/current/new matrix passes through the template renderer. JavaScript/Python syntax checks pass, and Firefox extension `1.0.51` passes `web-ext lint` with zero errors and the existing native-host Python notice and installer-shell warning. No in-app browser target was available for an automated click-through.
+
 ## [0.11.218] — 2026-08-24
 
 ### Fixed

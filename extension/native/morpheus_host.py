@@ -1127,6 +1127,14 @@ def _load_emugui_module():
                 pass
     if not callable(getattr(module, 'dispatch_emugui_read', None)):
         raise RuntimeError('The configured EmuGUI does not expose the native service contract')
+    configure_secrets = getattr(module, 'configure_native_secret_service', None)
+    if callable(configure_secrets):
+        configure_secrets(
+            get_secret=secret_get,
+            set_secret=secret_set,
+            delete_secret=secret_delete,
+            status=secret_status,
+        )
     EMUGUI_MODULE = module
     EMUGUI_MODULE_PATH = server_path
     return module
