@@ -13,6 +13,7 @@ let hubPageUrl = '';
 let hubRelayError = '';
 let hubRegisteredAt = 0;
 const hubRegistrations = new Map();
+const emuguiRegistrations = new Map();
 let lastActiveWebTab = null;
 let storageInfoReady = false;
 let fileSchemeAccess = null;
@@ -75,7 +76,7 @@ const HUB_PAGE_REQUEST_TYPES = new Set([
   'MW_FETCH_TRANSLATOR_ASSET_CHUNK', 'MW_NOTIFICATION_SCHEDULE', 'MW_NOTIFICATION_CANCEL',
   'MW_NOTIFICATION_LIST', 'MW_NOTIFICATION_MARK_READ', 'MW_NOTIFICATION_CLEAR'
 ]);
-const EMUGUI_PAGE_REQUEST_TYPES = new Set(['MW_EMUGUI_SEND_GAME']);
+const EMUGUI_PAGE_REQUEST_TYPES = new Set(['MW_EMUGUI_SEND_GAME', 'MW_EMUGUI_RPC', 'MW_EMUGUI_ASSET']);
 
 
 // Keep one native-host process alive for startup and chunked reads. Firefox's
@@ -384,15 +385,38 @@ function authorizeHubPageRequest(msg, sender) {
     && (!sender.tab.url || sender.tab.url === registration.url);
 }
 
-function authorizeEmuGuiPageRequest(sender) {
-  try {
-    const url = new URL(sender?.tab?.url || '');
-    return url.protocol === 'http:'
-      && ['localhost', '127.0.0.1'].includes(url.hostname)
-      && url.port === '8765';
-  } catch {
-    return false;
+async function registerEmuGuiPage(sender, pageUrl) {
+  const tabId = sender?.tab?.id;
+  const url = String(pageUrl || sender?.tab?.url || '');
+  if (tabId === undefined || !url || (sender.tab.url && sender.tab.url !== url)) {
+    return { ok: false, error: 'EmuGUI registration came from an unsupported page' };
   }
+  let parsed;
+  try { parsed = new URL(url); } catch { return { ok: false, error: 'EmuGUI page address is invalid' }; }
+  let authorized = parsed.protocol === 'http:'
+    && ['localhost', '127.0.0.1'].includes(parsed.hostname)
+    && parsed.port === '8765';
+  if (parsed.protocol === 'file:') {
+    await ensureNativeStorageReady();
+    if (!nativeAvailable) return { ok: false, error: 'Native host is required to authorize the EmuGUI file page' };
+    const result = await sendPersistentNativeMessage({ type: 'EMUGUI_AUTHORIZE_PAGE', pageUrl: url }, EMUGUI_REQUEST_TIMEOUT_MS);
+    authorized = result?.ok === true && result.authorized === true;
+  }
+  if (!authorized) return { ok: false, error: 'This is not the configured Morpheus EmuGUI page' };
+  const transport = parsed.protocol === 'file:' ? 'extension' : 'http';
+  const registration = { url, sessionToken: createHubSessionToken(), registeredAt: Date.now(), transport };
+  emuguiRegistrations.set(tabId, registration);
+  return { ok: true, emuguiSessionToken: registration.sessionToken, transport };
+}
+
+function authorizeEmuGuiPageRequest(msg, sender) {
+  const tabId = sender?.tab?.id;
+  const registration = tabId === undefined ? null : emuguiRegistrations.get(tabId);
+  return !!registration
+    && msg?.emuguiSessionToken === registration.sessionToken
+    && msg?.pageUrl === registration.url
+    && (registration.transport === 'extension' || msg?.type === 'MW_EMUGUI_SEND_GAME')
+    && (!sender.tab.url || sender.tab.url === registration.url);
 }
 
 async function discoverMorpheusTab(tab, { inject = false } = {}) {
@@ -1534,6 +1558,24 @@ async function runGameAction(type, gameKey) {
   return sendPersistentNativeMessage(request, EMUGUI_REQUEST_TIMEOUT_MS);
 }
 
+async function runEmuGuiPageRpc(message) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendPersistentNativeMessage({
+    type: 'EMUGUI_API',
+    method: String(message.method || '').slice(0, 8),
+    path: String(message.path || '').slice(0, 96),
+    query: message.query && typeof message.query === 'object' ? message.query : {},
+    body: message.body && typeof message.body === 'object' ? message.body : {}
+  }, EMUGUI_REQUEST_TIMEOUT_MS);
+}
+
+async function loadEmuGuiPageAsset(path) {
+  await ensureNativeStorageReady();
+  if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
+  return sendPersistentNativeMessage({ type: 'EMUGUI_ASSET', path: String(path || '').slice(0, 2048) }, EMUGUI_REQUEST_TIMEOUT_MS);
+}
+
 async function openGameInEmuGui(gameKey, rebind = false) {
   await ensureNativeStorageReady();
   if (!nativeAvailable) return { ok: false, error: 'Native host not available' };
@@ -1549,13 +1591,17 @@ async function openGameInEmuGui(gameKey, rebind = false) {
   } catch {
     return { ok: false, error: 'EmuGUI returned an invalid page address' };
   }
-  if (target.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(target.hostname) || target.port !== '8765' || target.pathname !== '/') {
+  const localHttpTarget = target.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(target.hostname)
+    && target.port === '8765' && target.pathname === '/';
+  const localFileTarget = target.protocol === 'file:' && /\/web\/index\.html$/i.test(target.pathname);
+  if (!localHttpTarget && !localFileTarget) {
     return { ok: false, error: 'EmuGUI returned an unsupported page address' };
   }
   const tabs = await browser.tabs.query({});
   const existing = (tabs || []).find(tab => {
     try {
       const url = new URL(tab.url || '');
+      if (target.protocol === 'file:') return url.protocol === 'file:' && url.pathname.toLowerCase() === target.pathname.toLowerCase();
       return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && url.port === '8765';
     } catch { return false; }
   });
@@ -1742,7 +1788,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: false, error: 'This request is not authorized for the registered Hub page' });
     return false;
   }
-  if (EMUGUI_PAGE_REQUEST_TYPES.has(msg?.type) && !authorizeEmuGuiPageRequest(sender)) {
+  if (EMUGUI_PAGE_REQUEST_TYPES.has(msg?.type) && !authorizeEmuGuiPageRequest(msg, sender)) {
     sendResponse({ ok: false, error: 'This request is not authorized for Morpheus EmuGUI' });
     return false;
   }
@@ -1770,6 +1816,12 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true, hubSessionToken: registration.sessionToken, ...getStorageInfo() });
       break;
       }
+
+    case 'MW_EMUGUI_REGISTER':
+      registerEmuGuiPage(sender, msg.pageUrl)
+        .then(sendResponse)
+        .catch(error => sendResponse({ ok: false, error: error?.message || String(error) }));
+      return true;
 
     case 'MW_GET_STATUS':
       if (!nativeAvailable) void ensureNativeStorageReady();
@@ -1990,6 +2042,14 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendEmuGuiGameToHub(msg).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
 
+    case 'MW_EMUGUI_RPC':
+      runEmuGuiPageRpc(msg).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
+    case 'MW_EMUGUI_ASSET':
+      loadEmuGuiPageAsset(msg.path).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+
     case 'MW_GET_GAME_STATUS':
       getGameStatus(msg.gameKey, msg.includeThumbnail === true).then(sendResponse).catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
@@ -2200,6 +2260,7 @@ if (browser.commands?.onCommand) {
 
 browser.tabs.onRemoved.addListener(tabId => {
   if (hubRegistrations.has(tabId)) forgetMorpheusTab(tabId);
+  emuguiRegistrations.delete(tabId);
 });
 
 if (browser.tabs.onUpdated) {

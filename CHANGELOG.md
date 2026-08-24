@@ -5,6 +5,22 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.215] — 2026-08-24
+
+### Added
+
+- **Server-free external EmuGUI interface** — the canonical EmuGUI `web/index.html`, CSS, and JavaScript now run directly as a local page and relay their existing collection, metadata, scraper, profile, maintenance, launch, and artwork operations through the WebHub extension's persistent native connection. The EmuGUI interface remains entirely in its own repository, so frontend changes need only a page reload rather than an extension rebuild or reinstall.
+- **Transport-neutral EmuGUI API** — EmuGUI exposes its current UI operations through a Python dispatcher shared by non-HTTP transports, plus a bounded collection-artwork reader. Its localhost server and unchanged fetch path remain available as an optional standalone development fallback.
+
+### Changed
+
+- **Open in EmuGUI no longer needs the manual server** — game shortcuts now open the configured EmuGUI `web/index.html` file with the existing selected-game/rebind handoff. The native host authorises the page by its canonical configured path, and the extension gives each registered EmuGUI tab an opaque session token.
+- **Narrow extension boundary** — extension code contains only page authentication, namespaced message validation, bounded routing, and persistent-native transport. EmuGUI business rules and the complete UI stay external. Localhost fallback pages retain Send-to-WebHub delivery but cannot call privileged management RPCs.
+
+### Validation
+
+- Added exact-file authorization, per-tab registration, localhost privilege isolation, generic API relay, bounded artwork, real configured-collection, frontend transport, cancellation, and path-containment coverage. All 342 JavaScript tests, all 40 native-host tests (plus 11 parameterised subtests), and all 14 EmuGUI tests pass. JavaScript syntax checks and a live read-only request against the configured three-collection EmuGUI checkout passed. Firefox extension `1.0.48` passes `web-ext lint` with zero errors and the existing native-host Python notice and installer-shell warning. No in-app browser target was available for an automated click-through.
+
 ## [0.11.214] — 2026-08-24
 
 ### Added

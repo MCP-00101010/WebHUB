@@ -8,14 +8,18 @@ globalThis.__morpheusWebHubRelayLoaded = true;
 // once at document_idle, after Morpheus' identifying meta tag is available.
 const IS_MORPHEUS = !!document.querySelector('meta[name="morpheus-webhub"]');
 const IS_EMUGUI = !!document.querySelector('meta[name="morpheus-emugui"]')
-  && window.location.protocol === 'http:'
-  && ['localhost', '127.0.0.1'].includes(window.location.hostname)
-  && window.location.port === '8765';
+  && (window.location.protocol === 'file:' || (
+    window.location.protocol === 'http:'
+    && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    && window.location.port === '8765'
+  ));
 const pendingPagePushes = new Map();
 let pushSequence = 0;
 let registeredWithBackground = false;
 let registrationPromise = null;
 let hubSessionToken = '';
+let emuguiRegistrationPromise = null;
+let emuguiSessionToken = '';
 
 function setRelayDiagnostic(state, error = '') {
   const root = document.documentElement;
@@ -63,6 +67,30 @@ function registerHub({ force = false } = {}) {
     registrationPromise = null;
   });
   return registrationPromise;
+}
+
+function registerEmuGui({ force = false } = {}) {
+  if (emuguiSessionToken && !force) return Promise.resolve({ ok: true, emuguiSessionToken });
+  if (emuguiRegistrationPromise) return emuguiRegistrationPromise;
+  emuguiRegistrationPromise = browser.runtime.sendMessage({
+    type: 'MW_EMUGUI_REGISTER',
+    pageUrl: window.location.href
+  }).then(response => {
+    if (response?.ok !== true || !response.emuguiSessionToken) {
+      throw new Error(response?.error || 'The extension rejected EmuGUI registration');
+    }
+    emuguiSessionToken = response.emuguiSessionToken;
+    setRelayDiagnostic('background-ready');
+    window.postMessage({ _emugui: true, _relayReady: true, transport: response.transport || '' }, '*');
+    return response;
+  }).catch(error => {
+    emuguiSessionToken = '';
+    setRelayDiagnostic('background-error', error?.message || String(error));
+    return { ok: false, error: error?.message || String(error) };
+  }).finally(() => {
+    emuguiRegistrationPromise = null;
+  });
+  return emuguiRegistrationPromise;
 }
 
 if (IS_MORPHEUS) {
@@ -129,23 +157,42 @@ if (IS_MORPHEUS) {
     }
   });
 }
+if (IS_EMUGUI) {
+  setRelayDiagnostic('loaded');
+  void registerEmuGui();
+}
 
 // Relay page requests to the extension background and delivery acknowledgements
 // back to the popup/background sender.
 window.addEventListener('message', async event => {
   if (IS_EMUGUI && event.source === window && event.data?._emuguiReq === true) {
     const requestId = String(event.data.requestId || '');
-    if (!requestId || event.data.type !== 'MW_EMUGUI_SEND_GAME') return;
+    const type = String(event.data.type || '');
+    if (!requestId || !['MW_EMUGUI_SEND_GAME', 'MW_EMUGUI_RPC', 'MW_EMUGUI_ASSET'].includes(type)) return;
     let response;
     try {
-      response = await browser.runtime.sendMessage({
-        type: 'MW_EMUGUI_SEND_GAME',
-        gameId: String(event.data.gameId || '').slice(0, 120),
-        emulatorId: String(event.data.emulatorId || '').slice(0, 120),
-        profileId: String(event.data.profileId || '').slice(0, 120),
-        rebindGameKey: String(event.data.rebindGameKey || '').slice(0, 80),
-        deliveryId: String(event.data.deliveryId || '').slice(0, 160)
-      });
+      const registration = await registerEmuGui();
+      if (registration?.ok !== true || !emuguiSessionToken) throw new Error(registration?.error || 'EmuGUI is not registered');
+      const message = {
+        type,
+        emuguiSessionToken,
+        pageUrl: window.location.href
+      };
+      if (type === 'MW_EMUGUI_SEND_GAME') Object.assign(message, {
+          gameId: String(event.data.gameId || '').slice(0, 120),
+          emulatorId: String(event.data.emulatorId || '').slice(0, 120),
+          profileId: String(event.data.profileId || '').slice(0, 120),
+          rebindGameKey: String(event.data.rebindGameKey || '').slice(0, 80),
+          deliveryId: String(event.data.deliveryId || '').slice(0, 160)
+        });
+      if (type === 'MW_EMUGUI_RPC') Object.assign(message, {
+          method: String(event.data.method || '').slice(0, 8),
+          path: String(event.data.path || '').slice(0, 96),
+          query: event.data.query && typeof event.data.query === 'object' ? event.data.query : {},
+          body: event.data.body && typeof event.data.body === 'object' ? event.data.body : {}
+        });
+      if (type === 'MW_EMUGUI_ASSET') message.path = String(event.data.path || '').slice(0, 2048);
+      response = await browser.runtime.sendMessage(message);
     } catch (error) {
       response = { ok: false, error: error?.message || String(error) };
     }

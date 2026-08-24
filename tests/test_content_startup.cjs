@@ -199,7 +199,7 @@ test('discovery retries registration after the initial background handshake fail
   assert.equal(document.documentElement.dataset.morpheusExtensionRelay, 'background-ready');
 });
 
-test('EmuGUI localhost page can request only bounded game delivery', async () => {
+test('EmuGUI localhost page registers before requesting bounded game delivery', async () => {
   const listeners = [];
   const runtimeMessages = [];
   const posted = [];
@@ -216,6 +216,9 @@ test('EmuGUI localhost page can request only bounded game delivery', async () =>
     runtime: {
       sendMessage: async message => {
         runtimeMessages.push(message);
+        if (message.type === 'MW_EMUGUI_REGISTER') {
+          return { ok: true, emuguiSessionToken: 'emugui-session-1', transport: 'http' };
+        }
         return { ok: true, deliveryId: 'game-one', persisted: 'shared' };
       },
       onMessage: { addListener: () => {} }
@@ -231,8 +234,55 @@ test('EmuGUI localhost page can request only bounded game delivery', async () =>
   } });
 
   assert.deepEqual(JSON.parse(JSON.stringify(runtimeMessages[0])), {
-    type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k', rebindGameKey: '', deliveryId: ''
+    type: 'MW_EMUGUI_REGISTER', pageUrl: 'http://127.0.0.1:8765/'
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(runtimeMessages[1])), {
+    type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k',
+    rebindGameKey: '', deliveryId: '', emuguiSessionToken: 'emugui-session-1', pageUrl: 'http://127.0.0.1:8765/'
   });
   assert.equal(posted.at(-1)._emuguiRes, true);
   assert.equal(posted.at(-1).persisted, 'shared');
+});
+
+test('EmuGUI file page relays namespaced API requests through its registered session', async () => {
+  const listeners = [];
+  const runtimeMessages = [];
+  const posted = [];
+  const pageUrl = 'file:///F:/Projects/Coding/Morpheus%20EmuGUI/web/index.html';
+  const window = {
+    location: { href: pageUrl, protocol: 'file:', hostname: '', port: '' },
+    addEventListener(type, listener) { if (type === 'message') listeners.push(listener); },
+    postMessage(message) { posted.push(message); }
+  };
+  const document = {
+    querySelector: selector => selector === 'meta[name="morpheus-emugui"]' ? {} : null,
+    documentElement: { dataset: {} }
+  };
+  const browser = {
+    runtime: {
+      sendMessage: async message => {
+        runtimeMessages.push(message);
+        if (message.type === 'MW_EMUGUI_REGISTER') {
+          return { ok: true, emuguiSessionToken: 'emugui-session-file', transport: 'extension' };
+        }
+        return { ok: true, result: { ok: true, games: [] } };
+      },
+      onMessage: { addListener: () => {} }
+    }
+  };
+  const context = vm.createContext({ browser, document, window, Date, Promise, setTimeout, clearTimeout });
+  const filename = path.join(__dirname, '..', 'extension', 'content.js');
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+
+  await listeners[0]({ source: window, data: {
+    _emuguiReq: true, requestId: 'request-api', type: 'MW_EMUGUI_RPC',
+    method: 'GET', path: '/api/games', query: { collection: 'spectrum' }
+  } });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(runtimeMessages[1])), {
+    type: 'MW_EMUGUI_RPC', method: 'GET', path: '/api/games', query: { collection: 'spectrum' }, body: {},
+    emuguiSessionToken: 'emugui-session-file', pageUrl
+  });
+  assert.equal(posted.some(message => message._emugui && message._relayReady), true);
+  assert.equal(posted.at(-1).result.games.length, 0);
 });

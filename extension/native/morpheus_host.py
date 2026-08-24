@@ -23,6 +23,7 @@ import platform
 import subprocess
 import secrets
 import importlib.util
+from pathlib import Path
 from contextlib import contextmanager
 from html.parser import HTMLParser
 import ctypes
@@ -48,6 +49,9 @@ APPLICATION_URI_SCHEMES = {
 }
 MAX_INTERNET_SHORTCUT_BYTES = 64 * 1024
 MAX_GAME_BINDINGS = 512
+MAX_EMUGUI_RPC_REQUEST_BYTES = 2 * 1024 * 1024
+MAX_EMUGUI_RPC_RESPONSE_BYTES = 32 * 1024 * 1024
+MAX_EMUGUI_ASSET_BYTES = 4 * 1024 * 1024
 EMUGUI_MODULE = None
 EMUGUI_MODULE_PATH = ''
 
@@ -1124,6 +1128,50 @@ def _load_emugui_module():
     return module
 
 
+def authorize_emugui_page(page_url):
+    root, _server_path = _configured_emugui_server()
+    parsed = urllib.parse.urlsplit(str(page_url or ''))
+    if parsed.scheme.casefold() != 'file' or parsed.netloc not in {'', 'localhost'}:
+        return False
+    path = urllib.request.url2pathname(parsed.path or '')
+    if sys.platform == 'win32' and re.match(r'^/[a-zA-Z]:[\\/]', path):
+        path = path[1:]
+    expected = os.path.realpath(os.path.join(root, 'web', 'index.html'))
+    return os.path.normcase(os.path.realpath(path)) == os.path.normcase(expected)
+
+
+def emugui_api_request(method, path, query=None, body=None):
+    method = str(method or '').strip().upper()
+    path = str(path or '').strip()
+    query = query if isinstance(query, dict) else {}
+    body = body if isinstance(body, dict) else {}
+    if method not in {'GET', 'POST'} or not re.fullmatch(r'/api/[a-z0-9/-]{1,80}', path):
+        raise ValueError('The EmuGUI API request is invalid')
+    if len(json.dumps({'query': query, 'body': body}, ensure_ascii=False)) > MAX_EMUGUI_RPC_REQUEST_BYTES:
+        raise ValueError('The EmuGUI API request is too large')
+    module = _load_emugui_module()
+    dispatcher = getattr(module, 'dispatch_emugui_api', None)
+    if not callable(dispatcher):
+        raise RuntimeError('The configured EmuGUI does not expose the API service contract')
+    result = dispatcher(method, path, query, body)
+    if not isinstance(result, dict):
+        raise RuntimeError('The EmuGUI API service returned invalid data')
+    if len(json.dumps(result, ensure_ascii=False)) > MAX_EMUGUI_RPC_RESPONSE_BYTES:
+        raise ValueError('The EmuGUI API response is too large')
+    return result
+
+
+def emugui_asset(relative_path):
+    module = _load_emugui_module()
+    reader = getattr(module, 'read_emugui_asset', None)
+    if not callable(reader):
+        raise RuntimeError('The configured EmuGUI does not expose the asset service contract')
+    result = reader(str(relative_path or ''), MAX_EMUGUI_ASSET_BYTES)
+    if not isinstance(result, dict):
+        raise RuntimeError('The EmuGUI asset service returned invalid data')
+    return result
+
+
 def emugui_service_status():
     """Return a path-free summary suitable for the ordinary Hub client."""
     payload = _load_emugui_module().dispatch_emugui_read('STATUS')
@@ -1409,7 +1457,10 @@ def emugui_game_link(game_key, rebind=False):
     query = {'game': str(entry.get('gameId') or '')}
     if rebind:
         query['hubRebind'] = str(game_key)
-    return f'http://127.0.0.1:8765/?{urllib.parse.urlencode(query)}'
+    root, _server_path = _configured_emugui_server()
+    page_path = os.path.realpath(os.path.join(root, 'web', 'index.html'))
+    page_url = Path(page_path).as_uri()
+    return f'{page_url}?{urllib.parse.urlencode(query)}'
 
 
 def reveal_emugui_game(game_key):
@@ -2543,6 +2594,26 @@ def handle(msg):
     elif msg_type == 'EMUGUI_STATUS':
         try:
             reply_ok(emugui=emugui_service_status())
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_AUTHORIZE_PAGE':
+        try:
+            reply_ok(authorized=authorize_emugui_page(msg.get('pageUrl', '')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_API':
+        try:
+            reply_ok(result=emugui_api_request(
+                msg.get('method', ''), msg.get('path', ''), msg.get('query', {}), msg.get('body', {})
+            ))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_ASSET':
+        try:
+            reply_ok(asset=emugui_asset(msg.get('path', '')))
         except Exception as e:
             reply_err(str(e))
 

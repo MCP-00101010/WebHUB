@@ -55,6 +55,9 @@ async function loadBackground(options = {}) {
         }
         if (message.type === 'EMUGUI_STATUS') return options.emuguiStatus || { ok: true, emugui: { available: true, serviceVersion: 1 } };
         if (message.type === 'EMUGUI_CREATE_HUB_BINDING') return options.emuguiBinding || { ok: true, game: { gameKey: 'game_abcdefghijklmnop', state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } };
+        if (message.type === 'EMUGUI_AUTHORIZE_PAGE') return { ok: true, authorized: options.emuguiAuthorized !== false };
+        if (message.type === 'EMUGUI_API') return options.emuguiApi || { ok: true, result: { ok: true, games: [] } };
+        if (message.type === 'EMUGUI_ASSET') return options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } };
         if (message.type === 'GAME_STATUS') return { ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } };
         return { ok: true };
       },
@@ -164,6 +167,12 @@ async function loadBackground(options = {}) {
               messageListeners.forEach(listener => listener(options.emuguiStatus || { ok: true, emugui: { available: true, serviceVersion: 1 } }));
             } else if (message.type === 'EMUGUI_CREATE_HUB_BINDING') {
               messageListeners.forEach(listener => listener(options.emuguiBinding || { ok: true, game: { gameKey: 'game_abcdefghijklmnop', state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } }));
+            } else if (message.type === 'EMUGUI_AUTHORIZE_PAGE') {
+              messageListeners.forEach(listener => listener({ ok: true, authorized: options.emuguiAuthorized !== false }));
+            } else if (message.type === 'EMUGUI_API') {
+              messageListeners.forEach(listener => listener(options.emuguiApi || { ok: true, result: { ok: true, games: [] } }));
+            } else if (message.type === 'EMUGUI_ASSET') {
+              messageListeners.forEach(listener => listener(options.emuguiAsset || { ok: true, asset: { dataUrl: 'data:image/png;base64,cG5n', contentType: 'image/png' } }));
             } else if (message.type === 'GAME_STATUS') {
               messageListeners.forEach(listener => listener({ ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } }));
             } else if (message.type === 'OPEN_GAME_IN_EMUGUI') {
@@ -392,9 +401,19 @@ test('authorized EmuGUI page creates a native binding and delivers a compact gam
     resolve
   ));
 
+  const pageUrl = 'http://127.0.0.1:8765/';
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_REGISTER', pageUrl },
+    { tab: { id: 20, url: pageUrl } },
+    resolve
+  ));
+
   const result = await new Promise(resolve => harness.listeners.message(
-    { type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k' },
-    { tab: { id: 20, url: 'http://127.0.0.1:8765/' } },
+    {
+      type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k',
+      pageUrl, emuguiSessionToken: registration.emuguiSessionToken
+    },
+    { tab: { id: 20, url: pageUrl } },
     resolve
   ));
 
@@ -418,6 +437,63 @@ test('EmuGUI delivery rejects pages outside its fixed localhost origin', async (
   assert.equal(result.ok, false);
   assert.match(result.error, /not authorized/i);
   assert.equal(harness.nativeRequests.some(message => message.type === 'EMUGUI_CREATE_HUB_BINDING'), false);
+});
+
+test('localhost EmuGUI fallback cannot invoke the privileged management RPC', async () => {
+  const harness = await loadBackground();
+  const pageUrl = 'http://127.0.0.1:8765/';
+  const sender = { tab: { id: 20, url: pageUrl } };
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_REGISTER', pageUrl }, sender, resolve
+  ));
+  const result = await new Promise(resolve => harness.listeners.message({
+    type: 'MW_EMUGUI_RPC', method: 'POST', path: '/api/delete', body: { game_id: 'jetpac' }, pageUrl,
+    emuguiSessionToken: registration.emuguiSessionToken
+  }, sender, resolve));
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /not authorized/i);
+  assert.equal(harness.nativeRequests.some(message => message.type === 'EMUGUI_API'), false);
+});
+
+test('configured EmuGUI file page registers once and relays API and asset requests', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+  const pageUrl = 'file:///F:/Projects/Coding/Morpheus%20EmuGUI/web/index.html';
+  const sender = { tab: { id: 21, url: pageUrl } };
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_REGISTER', pageUrl }, sender, resolve
+  ));
+
+  assert.equal(registration.ok, true);
+  assert.equal(registration.transport, 'extension');
+  assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_AUTHORIZE_PAGE'), true);
+
+  const rpc = await new Promise(resolve => harness.listeners.message({
+    type: 'MW_EMUGUI_RPC', method: 'GET', path: '/api/games', query: {}, body: {}, pageUrl,
+    emuguiSessionToken: registration.emuguiSessionToken
+  }, sender, resolve));
+  const asset = await new Promise(resolve => harness.listeners.message({
+    type: 'MW_EMUGUI_ASSET', path: 'screenshots/jetpac.png', pageUrl,
+    emuguiSessionToken: registration.emuguiSessionToken
+  }, sender, resolve));
+
+  assert.equal(rpc.result.games.length, 0);
+  assert.match(asset.asset.dataUrl, /^data:image\/png/);
+  assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_API'), true);
+  assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_ASSET'), true);
+});
+
+test('unconfigured EmuGUI file page is denied before RPC reaches the native service', async () => {
+  const harness = await loadBackground({ usePersistentNative: true, emuguiAuthorized: false });
+  const pageUrl = 'file:///F:/Untrusted/web/index.html';
+  const sender = { tab: { id: 22, url: pageUrl } };
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_REGISTER', pageUrl }, sender, resolve
+  ));
+
+  assert.equal(registration.ok, false);
+  assert.match(registration.error, /configured Morpheus EmuGUI/i);
+  assert.equal(harness.nativeConnections[0].messages.some(message => message.type === 'EMUGUI_API'), false);
 });
 
 test('status discovers an unregistered file hub and injects the root extension relay', async () => {

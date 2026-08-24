@@ -6,7 +6,7 @@ Keep Morpheus EmuGUI as the complete game-library manager while making Morpheus 
 
 EmuGUI remains responsible for collections, metadata, artwork, scraping, emulator configuration, and launch testing. WebHub receives compact game shortcuts from EmuGUI and organises them like bookmarks and applications in columns, folders, tabs, Inboxes, Hub Search, and the command palette.
 
-Replace EmuGUI's manually started localhost server with the existing Morpheus WebHub extension and persistent native-host architecture. The Firefox extension acts as the authenticated broker and UI host; filesystem access, collection maintenance, and emulator launches remain in Python native services.
+Replace EmuGUI's manually started localhost server with the existing Morpheus WebHub extension and persistent native-host architecture. EmuGUI's own `web/index.html`, CSS, and JavaScript remain the interface; the Firefox extension is only the authenticated broker, while filesystem access, collection maintenance, and emulator launches remain in Python native services.
 
 ## Product Boundaries
 
@@ -48,7 +48,7 @@ Replace EmuGUI's manually started localhost server with the existing Morpheus We
 ```text
                     Morpheus WebHub Extension
                   +----------------------------+
-WebHub page <---->| authenticated message hub  |<----> EmuGUI extension page
+WebHub page <---->| authenticated message hub  |<----> configured EmuGUI file page
                   +-------------+--------------+
                                 | persistent native connection
                                 v
@@ -62,7 +62,7 @@ WebHub page <---->| authenticated message hub  |<----> EmuGUI extension page
                      `- game launch adapters
 ```
 
-Firefox extension code cannot directly scan arbitrary collections or launch local processes. The extension replaces the HTTP transport and manual server lifecycle, not the native Python backend. The native host performs the privileged work through bounded, authenticated operations.
+Firefox extension code cannot directly scan arbitrary collections or launch local processes. The extension replaces the HTTP transport and manual server lifecycle, not EmuGUI's frontend or native Python backend. The native host performs the privileged work through bounded, authenticated operations loaded from the configured EmuGUI checkout.
 
 ## Compact WebHub Game Item
 
@@ -154,25 +154,25 @@ emugui_core/
     zx_spectrum.py
 ```
 
-Keep the existing HTTP handler as a temporary adapter during migration. EmuGUI must remain usable through the current server until the extension-hosted UI reaches parity.
+Keep the existing HTTP handler as an optional development adapter during migration. The same external frontend must remain usable through both HTTP and extension RPC while file-mode parity is validated.
 
-### Package the EmuGUI Frontend with the Extension
+### Keep the EmuGUI Frontend External
 
-- Keep the EmuGUI repository as the canonical source for its frontend and core logic.
-- Add a deterministic build/sync step that vendors a versioned EmuGUI frontend and native-core snapshot into the WebHub extension package.
-- Record the source version or content hash so the packaged copy cannot drift silently.
-- Open EmuGUI as an extension-owned page from a toolbar, menu, or WebHub action.
-- Replace frontend calls such as `fetch('/api/games')` with authenticated extension RPC calls.
-- Avoid depending on hardcoded development repository paths in packaged releases.
+- Keep `web/index.html`, `web/app.js`, `web/styles.css`, and future frontend assets in the EmuGUI repository as the single canonical UI.
+- Open the exact configured `<emuguiRoot>/web/index.html` file from WebHub actions and permit the user to open it directly.
+- Let the same page use authenticated extension RPC when loaded from `file://`, while retaining the localhost HTTP adapter as an optional development fallback.
+- Do not vendor, copy, build, or embed the EmuGUI frontend in the extension. HTML, CSS, and JavaScript changes must take effect after an ordinary page reload without reinstalling or re-registering the extension.
+- Keep only stable routing, authentication, bounded message validation, and the persistent native connection in extension code.
+- Keep the route allowlist and all EmuGUI business operations in EmuGUI's Python service contract so new interface workflows normally require no extension change.
 
-An extension-owned page is preferred over an arbitrary `file://` EmuGUI page because it has a trusted extension origin and does not require granting a local page the full EmuGUI mutation surface.
+The native host authorises only the canonical real path of the configured EmuGUI `web/index.html`. The background creates an opaque per-tab session token and accepts only the EmuGUI message namespace from that exact registered page. Merely adding a matching meta tag to another local page must not grant EmuGUI capabilities.
 
 ### Separate Client Capabilities
 
 The extension must distinguish trusted WebHub and EmuGUI clients:
 
 - WebHub receives only narrow game binding, status, launch, reveal, rebind, forget, and open-in-EmuGUI capabilities.
-- The extension-owned EmuGUI page receives collection, metadata, artwork, scraper, profile, maintenance, and launcher capabilities.
+- The exact configured EmuGUI file page receives collection, metadata, artwork, scraper, profile, maintenance, and launcher capabilities through its own per-tab session.
 - A WebHub page must never be able to call EmuGUI rename, delete, scrape, import, or arbitrary filesystem operations.
 - EmuGUI operations should use their own authenticated session and request namespace.
 
@@ -286,19 +286,20 @@ Implementation status as of 2026-08-24:
 - [x] Added **Send to WebHub** to EmuGUI's game details and context menu, delivering the selected game through the extension to the active Hub Inbox with an opaque binding, name, tags, and optional bounded thumbnail.
 - [x] Added first-class Hub `game` items across state migration, Inbox counts, cards, folders, drag-and-drop, context actions, search, duplication, status, and launch handling.
 - [x] Added the game-shortcut lifecycle in WebHub 0.11.214 / extension 1.0.47: **Open in EmuGUI**, **Reveal game file**, in-place **Rebind in EmuGUI**, and precise library/game/emulator/profile failure states. Rebinding keeps EmuGUI authoritative and updates the existing Hub card instead of creating a duplicate.
-- [ ] Continue extracting mutation, job, artwork, and launch operations before moving the EmuGUI frontend into the extension.
+- [x] Added the server-free external-page transport in WebHub 0.11.215 / extension 1.0.48: the configured EmuGUI `web/index.html` uses authenticated generic API and bounded artwork relays through the persistent native host, while the original HTTP server remains an optional fallback.
+- [ ] Continue extracting the large `server.py` into focused core modules without moving the external frontend into the extension.
 
 1. Freeze the current EmuGUI server as the behaviour reference.
 2. Add tests around collection loading, metadata actions, jobs, emulator/profile resolution, and ZX launches before extraction.
 3. Extract `emugui_core` while retaining the HTTP adapter.
-4. Add EmuGUI namespaced native operations and extension routing.
-5. Package the EmuGUI frontend as an extension-owned page and replace its HTTP calls with RPC.
+4. [Completed in WebHub 0.11.215 / extension 1.0.48] Add a narrow EmuGUI namespace, exact configured-page authentication, and generic bounded API/artwork relays to the extension.
+5. [Completed in WebHub 0.11.215 / extension 1.0.48] Switch the external EmuGUI frontend to extension RPC when opened from `file://`, retaining HTTP fetches only as the standalone development fallback.
 6. Verify feature parity for current management workflows.
 7. [Completed in WebHub 0.11.209 / extension 1.0.42] Add native game bindings and **Send to WebHub**.
 8. [Completed in WebHub 0.11.209 / extension 1.0.42] Add first-class Hub game items and launch/status actions.
 9. [Completed in WebHub 0.11.214 / extension 1.0.47] Add open, reveal, in-place rebind, selected-game handoff, and actionable binding states.
 10. Validate real EightyOne, Spectaculator, managed-profile, running-instance, and missing-file scenarios.
-11. Remove the requirement to run `Start Morpheus EmuGUI.bat` only after extension-hosted parity is proven.
+11. [Completed in WebHub 0.11.215 / extension 1.0.48] Remove the normal requirement to run `Start Morpheus EmuGUI.bat`; the configured external page now uses the extension/native transport.
 12. Retain an optional development HTTP adapter if it remains useful for standalone frontend work.
 
 Do not copy scraper secrets from EmuGUI's current JSON configuration into the extension or Hub database. Move them explicitly to Windows Credential Manager through the existing native secret service, with verified write-before-delete migration.
@@ -351,7 +352,8 @@ A WebHub game card remains a title, thumbnail, tags, and opaque `gameKey` regard
 
 The first integration release is complete when:
 
-- EmuGUI opens as an extension-owned page without manually starting its HTTP server.
+- EmuGUI opens from its own external `web/index.html` without manually starting its HTTP server.
+- Editing EmuGUI HTML, CSS, or JavaScript requires only a page reload, not an extension rebuild or reinstall.
 - Existing EmuGUI collection-management workflows remain available.
 - A selected Spectrum game can be sent explicitly to the active WebHub Inbox.
 - The delivered item contains only a name, bounded thumbnail, Hub tags, and opaque binding.
