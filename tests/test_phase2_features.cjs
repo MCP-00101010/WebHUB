@@ -100,8 +100,32 @@ const importedApplication = applicationDestination.boards[0].tabs[0].inbox.items
 assert.match(importedApplication.appKey, /^app_[A-Za-z0-9_-]+$/);
 assert.notStrictEqual(importedApplication.appKey, 'app_existingdevicebinding');
 
+root.boards[0].tabs[0].inbox.items.push({
+  id: 'game-item-1', type: 'game', title: 'Jetpac',
+  gameKey: 'game_existingdevicebinding', tags: ['tag-1'],
+  systemId: 'zx-spectrum', systemName: 'ZX Spectrum',
+  emulatorName: 'EightyOne', profileName: 'Spectrum 48K',
+  thumbnailCache: 'data:image/png;base64,gamethumbnail'
+});
+const gameBundle = context.createPortableBundle(root, 'active-inbox', { includeFavicons: false });
+const gameJson = JSON.stringify(gameBundle);
+assert(!gameJson.includes('game_existingdevicebinding'), 'portable bundles must omit native game bindings');
+assert(!gameJson.includes('base64,gamethumbnail'), 'portable bundles should omit game thumbnail caches by default');
+assert(gameBundle.manifest.omitted.includes('game bindings'));
+const gameDestination = structuredClone(root);
+gameDestination.boards[0].tabs[0].inbox.items = [];
+const importedGames = context.importPortableBundle(gameBundle, gameDestination, { mode: 'merge' });
+assert.strictEqual(importedGames.ok, true);
+const importedGame = gameDestination.boards[0].tabs[0].inbox.items.find(item => item.type === 'game');
+assert.match(importedGame.gameKey, /^game_[A-Za-z0-9_-]+$/);
+assert.notStrictEqual(importedGame.gameKey, 'game_existingdevicebinding');
+assert.strictEqual(importedGame.systemId, 'zx-spectrum');
+assert.strictEqual(importedGame.systemName, 'ZX Spectrum');
+assert.strictEqual(importedGame.emulatorName, 'EightyOne');
+assert.strictEqual(importedGame.profileName, 'Spectrum 48K');
+
 const summary = context.summarizePhaseTwoState(root);
-assert.deepStrictEqual({ boards: summary.boards, tabs: summary.tabs, bookmarks: summary.bookmarks, applications: summary.applications }, { boards: 1, tabs: 1, bookmarks: 1, applications: 1 });
+assert.deepStrictEqual({ boards: summary.boards, tabs: summary.tabs, bookmarks: summary.bookmarks, applications: summary.applications, games: summary.games }, { boards: 1, tabs: 1, bookmarks: 1, applications: 1, games: 1 });
 const comparison = context.comparePhaseTwoSummaries(summary, { ...summary, bookmarks: 3 });
 assert.strictEqual(comparison.find(entry => entry.key === 'bookmarks').delta, 2);
 

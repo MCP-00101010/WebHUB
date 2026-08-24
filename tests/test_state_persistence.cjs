@@ -195,7 +195,7 @@ test('widget Inbox moves preserve identity, reject duplicates, and restore throu
   assert.equal(result.movedId, 'widget-column');
   assert.equal(result.movedZone, 'UTC');
   assert.equal(result.crossMovedId, 'widget-nav');
-  assert.deepEqual(JSON.parse(JSON.stringify(result.counts)), { bookmarks: 0, applications: 0, folders: 0, widgets: 1 });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.counts)), { bookmarks: 0, applications: 0, games: 0, folders: 0, widgets: 1 });
   assert.deepEqual(JSON.parse(JSON.stringify(result.restoredColumnIds)), ['widget-column']);
   assert.deepEqual(JSON.parse(JSON.stringify(result.restoredInboxIds)), []);
   assert.deepEqual(JSON.parse(JSON.stringify(result.restoredNavWidgetIds)), ['widget-nav', 'widget-nav-only']);
@@ -226,13 +226,13 @@ test('state loading repairs orphaned boards instead of deleting them', () => {
   assert.equal(parsed.boards.length, 1);
   assert.equal(parsed.boards[0].id, 'orphan');
   assert.equal(parsed.navItems.some(item => item.boardId === 'orphan'), true);
-  assert.equal(parsed.schemaVersion, 3);
+  assert.equal(parsed.schemaVersion, 6);
 });
 
 test('persisted snapshots omit active-tab board compatibility aliases', () => {
   const harness = loadStateScript();
   const snapshot = JSON.parse(harness.context.serializeStateSnapshot());
-  assert.equal(snapshot.schemaVersion, 3);
+  assert.equal(snapshot.schemaVersion, 6);
   assert.equal(Array.isArray(snapshot.boards[0].tabs[0].columns), true);
   assert.equal('columns' in snapshot.boards[0], false);
   assert.equal('inbox' in snapshot.boards[0], false);

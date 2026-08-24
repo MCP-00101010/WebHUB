@@ -446,6 +446,19 @@ input::placeholder {
   color: var(--text-muted);
 }
 
+.bookmark-favicon.game-system-icon > svg {
+  width: 17px;
+  height: 17px;
+}
+
+.bookmark-favicon.game-system-icon[data-system="zx-spectrum"] { background: #17191d; }
+.bookmark-favicon.game-system-icon[data-system="atari-st"] { color: #f05a67; background: color-mix(in srgb, #c92f43 15%, var(--panel-strong)); }
+.bookmark-favicon.game-system-icon[data-system="game-boy"] { color: #8d78d6; background: color-mix(in srgb, #6653a6 16%, var(--panel-strong)); }
+.bookmark-favicon.game-system-icon[data-system="snes"] { color: #ab8ce8; background: color-mix(in srgb, #7651b5 16%, var(--panel-strong)); }
+.bookmark-favicon.game-system-icon[data-system="scummvm"] { color: #e5a942; background: color-mix(in srgb, #c1841d 15%, var(--panel-strong)); }
+.bookmark-favicon.game-system-icon[data-system="dosbox"] { color: #68aee8; background: color-mix(in srgb, #287bb9 15%, var(--panel-strong)); }
+.bookmark-favicon.game-system-icon[data-system="mame"] { color: #47c2c8; background: color-mix(in srgb, #168b91 15%, var(--panel-strong)); }
+
 .application-status {
   flex-shrink: 0;
   padding: 2px 6px;
@@ -459,6 +472,10 @@ input::placeholder {
 }
 
 .application-status--missing,
+.application-status--game-missing,
+.application-status--emulator-missing,
+.application-status--profile-missing,
+.application-status--incompatible,
 .application-status--changed {
   background: rgba(226, 96, 96, 0.16);
   color: #e26060;
@@ -1318,6 +1335,11 @@ input::placeholder {
   color: #fff;
 }
 
+.count-chip--game {
+  background: color-mix(in srgb, var(--accent) 58%, #16a34a);
+  color: #fff;
+}
+
 .count-chip--widget {
   background: color-mix(in srgb, var(--accent) 55%, var(--text-muted));
   color: #fff;
@@ -1459,6 +1481,58 @@ input::placeholder {
   color: var(--tooltip-color);
   background: color-mix(in srgb, var(--tooltip-color) 12%, rgba(var(--panel-r), var(--panel-g), var(--panel-b), var(--sidebar-container-alpha, var(--container-alpha, 1))) 88%);
   padding: 4px 7px;
+}
+
+.tooltip.tooltip--game {
+  width: min(300px, calc(100vw - 16px));
+  max-width: 300px;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.game-tooltip-thumbnail {
+  display: block;
+  width: 100%;
+  height: 170px;
+  object-fit: contain;
+  background: #111318;
+}
+
+.game-tooltip-body {
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px 10px;
+}
+
+.game-tooltip-title {
+  color: var(--text);
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.game-tooltip-system {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.game-tooltip-detail {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 0.72rem;
+}
+
+.game-tooltip-detail > :first-child {
+  color: var(--text-muted);
+}
+
+.game-tooltip-detail > :last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
 }
 
 

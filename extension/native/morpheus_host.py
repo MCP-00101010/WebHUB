@@ -22,6 +22,7 @@ import re
 import platform
 import subprocess
 import secrets
+import importlib.util
 from contextlib import contextmanager
 from html.parser import HTMLParser
 import ctypes
@@ -38,11 +39,17 @@ DATABASE_BACKUP_MIN_INTERVAL_SECONDS = 60
 SECRET_TARGET_PREFIX = 'Morpheus WebHub/'
 THEME_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{0,79}$', re.IGNORECASE)
 APPLICATION_KEY_PATTERN = re.compile(r'^app_[a-zA-Z0-9_-]{12,75}$')
+GAME_KEY_PATTERN = re.compile(r'^game_[a-zA-Z0-9_-]{12,75}$')
+EMUGUI_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]{1,120}$')
+GAME_SYSTEM_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]{0,47}$')
 APPLICATION_URI_SCHEMES = {
     'steam', 'goggalaxy', 'com.epicgames.launcher', 'uplay', 'origin',
     'origin2', 'ea', 'battlenet', 'xbox', 'ms-xbl', 'heroic'
 }
 MAX_INTERNET_SHORTCUT_BYTES = 64 * 1024
+MAX_GAME_BINDINGS = 512
+EMUGUI_MODULE = None
+EMUGUI_MODULE_PATH = ''
 
 
 # ---------------------------------------------------------------------------
@@ -970,6 +977,10 @@ def load_config():
 
 def save_config(config):
     config = config or {}
+    emugui_root = config.get('emuguiRoot')
+    if emugui_root is None:
+        emugui_root = load_config().get('emuguiRoot', '')
+    emugui_root = str(emugui_root or '').strip()
     approved = config.get('approvedDirectories')
     if approved is None:
         approved = load_config().get('approvedDirectories', {})
@@ -1020,14 +1031,425 @@ def save_config(config):
             'approvedAt': int(entry.get('approvedAt', 0) or 0),
             'iconDataUrl': str(entry.get('iconDataUrl', '') or '')[:700000]
         }
+    games = config.get('approvedGames')
+    if games is None:
+        games = load_config().get('approvedGames', {})
+    if not isinstance(games, dict):
+        games = {}
+    safe_games = {}
+    for game_key, entry in list(games.items())[:MAX_GAME_BINDINGS]:
+        if not GAME_KEY_PATTERN.fullmatch(str(game_key)) or not isinstance(entry, dict):
+            continue
+        library_id = str(entry.get('libraryId', '') or '')
+        game_id = str(entry.get('gameId', '') or '')
+        emulator_id = str(entry.get('emulatorId', '') or '')
+        profile_id = str(entry.get('profileId', '') or '')
+        if not all(EMUGUI_ID_PATTERN.fullmatch(value) for value in (library_id, game_id, emulator_id)):
+            continue
+        if profile_id and not EMUGUI_ID_PATTERN.fullmatch(profile_id):
+            continue
+        safe_games[str(game_key)] = {
+            'libraryId': library_id,
+            'gameId': game_id,
+            'emulatorId': emulator_id,
+            'profileId': profile_id,
+            'label': str(entry.get('label', '') or 'Game')[:160],
+            'systemId': str(entry.get('systemId', '') or '')[:48] if GAME_SYSTEM_ID_PATTERN.fullmatch(str(entry.get('systemId', '') or '')) else '',
+            'systemName': str(entry.get('systemName', '') or '')[:80],
+            'emulatorName': str(entry.get('emulatorName', '') or '')[:120],
+            'profileName': str(entry.get('profileName', '') or '')[:120],
+            'approvedAt': int(entry.get('approvedAt', 0) or 0)
+        }
     data = {
         'databasePath': config.get('databasePath', '') or '',
+        'emuguiRoot': os.path.realpath(emugui_root) if emugui_root else '',
         'approvedDirectories': safe_approved,
-        'approvedApplications': safe_applications
+        'approvedApplications': safe_applications,
+        'approvedGames': safe_games
     }
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write('\n')
+
+
+# ---------------------------------------------------------------------------
+# EmuGUI service bridge
+# ---------------------------------------------------------------------------
+
+def _configured_emugui_server():
+    configured_root = str(load_config().get('emuguiRoot', '') or '').strip()
+    if not configured_root:
+        raise RuntimeError('Morpheus EmuGUI is not configured in the native host')
+    root = os.path.realpath(configured_root)
+    server_path = os.path.join(root, 'server.py')
+    if not os.path.isdir(root) or not os.path.isfile(server_path):
+        raise FileNotFoundError('The configured Morpheus EmuGUI installation is unavailable')
+    return root, server_path
+
+
+def _load_emugui_module():
+    global EMUGUI_MODULE, EMUGUI_MODULE_PATH
+    root, server_path = _configured_emugui_server()
+    if EMUGUI_MODULE is not None and EMUGUI_MODULE_PATH == server_path:
+        return EMUGUI_MODULE
+
+    module_name = 'morpheus_emugui_native_service'
+    spec = importlib.util.spec_from_file_location(module_name, server_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError('The Morpheus EmuGUI service could not be loaded')
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get(module_name)
+    added_path = root not in sys.path
+    if added_path:
+        sys.path.insert(0, root)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
+    finally:
+        if added_path:
+            try:
+                sys.path.remove(root)
+            except ValueError:
+                pass
+    if not callable(getattr(module, 'dispatch_emugui_read', None)):
+        raise RuntimeError('The configured EmuGUI does not expose the native service contract')
+    EMUGUI_MODULE = module
+    EMUGUI_MODULE_PATH = server_path
+    return module
+
+
+def emugui_service_status():
+    """Return a path-free summary suitable for the ordinary Hub client."""
+    payload = _load_emugui_module().dispatch_emugui_read('STATUS')
+    if not isinstance(payload, dict):
+        raise RuntimeError('The Morpheus EmuGUI service returned an invalid status')
+    active = payload.get('active') if isinstance(payload.get('active'), dict) else {}
+    collections = payload.get('collections') if isinstance(payload.get('collections'), list) else []
+    emulators = payload.get('emulators') if isinstance(payload.get('emulators'), list) else []
+    profiles = payload.get('profiles') if isinstance(payload.get('profiles'), list) else []
+    return {
+        'available': True,
+        'serviceVersion': int(payload.get('serviceVersion', 0) or 0),
+        'activeCollection': {
+            'id': str(active.get('id', '') or '')[:120],
+            'name': str(active.get('name', '') or '')[:160]
+        },
+        'collectionCount': len(collections),
+        'emulatorCount': len(emulators),
+        'profileCount': len(profiles)
+    }
+
+
+def _emugui_record(method, params=None):
+    payload = _load_emugui_module().dispatch_emugui_read(method, params or {})
+    if not isinstance(payload, dict):
+        raise RuntimeError('The Morpheus EmuGUI service returned invalid data')
+    return payload
+
+
+def _emugui_binding_thumbnail(module, game):
+    collection_root = os.path.realpath(str(getattr(module, 'COLLECTION', '') or ''))
+    def thumbnail_from_record(record):
+        for raw_source in (record.get('loading_screen'), record.get('screenshot')):
+            source = str(raw_source or '').strip()
+            if not source:
+                continue
+            parsed = urllib.parse.urlsplit(source)
+            if parsed.scheme:
+                if parsed.scheme.lower() != 'https' or not parsed.netloc or parsed.username or parsed.password:
+                    continue
+                try:
+                    downloaded = _download_favicon_candidate(source, MAX_APPLICATION_ICON_BYTES)
+                except Exception:
+                    continue
+                if downloaded.get('contentType') in {'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'}:
+                    return str(downloaded.get('dataUrl') or '')[:700000]
+                continue
+            if not collection_root:
+                continue
+            target = os.path.realpath(os.path.join(collection_root, source.replace('/', os.sep)))
+            try:
+                if os.path.commonpath([collection_root, target]) != collection_root:
+                    continue
+            except ValueError:
+                continue
+            data_url = _bounded_local_image_data_url(target)
+            if data_url:
+                return data_url
+        return ''
+
+    direct = thumbnail_from_record(game)
+    if direct:
+        return direct
+
+    title = str(game.get('title') or '').strip()
+    if not title:
+        return ''
+    try:
+        matches = module.dispatch_emugui_read('SEARCH_GAMES', {'query': title, 'view': 'all', 'limit': 50}).get('games', [])
+    except Exception:
+        return ''
+    source_system = _game_system_info(game)[0]
+    for candidate in matches:
+        if not isinstance(candidate, dict) or str(candidate.get('id') or '') == str(game.get('id') or ''):
+            continue
+        if str(candidate.get('title') or '').strip().casefold() != title.casefold():
+            continue
+        candidate_system = _game_system_info(candidate)[0]
+        if source_system and candidate_system and source_system != candidate_system:
+            continue
+        fallback = thumbnail_from_record(candidate)
+        if fallback:
+            return fallback
+    return ''
+
+
+def _game_system_info(game=None, entry=None):
+    game = game if isinstance(game, dict) else {}
+    entry = entry if isinstance(entry, dict) else {}
+    explicit_name = str(game.get('system') or game.get('platform') or entry.get('systemName') or '').strip()[:80]
+    emulator_id = str(entry.get('emulatorId') or game.get('default_emulator') or '').strip()
+    values = [explicit_name, emulator_id]
+    tags = game.get('tags')
+    if isinstance(tags, list):
+        values.extend(str(value or '') for value in tags[:12])
+    haystack = ' '.join(values).lower().replace('_', ' ').replace('-', ' ')
+    compact = re.sub(r'[^a-z0-9+]+', '', haystack)
+
+    systems = (
+        ('zx-spectrum', 'ZX Spectrum', ('zx spectrum', 'spectrum', 'eightyone', 'spectaculator', 'fuse')),
+        ('atari-st', 'Atari ST', ('atari st', 'steem', 'hatari')),
+        ('game-boy', 'Game Boy', ('game boy', 'gameboy', 'visualboy', 'sameboy', 'gambatte')),
+        ('snes', 'Super Nintendo', ('super nintendo', 'snes', 'snes9x', 'bsnes')),
+        ('scummvm', 'ScummVM', ('scummvm', 'scumm vm')),
+        ('dosbox', 'DOSBox', ('dosbox', 'ms dos', 'dos game')),
+        ('mame', 'Arcade / MAME', ('mame', 'arcade')),
+    )
+    for system_id, system_name, aliases in systems:
+        if any(alias in haystack or alias.replace(' ', '') in compact for alias in aliases):
+            return system_id, system_name
+    spectrum_memory = explicit_name.lower().replace(' ', '')
+    if re.fullmatch(r'(?:16k|48k|128k|\+2a?|\+3)(?:[-/](?:16k|48k|128k|\+2a?|\+3))*', spectrum_memory):
+        return 'zx-spectrum', 'ZX Spectrum'
+
+    stored_id = str(entry.get('systemId') or '').strip().lower()
+    if GAME_SYSTEM_ID_PATTERN.fullmatch(stored_id):
+        return stored_id, explicit_name or str(entry.get('systemName') or 'Game system')[:80]
+    if explicit_name:
+        derived_id = re.sub(r'[^a-z0-9]+', '-', explicit_name.lower()).strip('-')[:48]
+        if GAME_SYSTEM_ID_PATTERN.fullmatch(derived_id):
+            return derived_id, explicit_name
+    return '', ''
+
+
+def _game_public_record(game_key, entry, game=None, state='ready', thumbnail_data_url=''):
+    system_id, system_name = _game_system_info(game, entry)
+    record = {
+        'gameKey': str(game_key),
+        'state': state,
+        'title': str((game or {}).get('title') or entry.get('label') or 'Game')[:160],
+        'tags': ['Games'] + ([system_name] if system_name else []),
+        'systemId': system_id,
+        'systemName': system_name,
+        'emulatorName': str(entry.get('emulatorName') or '')[:120],
+        'profileName': str(entry.get('profileName') or '')[:120],
+        'thumbnailCache': str(thumbnail_data_url or '')[:700000]
+    }
+    return record
+
+
+def create_emugui_game_binding(game_id, emulator_id='', profile_id='', game_key=''):
+    game_id = str(game_id or '').strip()
+    emulator_id = str(emulator_id or '').strip()
+    profile_id = str(profile_id or '').strip()
+    if not EMUGUI_ID_PATTERN.fullmatch(game_id):
+        raise ValueError('The EmuGUI game ID is invalid')
+    if emulator_id and not EMUGUI_ID_PATTERN.fullmatch(emulator_id):
+        raise ValueError('The EmuGUI emulator ID is invalid')
+    if profile_id and not EMUGUI_ID_PATTERN.fullmatch(profile_id):
+        raise ValueError('The EmuGUI profile ID is invalid')
+    game_key = str(game_key or '').strip()
+    if game_key and not GAME_KEY_PATTERN.fullmatch(game_key):
+        raise ValueError('The game binding key is invalid')
+
+    module = _load_emugui_module()
+    status = _emugui_record('STATUS')
+    game = _emugui_record('GET_GAME', {'gameId': game_id}).get('game')
+    if not isinstance(game, dict):
+        raise ValueError('The selected EmuGUI game is unavailable')
+    active = status.get('active') if isinstance(status.get('active'), dict) else {}
+    library_id = str(active.get('id', '') or '')
+    if not EMUGUI_ID_PATTERN.fullmatch(library_id):
+        raise ValueError('The active EmuGUI library has no stable ID')
+
+    emulators = [item for item in status.get('emulators', []) if isinstance(item, dict)]
+    if not emulator_id:
+        emulator_id = str(game.get('default_emulator') or '')
+    if not emulator_id:
+        emulator_id = str(next((item.get('id') for item in emulators if item.get('available') is not False), '') or '')
+    emulator = next((item for item in emulators if str(item.get('id', '')) == emulator_id), None)
+    if emulator is None or emulator.get('available') is False:
+        raise ValueError('The selected EmuGUI emulator is unavailable')
+
+    profiles = [item for item in status.get('profiles', []) if isinstance(item, dict)]
+    profile = None
+    if profile_id:
+        profile = next((item for item in profiles if str(item.get('id', '')) == profile_id), None)
+        if profile is None or str(profile.get('emulator_id', '')) != emulator_id:
+            raise ValueError('The selected EmuGUI profile is unavailable for this emulator')
+
+    config = load_config()
+    bindings = config.setdefault('approvedGames', {})
+    if game_key and not isinstance(bindings.get(game_key), dict):
+        raise KeyError('This game is not set up on this device')
+    existing = game_key or next((key for key, entry in bindings.items() if isinstance(entry, dict)
+                                and entry.get('libraryId') == library_id and entry.get('gameId') == game_id
+                                and entry.get('emulatorId') == emulator_id and entry.get('profileId', '') == profile_id), '')
+    if not existing and len(bindings) >= MAX_GAME_BINDINGS:
+        raise ValueError(f'This device already has the maximum of {MAX_GAME_BINDINGS} game bindings')
+    game_key = existing if GAME_KEY_PATTERN.fullmatch(str(existing)) else f'game_{secrets.token_urlsafe(18)}'
+    system_id, system_name = _game_system_info(game, {'emulatorId': emulator_id})
+    entry = {
+        'libraryId': library_id,
+        'gameId': game_id,
+        'emulatorId': emulator_id,
+        'profileId': profile_id,
+        'label': str(game.get('title') or 'Game')[:160],
+        'systemId': system_id,
+        'systemName': system_name,
+        'emulatorName': str(emulator.get('name') or emulator_id)[:120],
+        'profileName': str((profile or {}).get('name') or profile_id or 'Automatic')[:120],
+        'approvedAt': int(time.time() * 1000)
+    }
+    bindings[game_key] = entry
+    save_config(config)
+    return _game_public_record(game_key, entry, game, thumbnail_data_url=_emugui_binding_thumbnail(module, game))
+
+
+def resolve_emugui_game_source(game_key):
+    game_key = str(game_key or '')
+    if not GAME_KEY_PATTERN.fullmatch(game_key):
+        raise ValueError('The game binding key is invalid')
+    entry = load_config().get('approvedGames', {}).get(game_key)
+    if not isinstance(entry, dict):
+        raise KeyError('This game is not set up on this device')
+    status = _emugui_record('STATUS')
+    active = status.get('active') if isinstance(status.get('active'), dict) else {}
+    if str(active.get('id', '')) != str(entry.get('libraryId', '')):
+        raise RuntimeError('The game library is not currently active in EmuGUI')
+    game = _emugui_record('GET_GAME', {'gameId': entry.get('gameId', '')}).get('game')
+    if not isinstance(game, dict):
+        raise FileNotFoundError('The bound game is missing from EmuGUI')
+    return entry, game, status
+
+
+def resolve_emugui_game_binding(game_key):
+    entry, game, status = resolve_emugui_game_source(game_key)
+    emulator = next((item for item in status.get('emulators', []) if isinstance(item, dict)
+                     and str(item.get('id', '')) == str(entry.get('emulatorId', ''))), None)
+    if emulator is None or emulator.get('available') is False:
+        raise FileNotFoundError('The bound emulator is unavailable')
+    public_entry = dict(entry)
+    public_entry['emulatorName'] = str(emulator.get('name') or entry.get('emulatorName') or entry.get('emulatorId') or '')[:120]
+    profile_id = str(entry.get('profileId') or '')
+    profiles = [item for item in status.get('profiles', []) if isinstance(item, dict)]
+    profile = next((item for item in profiles if str(item.get('id', '')) == profile_id), None) if profile_id else None
+    if profile_id and (profile is None or str(profile.get('emulator_id', '')) != str(entry.get('emulatorId', ''))):
+        raise FileNotFoundError('The bound emulator profile is unavailable')
+    public_entry['profileName'] = str((profile or {}).get('name') or entry.get('profileName') or profile_id or 'Automatic')[:120]
+    return entry, game, public_entry
+
+
+def emugui_game_status(game_key, include_thumbnail=False):
+    game_key = str(game_key or '')
+    if not GAME_KEY_PATTERN.fullmatch(game_key):
+        return _game_public_record(game_key, {}, state='unbound') | {'error': 'The game binding key is invalid'}
+    entry = load_config().get('approvedGames', {}).get(game_key)
+    if not isinstance(entry, dict):
+        return _game_public_record(game_key, {}, state='unbound')
+    try:
+        module = _load_emugui_module()
+        status = _emugui_record('STATUS')
+    except Exception as error:
+        return _game_public_record(game_key, entry, state='unavailable') | {'error': str(error)}
+    active = status.get('active') if isinstance(status.get('active'), dict) else {}
+    if str(active.get('id', '')) != str(entry.get('libraryId', '')):
+        return _game_public_record(game_key, entry, state='library-missing') | {'error': 'The bound game library is not active'}
+    try:
+        game = _emugui_record('GET_GAME', {'gameId': entry.get('gameId', '')}).get('game')
+    except Exception as error:
+        return _game_public_record(game_key, entry, state='game-missing') | {'error': str(error)}
+    if not isinstance(game, dict):
+        return _game_public_record(game_key, entry, state='game-missing') | {'error': 'The bound game is missing from EmuGUI'}
+    emulators = [item for item in status.get('emulators', []) if isinstance(item, dict)]
+    emulator = next((item for item in emulators if str(item.get('id', '')) == str(entry.get('emulatorId', ''))), None)
+    if emulator is None or emulator.get('available') is False:
+        return _game_public_record(game_key, entry, game, state='emulator-missing') | {'error': 'The bound emulator is unavailable'}
+    public_entry = dict(entry)
+    public_entry['emulatorName'] = str(emulator.get('name') or entry.get('emulatorName') or entry.get('emulatorId') or '')[:120]
+    profile_id = str(entry.get('profileId') or '')
+    if profile_id:
+        profiles = [item for item in status.get('profiles', []) if isinstance(item, dict)]
+        profile = next((item for item in profiles if str(item.get('id', '')) == profile_id), None)
+        if profile is None or str(profile.get('emulator_id', '')) != str(entry.get('emulatorId', '')):
+            return _game_public_record(game_key, public_entry, game, state='profile-missing') | {'error': 'The bound emulator profile is unavailable'}
+        public_entry['profileName'] = str(profile.get('name') or entry.get('profileName') or profile_id)[:120]
+    thumbnail = _emugui_binding_thumbnail(module, game) if include_thumbnail else ''
+    return _game_public_record(game_key, public_entry, game, thumbnail_data_url=thumbnail)
+
+
+def emugui_game_link(game_key, rebind=False):
+    entry, _game, _status = resolve_emugui_game_source(game_key)
+    query = {'game': str(entry.get('gameId') or '')}
+    if rebind:
+        query['hubRebind'] = str(game_key)
+    return f'http://127.0.0.1:8765/?{urllib.parse.urlencode(query)}'
+
+
+def reveal_emugui_game(game_key):
+    _entry, game, _status = resolve_emugui_game_source(game_key)
+    path = os.path.realpath(str(game.get('path') or ''))
+    if not path or not os.path.isfile(path):
+        raise FileNotFoundError('The bound game file is missing or unavailable')
+    if sys.platform == 'win32':
+        subprocess.Popen(['explorer.exe', '/select,', path])
+    elif sys.platform == 'darwin':
+        subprocess.Popen(['open', '-R', path], close_fds=True)
+    else:
+        subprocess.Popen(['xdg-open', os.path.dirname(path) or path], close_fds=True)
+    return True
+
+
+def rebind_emugui_game(game_key, game_id, emulator_id='', profile_id=''):
+    return create_emugui_game_binding(game_id, emulator_id, profile_id, game_key)
+
+
+def launch_emugui_game(game_key):
+    entry, _game, _public_entry = resolve_emugui_game_binding(game_key)
+    result = _load_emugui_module().launch_game(
+        entry['gameId'], entry['emulatorId'], profile_id=entry.get('profileId', '')
+    )
+    if not isinstance(result, dict) or result.get('ok') is not True:
+        error = str((result or {}).get('error') or 'EmuGUI could not launch the game')
+        if isinstance(result, dict) and (result.get('needs_choice') or result.get('needs_confirmation')):
+            error += ' Open the game in EmuGUI to choose how to handle the running emulator.'
+        raise RuntimeError(error)
+    return True
+
+
+def forget_emugui_game(game_key):
+    if not GAME_KEY_PATTERN.fullmatch(str(game_key or '')):
+        raise ValueError('The game binding key is invalid')
+    config = load_config()
+    removed = config.get('approvedGames', {}).pop(str(game_key), None)
+    save_config(config)
+    return removed is not None
 
 
 # ---------------------------------------------------------------------------
@@ -2115,6 +2537,61 @@ def handle(msg):
     elif msg_type == 'FORGET_APPROVED_APPLICATION':
         try:
             reply_ok(removed=forget_approved_application(msg.get('appKey', '')))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_STATUS':
+        try:
+            reply_ok(emugui=emugui_service_status())
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'EMUGUI_CREATE_HUB_BINDING':
+        try:
+            reply_ok(game=create_emugui_game_binding(
+                msg.get('gameId', ''), msg.get('emulatorId', ''), msg.get('profileId', '')
+            ))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'GAME_STATUS':
+        try:
+            reply_ok(game=emugui_game_status(msg.get('gameKey', ''), msg.get('includeThumbnail') is True))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'LAUNCH_GAME':
+        try:
+            launch_emugui_game(msg.get('gameKey', ''))
+            reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'OPEN_GAME_IN_EMUGUI':
+        try:
+            reply_ok(url=emugui_game_link(msg.get('gameKey', ''), msg.get('rebind') is True))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'REVEAL_GAME':
+        try:
+            reveal_emugui_game(msg.get('gameKey', ''))
+            reply_ok()
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'REBIND_GAME':
+        try:
+            reply_ok(game=rebind_emugui_game(
+                msg.get('gameKey', ''), msg.get('gameId', ''),
+                msg.get('emulatorId', ''), msg.get('profileId', '')
+            ))
+        except Exception as e:
+            reply_err(str(e))
+
+    elif msg_type == 'FORGET_GAME':
+        try:
+            reply_ok(removed=forget_emugui_game(msg.get('gameKey', '')))
         except Exception as e:
             reply_err(str(e))
 

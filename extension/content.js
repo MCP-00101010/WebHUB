@@ -7,6 +7,10 @@ globalThis.__morpheusWebHubRelayLoaded = true;
 // Keep the page/extension transport deliberately small. Firefox injects this
 // once at document_idle, after Morpheus' identifying meta tag is available.
 const IS_MORPHEUS = !!document.querySelector('meta[name="morpheus-webhub"]');
+const IS_EMUGUI = !!document.querySelector('meta[name="morpheus-emugui"]')
+  && window.location.protocol === 'http:'
+  && ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  && window.location.port === '8765';
 const pendingPagePushes = new Map();
 let pushSequence = 0;
 let registeredWithBackground = false;
@@ -95,6 +99,22 @@ if (IS_MORPHEUS) {
         source: msg.source || ''
       });
     }
+    if (msg.type === 'MW_RECEIVE_GAME') {
+      return relayPushToPage({
+        type: 'MW_RECEIVE_GAME',
+        deliveryId: msg.deliveryId || '',
+        targetBoardId: msg.targetBoardId || '',
+        targetTabId: msg.targetTabId || '',
+        game: msg.game || null
+      });
+    }
+    if (msg.type === 'MW_UPDATE_GAME_BINDING') {
+      return relayPushToPage({
+        type: 'MW_UPDATE_GAME_BINDING',
+        deliveryId: msg.deliveryId || '',
+        game: msg.game || null
+      });
+    }
     if (msg.type === 'MW_GET_INBOX_TARGETS') {
       return relayPushToPage({ type: 'MW_GET_INBOX_TARGETS' });
     }
@@ -113,6 +133,25 @@ if (IS_MORPHEUS) {
 // Relay page requests to the extension background and delivery acknowledgements
 // back to the popup/background sender.
 window.addEventListener('message', async event => {
+  if (IS_EMUGUI && event.source === window && event.data?._emuguiReq === true) {
+    const requestId = String(event.data.requestId || '');
+    if (!requestId || event.data.type !== 'MW_EMUGUI_SEND_GAME') return;
+    let response;
+    try {
+      response = await browser.runtime.sendMessage({
+        type: 'MW_EMUGUI_SEND_GAME',
+        gameId: String(event.data.gameId || '').slice(0, 120),
+        emulatorId: String(event.data.emulatorId || '').slice(0, 120),
+        profileId: String(event.data.profileId || '').slice(0, 120),
+        rebindGameKey: String(event.data.rebindGameKey || '').slice(0, 80),
+        deliveryId: String(event.data.deliveryId || '').slice(0, 160)
+      });
+    } catch (error) {
+      response = { ok: false, error: error?.message || String(error) };
+    }
+    window.postMessage({ _emuguiRes: true, requestId, ...(response || { ok: false, error: 'No extension response' }) }, '*');
+    return;
+  }
   if (!IS_MORPHEUS) return;
   if (event.data?._mw && event.source === window && event.data._pushResponse) {
     const pending = pendingPagePushes.get(event.data.pushRequestId);

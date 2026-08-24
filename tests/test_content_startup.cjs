@@ -107,6 +107,34 @@ test('known-good idle relay registers and catches the page bridge ping', async (
     error: ''
   });
 
+  const gameDelivery = runtimeListeners[0]({
+    type: 'MW_RECEIVE_GAME',
+    deliveryId: 'game-delivery-1',
+    game: { gameKey: 'game_abcdefghijklmnop', title: 'Jetpac', tags: ['Games'], thumbnailCache: '' }
+  });
+  const gamePush = postedMessages.at(-1);
+  assert.equal(gamePush.type, 'MW_RECEIVE_GAME');
+  assert.equal(gamePush.game.gameKey, 'game_abcdefghijklmnop');
+  await windowListeners.get('message')[0]({
+    source: window,
+    data: { _mw: true, _pushResponse: true, pushRequestId: gamePush.pushRequestId, ok: true, persisted: 'shared' }
+  });
+  assert.equal((await gameDelivery).ok, true);
+
+  const gameUpdate = runtimeListeners[0]({
+    type: 'MW_UPDATE_GAME_BINDING',
+    deliveryId: 'game-update-1',
+    game: { gameKey: 'game_abcdefghijklmnop', title: 'Jetpac', profileName: 'Spectrum 48K' }
+  });
+  const updatePush = postedMessages.at(-1);
+  assert.equal(updatePush.type, 'MW_UPDATE_GAME_BINDING');
+  assert.equal(updatePush.game.profileName, 'Spectrum 48K');
+  await windowListeners.get('message')[0]({
+    source: window,
+    data: { _mw: true, _pushResponse: true, pushRequestId: updatePush.pushRequestId, ok: true, persisted: 'shared' }
+  });
+  assert.equal((await gameUpdate).ok, true);
+
   const targetsDelivery = runtimeListeners[0]({ type: 'MW_GET_INBOX_TARGETS' });
   const targetsPush = postedMessages.at(-1);
   assert.equal(targetsPush.type, 'MW_GET_INBOX_TARGETS');
@@ -169,4 +197,42 @@ test('discovery retries registration after the initial background handshake fail
   assert.equal(discovered.registered, true);
   assert.equal(registrationAttempts, 2);
   assert.equal(document.documentElement.dataset.morpheusExtensionRelay, 'background-ready');
+});
+
+test('EmuGUI localhost page can request only bounded game delivery', async () => {
+  const listeners = [];
+  const runtimeMessages = [];
+  const posted = [];
+  const window = {
+    location: { href: 'http://127.0.0.1:8765/', protocol: 'http:', hostname: '127.0.0.1', port: '8765' },
+    addEventListener(type, listener) { if (type === 'message') listeners.push(listener); },
+    postMessage(message) { posted.push(message); }
+  };
+  const document = {
+    querySelector: selector => selector === 'meta[name="morpheus-emugui"]' ? {} : null,
+    documentElement: { dataset: {} }
+  };
+  const browser = {
+    runtime: {
+      sendMessage: async message => {
+        runtimeMessages.push(message);
+        return { ok: true, deliveryId: 'game-one', persisted: 'shared' };
+      },
+      onMessage: { addListener: () => {} }
+    }
+  };
+  const context = vm.createContext({ browser, document, window, Date, Promise, setTimeout, clearTimeout });
+  const filename = path.join(__dirname, '..', 'extension', 'content.js');
+  vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
+
+  await listeners[0]({ source: window, data: {
+    _emuguiReq: true, requestId: 'request-1', type: 'MW_EMUGUI_SEND_GAME',
+    gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k'
+  } });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(runtimeMessages[0])), {
+    type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k', rebindGameKey: '', deliveryId: ''
+  });
+  assert.equal(posted.at(-1)._emuguiRes, true);
+  assert.equal(posted.at(-1).persisted, 'shared');
 });

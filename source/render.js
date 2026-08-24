@@ -42,6 +42,7 @@ const searchFilters = {
   tags: false,
   typeBookmark: true,
   typeApplication: true,
+  typeGame: true,
   typeFolder: true,
   typeBoard: true
 };
@@ -224,16 +225,17 @@ function createCountChip(value, title, variant = 'bookmark') {
 
 function renderCountChipsInto(container, counts, options = {}) {
   if (!container) return;
-  const { bookmarks = 0, applications = 0, folders = 0, widgets = 0 } = counts || {};
+  const { bookmarks = 0, applications = 0, games = 0, folders = 0, widgets = 0 } = counts || {};
   const showZero = options.showZero === true;
   if (bookmarks > 0 || showZero) container.appendChild(createCountChip(bookmarks, options.bookmarkTitle || 'Bookmarks', 'bookmark'));
   if (applications > 0 || showZero) container.appendChild(createCountChip(applications, options.applicationTitle || 'Applications', 'application'));
+  if (games > 0 || showZero) container.appendChild(createCountChip(games, options.gameTitle || 'Games', 'game'));
   if (folders > 0 || showZero) container.appendChild(createCountChip(folders, options.folderTitle || 'Folders', 'folder'));
   if (widgets > 0 || showZero) container.appendChild(createCountChip(widgets, options.widgetTitle || 'Widgets', 'widget'));
 }
 
 function getNavFolderInboxCounts(folder) {
-  const totals = { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
+  const totals = { bookmarks: 0, applications: 0, games: 0, folders: 0, widgets: 0 };
   const seenBoardIds = new Set();
   const addBoard = boardId => {
     if (!boardId || seenBoardIds.has(boardId)) return;
@@ -241,6 +243,7 @@ function getNavFolderInboxCounts(folder) {
     const counts = getBoardInboxCounts(state.boards.find(b => b.id === boardId));
     totals.bookmarks += counts.bookmarks;
     totals.applications += counts.applications;
+    totals.games += counts.games;
     totals.folders += counts.folders;
     totals.widgets += counts.widgets;
   };
@@ -379,12 +382,12 @@ function hexToRgba(hex, alpha) {
 
 function updateInboxBadge() {
   const board = getActiveBoard();
-  const { bookmarks, applications, folders, widgets } = getBoardInboxCounts(board, getActiveTab());
-  const count = bookmarks + applications + folders + widgets;
+  const { bookmarks, applications, games, folders, widgets } = getBoardInboxCounts(board, getActiveTab());
+  const count = bookmarks + applications + games + folders + widgets;
   const badge = document.getElementById('inboxBadge');
   if (badge) {
     badge.innerHTML = '';
-    renderCountChipsInto(badge, { bookmarks, applications, folders, widgets }, {
+    renderCountChipsInto(badge, { bookmarks, applications, games, folders, widgets }, {
       bookmarkTitle: 'Bookmarks in inbox',
       folderTitle: 'Folders in inbox',
       widgetTitle: 'Widgets in inbox'
@@ -415,13 +418,15 @@ function renderInboxPanel(options = {}) {
     element.remove();
   });
   body.innerHTML = '';
-  const { bookmarks, applications, folders, widgets } = getBoardInboxCounts(board, activeTab);
+  const { bookmarks, applications, games, folders, widgets } = getBoardInboxCounts(board, activeTab);
   const bmEl = document.getElementById('inboxPanelBmCount');
   const appEl = document.getElementById('inboxPanelAppCount');
+  const gameEl = document.getElementById('inboxPanelGameCount');
   const flEl = document.getElementById('inboxPanelFlCount');
   const wgEl = document.getElementById('inboxPanelWidgetCount');
   if (bmEl) { bmEl.textContent = bookmarks; bmEl.className = 'count-chip count-chip--bookmark'; bmEl.classList.toggle('hidden', bookmarks === 0); }
   if (appEl) { appEl.textContent = applications; appEl.className = 'count-chip count-chip--application'; appEl.classList.toggle('hidden', applications === 0); }
+  if (gameEl) { gameEl.textContent = games; gameEl.className = 'count-chip count-chip--game'; gameEl.classList.toggle('hidden', games === 0); }
   if (flEl) { flEl.textContent = folders; flEl.className = 'count-chip count-chip--folder'; flEl.classList.toggle('hidden', folders === 0); }
   if (wgEl) { wgEl.textContent = widgets; wgEl.className = 'count-chip count-chip--widget'; wgEl.classList.toggle('hidden', widgets === 0); }
   updateInboxBadge();
@@ -573,6 +578,7 @@ function renderSearchResults(options = {}) {
     if (item.type === 'board') return searchFilters.typeBoard;
     if (item.type === 'folder') return searchFilters.typeFolder;
     if (item.type === 'application') return searchFilters.typeApplication;
+    if (item.type === 'game') return searchFilters.typeGame;
     return searchFilters.typeBookmark;
   };
 
@@ -829,6 +835,7 @@ function createSearchResultItem(item, meta = {}) {
   if (item.type === 'folder') return createFolderSearchResultItem(item, meta);
   if (item.type === 'board') return createBoardSearchResultItem(item, meta);
   if (item.type === 'application') return createApplicationSearchResultItem(item, meta);
+  if (item.type === 'game') return createGameSearchResultItem(item, meta);
 
   const el = document.createElement('a');
   el.className = 'board-column-item bookmark-item';
@@ -908,6 +915,43 @@ function createApplicationSearchResultItem(item, meta = {}) {
     const badge = document.createElement('span');
     badge.className = `application-status application-status--${status.state}`;
     badge.textContent = status.state === 'unbound' ? 'Set up' : status.state;
+    header.appendChild(badge);
+  }
+  el.appendChild(header);
+  if (item.tags?.length) {
+    const tagsEl = document.createElement('div');
+    tagsEl.className = 'item-tag-chips';
+    renderTagsInto(tagsEl, item.tags);
+    el.appendChild(tagsEl);
+  }
+  return el;
+}
+
+function createGameSearchResultItem(item, meta = {}) {
+  const el = document.createElement('div');
+  el.className = 'board-column-item bookmark-item game-item';
+  el.draggable = false;
+  el.dataset.itemId = item.id || '';
+  registerGameTooltipTarget(el, item);
+  el.addEventListener('click', () => void launchGameShortcut(item));
+  el.addEventListener('contextmenu', event => handleSearchResultContextMenu(event, item, meta));
+  const header = document.createElement('div');
+  header.className = 'item-header';
+  const iconEl = document.createElement('span');
+  iconEl.className = 'bookmark-favicon';
+  renderGameSystemIcon(iconEl, item);
+  header.appendChild(iconEl);
+  const name = document.createElement('span');
+  name.className = 'bookmark-label';
+  name.textContent = item.title || 'Game';
+  header.appendChild(name);
+  const status = getGameStatus(item);
+  if (status.state !== 'ready') {
+    const presentation = getGameStatusPresentation(status);
+    const badge = document.createElement('span');
+    badge.className = `application-status application-status--${status.state}`;
+    badge.textContent = presentation.label;
+    badge.title = presentation.title;
     header.appendChild(badge);
   }
   el.appendChild(header);
@@ -1405,7 +1449,7 @@ function createNavItem(item, depth = 0, parent = null) {
     header.appendChild(collapseBtn);
     header.appendChild(titleDiv);
     const folderInboxCounts = getNavFolderInboxCounts(item);
-    if (folderInboxCounts.bookmarks + folderInboxCounts.applications + folderInboxCounts.folders + folderInboxCounts.widgets > 0) {
+    if (folderInboxCounts.bookmarks + folderInboxCounts.applications + folderInboxCounts.games + folderInboxCounts.folders + folderInboxCounts.widgets > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator nav-folder-inbox-indicator';
       indicator.title = 'Contained board inbox has items';
@@ -1446,8 +1490,8 @@ function createNavItem(item, depth = 0, parent = null) {
       renderTagsInto(tagsEl, board.tags);
       el.querySelector('.nav-board-info')?.appendChild(tagsEl);
     }
-    const { bookmarks: ibm, applications: iap, folders: ifl, widgets: iwg } = getBoardInboxCounts(board);
-    if (ibm + iap + ifl + iwg > 0) {
+    const { bookmarks: ibm, applications: iap, games: igm, folders: ifl, widgets: iwg } = getBoardInboxCounts(board);
+    if (ibm + iap + igm + ifl + iwg > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator nav-item-inbox-indicator';
       indicator.title = 'Inbox has items';
@@ -1783,7 +1827,7 @@ function renderBoardTabBar(board, activeTab) {
     tabEl.appendChild(label);
 
     const counts = getBoardInboxCounts(board, tab);
-    if (counts.bookmarks + counts.applications + counts.folders + counts.widgets > 0) {
+    if (counts.bookmarks + counts.applications + counts.games + counts.folders + counts.widgets > 0) {
       const indicator = document.createElement('span');
       indicator.className = 'collection-tab-inbox-indicator';
       indicator.title = 'Inbox has items';

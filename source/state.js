@@ -588,6 +588,31 @@ function migrateItems(items) {
       delete item.command;
       delete item.arguments;
     }
+    if (item.type === 'game') {
+      if (!Array.isArray(item.tags)) item.tags = [];
+      item.tags = item.tags.map(tag => String(tag || '').slice(0, 80)).filter(Boolean).slice(0, 12);
+      if (typeof item.thumbnailCache !== 'string' || !/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/i.test(item.thumbnailCache)) {
+        item.thumbnailCache = '';
+      } else {
+        item.thumbnailCache = item.thumbnailCache.slice(0, 700000);
+      }
+      if (!/^game_[a-zA-Z0-9_-]{12,75}$/.test(item.gameKey || '')) {
+        const token = globalThis.crypto?.randomUUID?.().replace(/-/g, '')
+          || `${Date.now()}${Math.random().toString(36).slice(2, 14)}`;
+        item.gameKey = `game_${token}`.slice(0, 80);
+      }
+      item.title = String(item.title || 'Game').slice(0, 160);
+      const systemId = String(item.systemId || '').trim().toLowerCase();
+      item.systemId = /^[a-z0-9][a-z0-9_-]{0,47}$/.test(systemId) ? systemId : '';
+      item.systemName = String(item.systemName || '').trim().slice(0, 80);
+      item.emulatorName = String(item.emulatorName || '').trim().slice(0, 120);
+      item.profileName = String(item.profileName || '').trim().slice(0, 120);
+      delete item.romPath;
+      delete item.gamePath;
+      delete item.emulatorPath;
+      delete item.command;
+      delete item.arguments;
+    }
     if (item.type === 'folder') {
       if (!item.sharedTags) item.sharedTags = [];
       if (item.labels && !item.tags) item.tags = item.labels;
@@ -2378,29 +2403,32 @@ function getBoardInbox(board, tab = null) {
 }
 
 function getBoardInboxCounts(board, tab = null) {
-  if (!board) return { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
+  if (!board) return { bookmarks: 0, applications: 0, games: 0, folders: 0, widgets: 0 };
   if (tab) {
     const inbox = getBoardInbox(board, tab);
-    if (!inbox) return { bookmarks: 0, applications: 0, folders: 0, widgets: 0 };
+    if (!inbox) return { bookmarks: 0, applications: 0, games: 0, folders: 0, widgets: 0 };
     return {
       bookmarks: countItemsRecursive(inbox.items, 'bookmark'),
       applications: countItemsRecursive(inbox.items, 'application'),
+      games: countItemsRecursive(inbox.items, 'game'),
       folders: countItemsRecursive(inbox.items, 'folder'),
       widgets: countItemsRecursive(inbox.items, 'widget')
     };
   }
   let bookmarks = 0;
   let applications = 0;
+  let games = 0;
   let folders = 0;
   let widgets = 0;
   for (const boardTab of getBoardTabs(board)) {
     const inbox = getBoardInbox(board, boardTab);
     bookmarks += countItemsRecursive(inbox?.items, 'bookmark');
     applications += countItemsRecursive(inbox?.items, 'application');
+    games += countItemsRecursive(inbox?.items, 'game');
     folders += countItemsRecursive(inbox?.items, 'folder');
     widgets += countItemsRecursive(inbox?.items, 'widget');
   }
-  return { bookmarks, applications, folders, widgets };
+  return { bookmarks, applications, games, folders, widgets };
 }
 
 function importManagerHasItems() {

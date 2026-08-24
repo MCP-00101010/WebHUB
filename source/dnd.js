@@ -47,16 +47,16 @@ function _canSendToInbox() {
   if (!dragPayload) return false;
   if (dragPayload.area === 'board') {
     if (dragPayload.itemType === 'widget') return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
-    return ['bookmark', 'application', 'folder'].includes(dragPayload.itemType);
+    return ['bookmark', 'application', 'game', 'folder'].includes(dragPayload.itemType);
   }
-  if (dragPayload.area === 'import-manager') return ['bookmark', 'application', 'folder'].includes(dragPayload.itemType);
+  if (dragPayload.area === 'import-manager') return ['bookmark', 'application', 'game', 'folder'].includes(dragPayload.itemType);
   if (dragPayload.area === 'speed-dial') return true;
   if (dragPayload.area === 'essential') return !!state.essentials[dragPayload.slot];
   if (dragPayload.area === 'nav') {
     if (dragPayload.itemType === 'widget') return !!WIDGET_REGISTRY[dragPayload.widgetType]?.allowedIn?.includes('column');
     const path = findNavItemPath(dragPayload.itemId);
     const item = path?.list.find(i => i.id === dragPayload.itemId);
-    return !!item && ['bookmark', 'application', 'folder'].includes(item.type);
+    return !!item && ['bookmark', 'application', 'game', 'folder'].includes(item.type);
   }
   return false;
 }

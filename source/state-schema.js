@@ -1,6 +1,6 @@
 // Persisted-state versioning and non-destructive structural repair.
 
-const CURRENT_STATE_SCHEMA_VERSION = 3;
+const CURRENT_STATE_SCHEMA_VERSION = 6;
 
 function collectReferencedBoardIds(items) {
   const ids = new Set();
@@ -44,6 +44,9 @@ function migrateStateSchema(parsed) {
   // records are normalized by state.js so old databases remain valid.
   // Version 3 adds portable application items whose executable bindings remain
   // device-local in the native host.
+  // Version 4 adds compact game items backed by opaque EmuGUI bindings.
+  // Version 5 adds portable game-system identity for platform emblems.
+  // Version 6 adds safe emulator/profile display labels for game previews.
   parsed.schemaVersion = Math.max(sourceVersion, CURRENT_STATE_SCHEMA_VERSION);
   return parsed;
 }

@@ -298,9 +298,21 @@ function buildCommandPaletteEntries() {
       id: `application:${entry.key}`,
       group: 'Applications',
       label: entry.item.title || 'Application',
-      detail: `${entry.location} · ${status.state === 'ready' ? 'Ready' : status.state}`,
+      detail: `${entry.location} · ${getGameStatusPresentation(status).label}`,
       keywords: `application app launch ${(entry.item.tags || []).map(id => resolveTag(id)?.name || '').join(' ')}`,
       run: () => void launchApplicationShortcut(entry.item)
+    });
+  }
+
+  for (const entry of (typeof collectStoredGames === 'function' ? collectStoredGames() : [])) {
+    const status = getGameStatus(entry.item);
+    add({
+      id: `game:${entry.key}`,
+      group: 'Games',
+      label: entry.item.title || 'Game',
+      detail: `${entry.location} · ${status.state === 'ready' ? 'Ready' : status.state}`,
+      keywords: `game emugui launch play ${(entry.item.tags || []).map(id => resolveTag(id)?.name || id).join(' ')}`,
+      run: () => void launchGameShortcut(entry.item)
     });
   }
 

@@ -738,6 +738,15 @@ async function handleModalSubmit(event) {
       found.item.tags = tags;
       break;
     }
+    case 'editGame': {
+      const board = getBoardForContext(contextTarget);
+      const found = board ? findBoardItemInColumns(board, contextTarget?.itemId) : null;
+      if (!found?.item || found.item.type !== 'game') return;
+      ensureUndo();
+      found.item.title = value1.slice(0, 160);
+      found.item.tags = tags.slice(0, 12);
+      break;
+    }
     case 'addFolder': {
       const parent = contextTarget?.item;
       if (area === 'nav-empty') {

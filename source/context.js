@@ -225,6 +225,19 @@ function _showEditApplicationModal(context = contextTarget, overrides = {}) {
   });
 }
 
+function _showEditGameModal(context = contextTarget, overrides = {}) {
+  showModal('editGame', {
+    title: 'Edit Game Shortcut',
+    placeholder1: 'Game title',
+    value1: context?.item?.title || '',
+    showUrl: false,
+    showTags: true,
+    value3: (context?.item?.tags || []).join(' '),
+    inheritedTags: overrides.inheritedTags ?? getContextInheritedTags(context),
+    ...overrides
+  });
+}
+
 function _showMoveToBoardModal(context = contextTarget, title = 'Move to Tab Inbox') {
   const boards = state.boards.filter(b => !b.locked);
   const selectOptions = _sortedInboxTargetOptions(boards);
@@ -647,6 +660,27 @@ function handleContextMenuAction(action) {
     case 'duplicateApplication':
       duplicateApplicationShortcut(contextTarget);
       break;
+    case 'launchGame':
+      void launchGameShortcut(contextTarget.item);
+      break;
+    case 'openGameInEmuGui':
+      void openGameShortcutInEmuGui(contextTarget.item);
+      break;
+    case 'revealGame':
+      void revealGameShortcut(contextTarget.item);
+      break;
+    case 'rebindGame':
+      void openGameShortcutInEmuGui(contextTarget.item, { rebind: true });
+      break;
+    case 'forgetGame':
+      void forgetGameShortcut(contextTarget.item);
+      break;
+    case 'duplicateGame':
+      duplicateGameShortcut(contextTarget);
+      break;
+    case 'editGame':
+      _showEditGameModal(contextTarget);
+      break;
     case 'addNavSubfolder':
       contextTarget = { ...contextTarget, area: 'nav-subfolder' };
       showFolderModal('create');
@@ -964,12 +998,22 @@ function handleBoardContextMenu(event, item, columnId, parentFolder, depth, effe
     options.push({ label: 'Duplicate', action: 'duplicateApplication' });
     if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
     options.push({ label: 'Delete application', action: 'deleteItem' });
+  } else if (item.type === 'game') {
+    options.push({ label: 'Launch game', action: 'launchGame' });
+    options.push({ label: 'Open in EmuGUI', action: 'openGameInEmuGui' });
+    options.push({ label: 'Reveal game file', action: 'revealGame' });
+    options.push({ label: 'Rebind in EmuGUI…', action: 'rebindGame' });
+    options.push({ label: 'Edit game shortcut', action: 'editGame' });
+    if (getGameStatus(item).state !== 'unbound') options.push({ label: 'Forget device binding', action: 'forgetGame' });
+    options.push({ label: 'Duplicate', action: 'duplicateGame' });
+    if (canMoveToBoard) options.push({ label: 'Move to tab inbox', action: 'moveToBoard' });
+    options.push({ label: 'Delete game shortcut', action: 'deleteItem' });
   } else if (item.type === 'title') {
     options.push({ label: 'Rename', action: 'renameItem' });
     options.push({ label: 'Delete', action: 'deleteItem' });
   }
 
-  if (!isInboxColumnId(columnId) && (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application')) {
+  if (!isInboxColumnId(columnId) && (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application' || item.type === 'game')) {
     options.push({ label: 'Lock item', action: 'lockItem' });
   }
 
@@ -1129,6 +1173,15 @@ function handleSearchResultContextMenu(event, item, meta) {
     if (getApplicationStatus(item).state === 'ready') options.push({ label: 'Forget device binding', action: 'forgetApplication' });
     options.push({ label: 'Show in board', action: `openInBoard:${meta.boardId}` });
     options.push({ label: 'Delete application', action: 'deleteItem' });
+  } else if (item.type === 'game') {
+    options.push({ label: 'Launch game', action: 'launchGame' });
+    options.push({ label: 'Open in EmuGUI', action: 'openGameInEmuGui' });
+    options.push({ label: 'Reveal game file', action: 'revealGame' });
+    options.push({ label: 'Rebind in EmuGUI…', action: 'rebindGame' });
+    options.push({ label: 'Edit game shortcut', action: 'editGame' });
+    if (getGameStatus(item).state !== 'unbound') options.push({ label: 'Forget device binding', action: 'forgetGame' });
+    options.push({ label: 'Show in board', action: `openInBoard:${meta.boardId}` });
+    options.push({ label: 'Delete game shortcut', action: 'deleteItem' });
   } else if (item.type === 'bookmark') {
     if (item.url) {
       options.push({ label: 'Open in new tab',    action: 'openNewTab' });

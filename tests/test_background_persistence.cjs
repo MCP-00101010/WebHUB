@@ -16,8 +16,10 @@ async function loadBackground(options = {}) {
   const pendingWrites = [];
   const sentTabs = [];
   const nativeConnections = [];
+  const nativeRequests = [];
   const executedScripts = [];
   const createdTabs = [];
+  const updatedTabs = [];
   const scheduledTimeouts = [];
   const injectedTabs = new Set();
   const storageValues = new Map(Object.entries(options.storageValues || {}));
@@ -31,6 +33,7 @@ async function loadBackground(options = {}) {
       getURL: value => `moz-extension://test/${value}`,
       getBrowserInfo: options.browserVersion ? async () => ({ version: options.browserVersion }) : undefined,
       sendNativeMessage: async (_host, message) => {
+        nativeRequests.push(message);
         if (message.type === 'PING') return options.nativePing?.promise || { ok: true };
         if (message.type === 'READ_CONFIG') return { ok: true, config: { databasePath: 'C:\\hub.json' } };
         if (message.type === 'READ_FILE_CHUNK') {
@@ -50,6 +53,9 @@ async function loadBackground(options = {}) {
           pendingWrites.push(pending);
           return pending.promise;
         }
+        if (message.type === 'EMUGUI_STATUS') return options.emuguiStatus || { ok: true, emugui: { available: true, serviceVersion: 1 } };
+        if (message.type === 'EMUGUI_CREATE_HUB_BINDING') return options.emuguiBinding || { ok: true, game: { gameKey: 'game_abcdefghijklmnop', state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } };
+        if (message.type === 'GAME_STATUS') return { ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } };
         return { ok: true };
       },
       sendMessage: async () => ({ ok: true }),
@@ -86,6 +92,10 @@ async function loadBackground(options = {}) {
         const tab = { id: 1000 + createdTabs.length, ...details };
         createdTabs.push(tab);
         return tab;
+      },
+      update: async (tabId, details) => {
+        updatedTabs.push({ tabId, details });
+        return { id: tabId, ...details };
       },
       executeScript: async (tabId, details) => {
         executedScripts.push({ tabId, details });
@@ -150,7 +160,18 @@ async function loadBackground(options = {}) {
                 done: true,
                 fileInfo: { exists: true, version: 'v1', contentHash: 'h1' }
               }));
-            } else if (message.type === 'LAUNCH_APPROVED_APPLICATION') {
+            } else if (message.type === 'EMUGUI_STATUS') {
+              messageListeners.forEach(listener => listener(options.emuguiStatus || { ok: true, emugui: { available: true, serviceVersion: 1 } }));
+            } else if (message.type === 'EMUGUI_CREATE_HUB_BINDING') {
+              messageListeners.forEach(listener => listener(options.emuguiBinding || { ok: true, game: { gameKey: 'game_abcdefghijklmnop', state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } }));
+            } else if (message.type === 'GAME_STATUS') {
+              messageListeners.forEach(listener => listener({ ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac' } }));
+            } else if (message.type === 'OPEN_GAME_IN_EMUGUI') {
+              const suffix = message.rebind ? '&hubRebind=game_abcdefghijklmnop' : '';
+              messageListeners.forEach(listener => listener({ ok: true, url: `http://127.0.0.1:8765/?game=jetpac${suffix}` }));
+            } else if (message.type === 'REBIND_GAME') {
+              messageListeners.forEach(listener => listener(options.emuguiBinding || { ok: true, game: { gameKey: message.gameKey, state: 'ready', title: 'Jetpac', tags: ['Games', 'ZX Spectrum'], systemId: 'zx-spectrum', systemName: 'ZX Spectrum', emulatorName: 'EightyOne', profileName: 'Spectrum 48K', thumbnailCache: '' } }));
+            } else if (message.type === 'LAUNCH_APPROVED_APPLICATION' || message.type === 'LAUNCH_GAME' || message.type === 'REVEAL_GAME' || message.type === 'FORGET_GAME') {
               messageListeners.forEach(listener => listener({ ok: true }));
             }
           });
@@ -180,7 +201,7 @@ async function loadBackground(options = {}) {
   const filename = path.join(__dirname, '..', 'extension', 'background.js');
   vm.runInContext(fs.readFileSync(filename, 'utf8'), context, { filename });
   await new Promise(resolve => setImmediate(resolve));
-  return { context, listeners, nativeWrites, pendingWrites, sentTabs, nativeConnections, executedScripts, createdTabs, scheduledTimeouts, storageValues, createdAlarms, createdNotifications };
+  return { context, listeners, nativeWrites, nativeRequests, pendingWrites, sentTabs, nativeConnections, executedScripts, createdTabs, updatedTabs, scheduledTimeouts, storageValues, createdAlarms, createdNotifications };
 }
 
 test('extension notification jobs persist, fire once, and enter the Hub notification feed', async () => {
@@ -334,6 +355,7 @@ test('extension handshake responds before native host startup completes', async 
   ));
   assert(registration.capabilities.includes('urlHealth'));
   assert(registration.capabilities.includes('translationModels'));
+  assert(registration.capabilities.includes('emuguiService'));
   harness.listeners.message(
     { type: 'MW_PING', morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken },
     { tab: { id: 10, url: 'file:///hub.html' } },
@@ -349,6 +371,53 @@ test('extension handshake responds before native host startup completes', async 
   assert.equal(status.morpheusOpen, true);
   assert.equal(status.storageInfoReady, false);
   nativePing.resolve({ ok: true });
+});
+
+test('EmuGUI status is routed through the native host', async () => {
+  const harness = await loadBackground({
+    emuguiStatus: { ok: true, emugui: { available: true, serviceVersion: 1, activeCollection: { id: 'spectrum', name: 'ZX Spectrum' } } }
+  });
+
+  const result = await harness.context.getEmuGuiStatus();
+
+  assert.equal(result.emugui.activeCollection.id, 'spectrum');
+  assert.equal(harness.nativeRequests.at(-1).type, 'EMUGUI_STATUS');
+});
+
+test('authorized EmuGUI page creates a native binding and delivers a compact game to Hub Inbox', async () => {
+  const harness = await loadBackground({ tabs: [{ id: 10, url: 'file:///hub.html', active: true }] });
+  await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html', active: true } },
+    resolve
+  ));
+
+  const result = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k' },
+    { tab: { id: 20, url: 'http://127.0.0.1:8765/' } },
+    resolve
+  ));
+
+  assert.equal(result.ok, true);
+  assert.equal(harness.nativeRequests.at(-1).type, 'EMUGUI_CREATE_HUB_BINDING');
+  assert.equal(harness.sentTabs.at(-1).message.type, 'MW_RECEIVE_GAME');
+  assert.equal(harness.sentTabs.at(-1).message.game.gameKey, 'game_abcdefghijklmnop');
+  assert.equal(harness.sentTabs.at(-1).message.game.systemId, 'zx-spectrum');
+  assert.equal(harness.sentTabs.at(-1).message.game.emulatorName, 'EightyOne');
+  assert.equal(harness.sentTabs.at(-1).message.game.profileName, 'Spectrum 48K');
+  assert.equal('path' in harness.sentTabs.at(-1).message.game, false);
+});
+
+test('EmuGUI delivery rejects pages outside its fixed localhost origin', async () => {
+  const harness = await loadBackground();
+  const result = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_EMUGUI_SEND_GAME', gameId: 'jetpac' },
+    { tab: { id: 20, url: 'http://localhost:9999/' } },
+    resolve
+  ));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /not authorized/i);
+  assert.equal(harness.nativeRequests.some(message => message.type === 'EMUGUI_CREATE_HUB_BINDING'), false);
 });
 
 test('status discovers an unregistered file hub and injects the root extension relay', async () => {
@@ -500,6 +569,74 @@ test('application launches stay on the persistent native connection', async () =
     harness.nativeConnections[0].messages.map(message => message.type),
     ['PING', 'READ_CONFIG', 'LAUNCH_APPROVED_APPLICATION']
   );
+});
+
+test('EmuGUI game launches stay on the persistent native connection', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+  const registration = await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+  const response = await new Promise(resolve => harness.listeners.message(
+    {
+      type: 'MW_LAUNCH_GAME', gameKey: 'game_abcdefghijklmnop',
+      morpheusPage: true, pageUrl: 'file:///hub.html', hubSessionToken: registration.hubSessionToken
+    },
+    { tab: { id: 10, url: 'file:///hub.html' } },
+    resolve
+  ));
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(harness.nativeConnections[0].messages.map(message => message.type), ['PING', 'READ_CONFIG', 'LAUNCH_GAME']);
+  assert(harness.scheduledTimeouts.includes(120000));
+});
+
+test('Hub game actions open a focused EmuGUI rebind page and reveal through native authority', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+  const opened = await harness.context.openGameInEmuGui('game_abcdefghijklmnop', true);
+  const revealed = await harness.context.runGameAction('REVEAL_GAME', 'game_abcdefghijklmnop');
+
+  assert.equal(opened.ok, true);
+  assert.equal(revealed.ok, true);
+  assert.match(harness.createdTabs[0].url, /^http:\/\/127\.0\.0\.1:8765\/\?game=jetpac&hubRebind=/);
+  assert.deepEqual(harness.nativeConnections[0].messages.map(message => message.type), [
+    'PING', 'READ_CONFIG', 'OPEN_GAME_IN_EMUGUI', 'REVEAL_GAME'
+  ]);
+});
+
+test('EmuGUI rebind updates the existing Hub game instead of delivering a duplicate', async () => {
+  const harness = await loadBackground({ usePersistentNative: true, tabs: [{ id: 10, url: 'file:///hub.html', active: true }], hubTabIds: [10], relayPresent: true });
+  await new Promise(resolve => harness.listeners.message(
+    { type: 'MW_REGISTER', pageUrl: 'file:///hub.html', active: true },
+    { tab: { id: 10, url: 'file:///hub.html', active: true } },
+    resolve
+  ));
+  const result = await harness.context.sendEmuGuiGameToHub({
+    gameId: 'jetpac', emulatorId: 'eightyone', profileId: 'profile-48k', rebindGameKey: 'game_abcdefghijklmnop'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(harness.sentTabs.at(-1).message.type, 'MW_UPDATE_GAME_BINDING');
+  assert.equal(harness.sentTabs.at(-1).message.game.gameKey, 'game_abcdefghijklmnop');
+  assert(harness.nativeConnections[0].messages.some(message => message.type === 'REBIND_GAME'));
+});
+
+test('EmuGUI status and binding work share the warmed persistent native connection', async () => {
+  const harness = await loadBackground({ usePersistentNative: true });
+
+  const status = await harness.context.getEmuGuiStatus();
+  const binding = await harness.context.createEmuGuiHubBinding('jetpac', 'eightyone', 'profile-48k');
+  const gameStatus = await harness.context.getGameStatus('game_abcdefghijklmnop', true);
+
+  assert.equal(status.ok, true);
+  assert.equal(binding.game.title, 'Jetpac');
+  assert.equal(gameStatus.game.state, 'ready');
+  assert.deepEqual(harness.nativeConnections[0].messages.map(message => message.type), [
+    'PING', 'READ_CONFIG', 'EMUGUI_STATUS', 'EMUGUI_CREATE_HUB_BINDING', 'GAME_STATUS'
+  ]);
+  assert.equal(harness.nativeConnections[0].messages.at(-1).includeThumbnail, true);
+  assert.equal(harness.scheduledTimeouts.filter(timeout => timeout === 120000).length, 3);
 });
 
 test('native disconnect clears availability and a later probe reconnects', async () => {

@@ -72,3 +72,17 @@ test('external Inbox delivery immediately refreshes the active board tab indicat
   const delivery = app.match(/async function persistExternalTabDelivery[\s\S]*?function summarizeHubSnapshot/)?.[0] || '';
   assert.match(delivery, /renderNav\(\);\s*renderBoardTabBar\(getActiveBoard\(\), getActiveTab\(\)\);\s*updateInboxBadge\(\);/);
 });
+
+test('external game delivery accepts only opaque bindings and bounded image data', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'source', 'app.js'), 'utf8');
+  const delivery = app.match(/async function persistExternalGameDelivery[\s\S]*?function summarizeHubSnapshot/)?.[0] || '';
+  assert.match(delivery, /\^game_\[a-zA-Z0-9_-\]/);
+  assert.match(delivery, /type: 'game'/);
+  assert.match(delivery, /thumbnail\.length > 700000/);
+  assert.match(delivery, /systemId:/);
+  assert.match(delivery, /systemName:/);
+  assert.match(delivery, /emulatorName:/);
+  assert.match(delivery, /profileName:/);
+  assert.doesNotMatch(delivery, /romPath|emulatorPath|command|arguments/);
+  assert.match(delivery, /renderNav\(\);\s*renderBoardTabBar\(getActiveBoard\(\), getActiveTab\(\)\);\s*updateInboxBadge\(\);/);
+});

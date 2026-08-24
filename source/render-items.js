@@ -58,11 +58,12 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
   if (effectiveLocked) itemEl.classList.add('is-locked');
   if (parentFolder) itemEl.classList.add('board-folder-child');
 
-  if (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application') {
+  if (item.type === 'folder' || item.type === 'bookmark' || item.type === 'application' || item.type === 'game') {
     if (item.type === 'folder') itemEl.classList.add('folder-card');
     else {
       itemEl.classList.add('bookmark-item');
       if (item.type === 'application') itemEl.classList.add('application-item');
+      if (item.type === 'game') itemEl.classList.add('game-item');
     }
     if (selectedItemIds?.has(item.id)) itemEl.classList.add('selected');
 
@@ -108,6 +109,8 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
         } else {
           favicon.appendChild(icon('icon-application'));
         }
+      } else if (item.type === 'game') {
+        renderGameSystemIcon(favicon, item);
       } else if (item.url) {
         const faviconImg = document.createElement('img');
         setFavicon(faviconImg, item, 64);
@@ -124,6 +127,8 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       ? item.title
       : item.type === 'application'
         ? (item.title || 'Application')
+        : item.type === 'game'
+          ? (item.title || 'Game')
         : (item.title || item.url || 'Untitled Bookmark');
     header.appendChild(name);
 
@@ -145,6 +150,19 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       if (!applicationStatusCache.has(item.appKey) && !applicationStatusRequests.has(item.appKey)) {
         void refreshApplicationStatus(item);
       }
+    }
+
+    if (item.type === 'game') {
+      const status = getGameStatus(item);
+      if (status.state !== 'ready') {
+        const presentation = getGameStatusPresentation(status);
+        const badge = document.createElement('span');
+        badge.className = `application-status application-status--${status.state}`;
+        badge.textContent = presentation.label;
+        badge.title = presentation.title;
+        header.appendChild(badge);
+      }
+      if (!gameStatusCache.has(item.gameKey) && !gameStatusRequests.has(item.gameKey)) void refreshGameStatus(item);
     }
 
     if (item.type === 'folder' && dynamicFolder) {
@@ -247,6 +265,11 @@ function createBoardItemElement(item, columnId, depth = 1, parentFolder = null, 
       itemEl.dataset.tooltip = `${item.title || 'Application'}\nApplication shortcut`;
       itemEl.dataset.tooltipKind = 'application';
       itemEl.addEventListener('click', () => void launchApplicationShortcut(item));
+    }
+
+    if (item.type === 'game') {
+      registerGameTooltipTarget(itemEl, item);
+      itemEl.addEventListener('click', () => void launchGameShortcut(item));
     }
 
     // --- Folder-specific: drag on header, tag grid, and children container ---

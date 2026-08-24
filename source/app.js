@@ -1,4 +1,4 @@
-const APP_VERSION = '0.11.207';
+const APP_VERSION = '0.11.214';
 
 document.documentElement.classList.add('hub-booting');
 
@@ -119,7 +119,10 @@ const tooltipEl = document.getElementById('tooltip');
 let tooltipTarget = null;
 
 function positionTooltip(target) {
-  tooltipEl.textContent = target.dataset.tooltip;
+  const gameTooltip = target.dataset.tooltipKind === 'game' && typeof renderGameTooltip === 'function';
+  tooltipEl.classList.toggle('tooltip--game', gameTooltip);
+  if (gameTooltip) renderGameTooltip(tooltipEl, target);
+  else tooltipEl.textContent = target.dataset.tooltip;
   const color = target.dataset.tooltipColor || '';
   tooltipEl.style.setProperty('--tooltip-color', color);
   tooltipEl.classList.toggle('has-color', !!color);
@@ -478,6 +481,66 @@ async function persistExternalTabDelivery(detail = {}, allowRebase = true) {
           ? 'Timed out while saving the delivered bookmark.'
           : 'The bookmark was added locally but could not be saved yet.')
     };
+  }
+  return { ok: true, persisted: result.persisted || (bridge.nativeIsAvailable() ? 'shared' : 'local') };
+}
+
+async function persistExternalGameDelivery(detail = {}, allowRebase = true) {
+  const prepared = await prepareForExternalDelivery();
+  if (!prepared.ok) return prepared;
+  const source = detail.game && typeof detail.game === 'object' ? detail.game : {};
+  const gameKey = String(source.gameKey || '').trim();
+  if (!/^game_[a-zA-Z0-9_-]{12,75}$/.test(gameKey)) return { ok: false, error: 'The received game binding is invalid.' };
+  const thumbnail = String(source.thumbnailCache || '');
+  if (thumbnail && (!/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/i.test(thumbnail) || thumbnail.length > 700000)) {
+    return { ok: false, error: 'The received game thumbnail is invalid.' };
+  }
+  const deliveryId = String(detail.deliveryId || `legacy-${Date.now()}-${Math.random().toString(36).slice(2)}`).slice(0, 160);
+  const itemId = `game-delivery-${deliveryId}`;
+  let target = resolveExternalInboxTarget(detail.targetBoardId || '', detail.targetTabId || '');
+  if (target.error) return { ok: false, error: target.error };
+  const targetBoardId = target.board.id;
+  const targetTabId = target.tab.id;
+  let item = findInboxDeliveryItem(itemId);
+  if (!item) {
+    item = {
+      id: itemId,
+      type: 'game',
+      title: String(source.title || 'Game').slice(0, 160),
+      gameKey,
+      tags: (Array.isArray(source.tags) ? source.tags : []).map(tag => String(tag || '').slice(0, 80)).filter(Boolean).slice(0, 12),
+      systemId: /^[a-z0-9][a-z0-9_-]{0,47}$/.test(String(source.systemId || '').trim().toLowerCase())
+        ? String(source.systemId).trim().toLowerCase() : '',
+      systemName: String(source.systemName || '').trim().slice(0, 80),
+      emulatorName: String(source.emulatorName || '').trim().slice(0, 120),
+      profileName: String(source.profileName || '').trim().slice(0, 120),
+      thumbnailCache: thumbnail
+    };
+    pushUndoSnapshot();
+    target.inbox.items.push(item);
+    if (typeof phaseTwoApplyAutomationRecords === 'function') {
+      phaseTwoApplyAutomationRecords([{ item, parent: target.inbox.items, source: 'extension' }], { pushUndo: false, persist: false, render: false });
+    }
+  }
+
+  const deliveryMutationSequence = getLocalStateMutationSequence() + 1;
+  let result = await awaitExternalDeliverySave(saveState());
+  if (result?.conflict && allowRebase && getLocalStateMutationSequence() === deliveryMutationSequence) {
+    const reloaded = await reloadHubData({ source: 'shared', notice: '' });
+    if (!reloaded) return { ok: false, conflict: true, error: 'The shared database changed during delivery.' };
+    target = resolveExternalInboxTarget(targetBoardId, targetTabId);
+    if (target.error) return { ok: false, error: target.error };
+    if (!findInboxDeliveryItem(itemId)) target.inbox.items.push(item);
+    result = await awaitExternalDeliverySave(saveState());
+  }
+  renderNav();
+  renderBoardTabBar(getActiveBoard(), getActiveTab());
+  updateInboxBadge();
+  if (typeof inboxPanelOpen !== 'undefined' && inboxPanelOpen) renderInboxPanel();
+  if (!result?.ok || result.conflict) {
+    return { ok: false, conflict: result?.conflict === true, error: result?.conflict
+      ? 'The shared database changed during delivery.'
+      : (result?.timedOut ? 'Timed out while saving the delivered game.' : 'The game was added locally but could not be saved yet.') };
   }
   return { ok: true, persisted: result.persisted || (bridge.nativeIsAvailable() ? 'shared' : 'local') };
 }
@@ -1273,6 +1336,21 @@ function attachEventListeners() {
           error: error?.message || String(error)
         }));
     }
+  });
+
+  window.addEventListener('morpheus:receive-game', e => {
+    const detail = e.detail || {};
+    void persistExternalGameDelivery(detail)
+      .then(result => bridge.respondToPush(detail.pushRequestId, result))
+      .catch(error => bridge.respondToPush(detail.pushRequestId, { ok: false, error: error?.message || String(error) }));
+  });
+
+  window.addEventListener('morpheus:update-game-binding', e => {
+    const detail = e.detail || {};
+    void Promise.resolve(hubInitializationPromise)
+      .then(() => applyExternalGameBindingUpdate(detail.game || {}))
+      .then(result => bridge.respondToPush(detail.pushRequestId, result))
+      .catch(error => bridge.respondToPush(detail.pushRequestId, { ok: false, error: error?.message || String(error) }));
   });
 
   window.addEventListener('morpheus:get-inbox-targets', e => {

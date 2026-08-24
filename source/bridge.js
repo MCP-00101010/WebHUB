@@ -24,6 +24,7 @@ const bridge = (() => {
   const TRANSLATOR_ASSET_TIMEOUT_MS = 60000;
   const URL_HEALTH_TIMEOUT_MS = 20000;
   const DIRECTORY_APPROVAL_TIMEOUT_MS = 305000;
+  const EMUGUI_REQUEST_TIMEOUT_MS = 120000;
 
   function _send(type, payload = {}, options = {}) {
     return new Promise((resolve, reject) => {
@@ -190,6 +191,28 @@ const bridge = (() => {
           deliveryId: e.data.deliveryId || '',
           items: e.data.items || [],
           source: e.data.source || ''
+        }
+      }));
+      return;
+    }
+    if (e.data._push && e.data.type === 'MW_RECEIVE_GAME') {
+      window.dispatchEvent(new CustomEvent('morpheus:receive-game', {
+        detail: {
+          pushRequestId: e.data.pushRequestId || '',
+          deliveryId: e.data.deliveryId || '',
+          targetBoardId: e.data.targetBoardId || '',
+          targetTabId: e.data.targetTabId || '',
+          game: e.data.game || null
+        }
+      }));
+      return;
+    }
+    if (e.data._push && e.data.type === 'MW_UPDATE_GAME_BINDING') {
+      window.dispatchEvent(new CustomEvent('morpheus:update-game-binding', {
+        detail: {
+          pushRequestId: e.data.pushRequestId || '',
+          deliveryId: e.data.deliveryId || '',
+          game: e.data.game || null
         }
       }));
       return;
@@ -715,6 +738,56 @@ const bridge = (() => {
       if (!_available) await _connect({ retries: 1, delayMs: 200 });
       if (!_available || !_nativeAvailable || !_capabilities.has('applicationLauncher')) throw new Error('Application launcher is unavailable');
       const res = await _send('MW_FORGET_APPROVED_APPLICATION', { appKey });
+      return res.removed === true;
+    },
+
+    async getEmuGuiStatus() {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) {
+        return { available: false, error: 'Morpheus EmuGUI service is unavailable' };
+      }
+      const res = await _send('MW_EMUGUI_STATUS', {}, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
+      if (res.ok === false) return { available: false, error: res.error || 'Morpheus EmuGUI service is unavailable' };
+      return res.emugui || { available: false, error: 'Morpheus EmuGUI service returned no status' };
+    },
+
+    async getGameStatus(gameKey, options = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) {
+        return { gameKey, state: 'unavailable', title: 'Game', tags: [], thumbnailCache: '' };
+      }
+      const res = await _send('MW_GET_GAME_STATUS', { gameKey, includeThumbnail: options.includeThumbnail === true }, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
+      return res.game || { gameKey, state: 'unbound', title: 'Game', tags: [], thumbnailCache: '' };
+    },
+
+    async launchGame(gameKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) throw new Error('Game launcher is unavailable');
+      const res = await _send('MW_LAUNCH_GAME', { gameKey }, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
+      if (res.ok === false) throw new Error(res.error || 'The game could not be launched');
+      return true;
+    },
+
+    async openGameInEmuGui(gameKey, options = {}) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) throw new Error('Morpheus EmuGUI is unavailable');
+      const res = await _send('MW_OPEN_GAME_IN_EMUGUI', { gameKey, rebind: options.rebind === true }, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
+      if (res.ok === false) throw new Error(res.error || 'The game could not be opened in EmuGUI');
+      return true;
+    },
+
+    async revealGame(gameKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) throw new Error('Game launcher is unavailable');
+      const res = await _send('MW_REVEAL_GAME', { gameKey }, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
+      if (res.ok === false) throw new Error(res.error || 'The game file could not be revealed');
+      return true;
+    },
+
+    async forgetGame(gameKey) {
+      if (!_available) await _connect({ retries: 1, delayMs: 200 });
+      if (!_available || !_nativeAvailable || !_capabilities.has('emuguiService')) throw new Error('Game launcher is unavailable');
+      const res = await _send('MW_FORGET_GAME', { gameKey }, { timeoutMs: EMUGUI_REQUEST_TIMEOUT_MS });
       return res.removed === true;
     },
 

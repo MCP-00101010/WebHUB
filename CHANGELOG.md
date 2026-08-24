@@ -5,6 +5,100 @@ Format: `[version] — date` followed by Added / Changed / Fixed sections.
 
 ---
 
+## [0.11.214] — 2026-08-24
+
+### Added
+
+- **Complete game-shortcut lifecycle** — game context menus in boards and Hub Search now offer **Open in EmuGUI**, **Reveal game file**, and **Rebind in EmuGUI…** alongside launch and forget. Open/rebind focuses an existing EmuGUI tab when possible and selects the shortcut's source game.
+- **In-place EmuGUI rebinding** — a rebind handoff changes EmuGUI's button to **Update WebHub Shortcut**. Sending the selected emulator/profile updates the same device-local `gameKey` and pushes safe system, emulator, profile, and thumbnail presentation data back to every matching Hub card instead of creating an Inbox duplicate.
+- **Actionable game states** — native status now distinguishes inactive library, missing game, missing emulator, missing profile, unbound, and unavailable conditions. Hub badges and launch errors present concise recovery-oriented labels while the underlying file paths and binding IDs remain behind the extension/native boundary.
+
+### Validation
+
+- Added native, extension-background, content-relay, page-bridge, Hub launcher, and EmuGUI frontend coverage for deep-linked selection, fixed-origin tab opening, reveal, in-place rebinding, update delivery, and precise failure states. All 338 JavaScript tests, all 38 native-host tests (plus 11 parameterised subtests), and all ten EmuGUI tests pass. Syntax checks passed for the changed Hub, extension, and EmuGUI JavaScript. Firefox extension `1.0.47` carries the lifecycle bridge. No in-app browser target was available for an automated click-through.
+
+## [0.11.213] — 2026-08-24
+
+### Changed
+
+- **System-first game shortcuts** — game items now use their ZX Spectrum, Atari ST, Game Boy, SNES, ScummVM, DOSBox, MAME, or generic system emblem in the standard 20px favicon/application-icon position. The redundant badge beside the title has been removed, making game, application, and web links visually consistent.
+- **Artwork-rich game tooltips** — hovering a game opens a 300px preview with its cached artwork displayed up to 170px high, followed by the game title, system, emulator, and launch profile.
+- **Safe runtime labels** — compact game records now carry bounded emulator and profile display names for presentation while emulator IDs, profile IDs, executable paths, ROM paths, and commands remain device-local behind the opaque binding. Existing shortcuts backfill the labels during their next status refresh; shared-state schema version 6 preserves them.
+
+### Validation
+
+- Added regression coverage for system-icon placement, rich-tooltip layout and metadata, emulator/profile delivery and portable preservation, existing-item backfill, and continued exclusion of binding IDs from tooltip data. Live native reads resolve the current shortcuts to `EightyOne / Plus3` and `EightyOne / Spectrum 48K`. All 335 JavaScript tests and all 37 native-host tests (plus 11 parameterised subtests) pass; syntax checks passed for 50 Hub and extension JavaScript files, the extension manifest parsed successfully, and `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.46` carries the expanded safe game-status record.
+
+## [0.11.212] — 2026-08-24
+
+### Fixed
+
+- **EmuGUI artwork now reaches game shortcuts** — the native bridge accepts bounded HTTPS PNG, JPEG, GIF, WebP, and AVIF artwork supplied by EmuGUI as well as collection-local images. Previously it rejected every remote scraper URL, leaving `thumbnailCache` empty even though artwork appeared in EmuGUI.
+- **Existing shortcuts backfill missing thumbnails** — game-status requests fetch artwork only when the Hub item has no cached thumbnail, then persist it in shared presentation state. Exact-title games on the same system may reuse an artwork-bearing EmuGUI sibling without changing the bound game file or launch profile; this covers duplicate editions such as the current Ghostbusters entries.
+- **Composite Spectrum identities** — memory labels such as `48K-128K` now resolve to ZX Spectrum rather than becoming an unknown platform.
+
+### Validation
+
+- Live bounded reads produced thumbnails for all three current Hub shortcuts: The Hobbit, Ghostbusters, and Bubble Bobble. Added remote-URL, HTTPS-only, missing-thumbnail request, exact-title/same-system fallback, and composite Spectrum regression coverage. All 334 JavaScript tests and all 37 native-host tests (plus 11 parameterised subtests) pass; syntax checks passed for 50 Hub and extension JavaScript files, the extension manifest parsed successfully, and `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.45` carries the thumbnail-aware status bridge.
+
+## [0.11.211] — 2026-08-24
+
+### Added
+
+- **Game-system emblems** — game shortcuts now show a compact platform badge independently from their cover artwork. The initial emblem set covers ZX Spectrum, Atari ST, Game Boy, Super Nintendo, ScummVM, DOSBox, and MAME/arcade, with a generic game-system fallback for future EmuGUI adapters.
+- **Portable system identity** — EmuGUI bindings and delivered Hub shortcuts now carry bounded `systemId` and `systemName` presentation fields. Existing shortcuts automatically backfill these fields from native game status, while legacy ZX Spectrum tags provide an immediate badge before the refresh completes.
+
+### Changed
+
+- **Future-ready game metadata** — native game records derive platform identity from EmuGUI system/platform metadata or known emulator IDs instead of hard-coding every game as ZX Spectrum. Shared-state schema version 5 preserves this safe presentation metadata without exposing ROM or emulator paths.
+
+### Validation
+
+- Added native and Hub regression coverage for system derivation, delivery, portable round trips, status backfilling, badge rendering, and all seven initial emblem mappings. All 334 JavaScript tests and all 35 native-host tests (plus ten parameterised subtests) pass; syntax checks passed for 50 Hub and extension JavaScript files, the extension manifest parsed successfully, and `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.44` carries the expanded native game record. The in-app browser had no available target for an automated visual pass.
+
+## [0.11.210] — 2026-08-24
+
+### Fixed
+
+- **Cold EmuGUI launches no longer time out** — EmuGUI status, binding, game-status, launch, and forget requests now share the extension's persistent native-host connection. The loaded EmuGUI module and indexed collection remain warm instead of being rebuilt in a short-lived native process before every operation.
+- **EightyOne survives slow collection startup** — EmuGUI operations now use a dedicated bounded two-minute timeout through both the Hub page bridge and native request queue. This replaces the generic five-second page and fifteen-second native limits that could disconnect the host—and terminate its newly launched EightyOne process—before a cold game launch completed.
+
+### Validation
+
+- Added regression coverage proving EmuGUI reads, binding creation, status, and launch use one warmed native connection and receive the dedicated timeout. All 331 JavaScript tests pass; syntax checks passed for 50 Hub and extension JavaScript files, the extension manifest parsed successfully, and `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.43` carries the persistent EmuGUI lifecycle fix.
+
+## [0.11.209] — 2026-08-24
+
+### Added
+
+- **Send games from EmuGUI to WebHub** — EmuGUI now offers **Send to WebHub** in game details and the game context menu. The extension creates or reuses a device-local binding and delivers a compact shortcut to the active Hub Inbox with only its name, Hub tags, optional bounded thumbnail, and opaque `gameKey`.
+- **First-class game shortcuts** — game items now render and launch from columns, ordinary folders, tab Inboxes, Hub Search, and the command palette. They participate in drag-and-drop, Send To, Inbox counts, locks, Undo, Trash, duplication, title/tag editing, and status refresh alongside bookmarks and applications.
+- **Native EmuGUI game operations** — the persistent native host now supports binding creation, status, launch, and forgetting. Bindings retain stable library/game/emulator/profile IDs locally, reuse identical selections, enforce a bounded registry, and invoke the selected emulator profile during launch.
+
+### Changed
+
+- **Portable game safety** — portable bundles omit game bindings and omit thumbnail caches unless image caches are explicitly included. Every imported game receives a fresh unbound key, preventing portable data from acquiring an unrelated device-local approval by collision.
+- **Game-aware state schema** — schema version 4 normalises compact game presentation fields and strips ROM paths, emulator paths, commands, and arguments from shared state.
+
+### Validation
+
+- All 330 JavaScript tests, all 34 WebHub native-host tests (plus three parameterised unsafe-link subtests), and all nine EmuGUI tests pass. Syntax checks passed for 50 Hub and extension JavaScript files, the extension manifest parsed successfully, and `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. A reversible binding create/status/forget check also passed against the configured Desasteron library without exposing filesystem paths; no emulator was launched during validation. Firefox extension `1.0.42` carries the game delivery and launch bridge.
+
+## [0.11.208] — 2026-08-24
+
+### Added
+
+- **First EmuGUI service bridge** — the extension and persistent native host can now load an explicitly configured Morpheus EmuGUI checkout and request a path-free service summary. The ordinary Hub client receives only the active collection identity and collection/emulator/profile counts; native paths and the broader EmuGUI management surface stay behind the native boundary.
+- **Transport-independent EmuGUI reads** — EmuGUI now exposes a bounded service contract for status, paginated game search, and individual game lookup. Its existing HTTP UI remains available through the original endpoints plus a temporary `/api/read-rpc` adapter during migration.
+
+### Changed
+
+- **Lazy EmuGUI startup boundary** — importing EmuGUI no longer constructs and scans the active game library. The standalone server still builds it during normal startup, while the extension can load lightweight capabilities without triggering a collection scan.
+
+### Validation
+
+- Added EmuGUI service and lazy-import regression coverage, native-host path filtering/configuration tests, extension routing coverage, and page-bridge coverage. All six EmuGUI tests, all 33 WebHub native-host tests (plus three parameterized unsafe-link subtests), and all 322 JavaScript tests pass. The native bridge also returned the real configured Desasteron status successfully without exposing filesystem paths. `web-ext lint` reports zero errors with the existing native-host Python notice and installer-shell warning. Firefox extension `1.0.41` carries the first EmuGUI capability.
+
 ## [0.11.207] — 2026-08-24
 
 ### Changed
